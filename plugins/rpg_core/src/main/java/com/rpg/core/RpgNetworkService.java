@@ -39,6 +39,7 @@ import java.security.MessageDigest;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -190,7 +191,9 @@ public final class RpgNetworkService {
     private final Set<UUID> transferFrozenProfiles = ConcurrentHashMap.newKeySet();
     private final Map<String, BukkitTask> bossTasks = new ConcurrentHashMap<>();
     private final ConcurrentLinkedQueue<LedgerEntry> ledgerQueue = new ConcurrentLinkedQueue<>();
-    private final AtomicLong ledgerSequence = new AtomicLong(System.currentTimeMillis());
+    private final int ledgerServerId;
+    private final AtomicInteger ledgerCounter = new AtomicInteger();
+    private volatile long ledgerCounterMillis;
     private final AtomicLong ledgerHashChain = new AtomicLong(0L);
     private final AtomicLong ledgerLastFlushAt = new AtomicLong(0L);
     private final Map<String, DungeonInstanceState> dungeonInstances = new ConcurrentHashMap<>();
@@ -231,6 +234,8 @@ public final class RpgNetworkService {
         this.events = loadOptionalConfig("events.yml");
         this.serverName = resolveServerName();
         this.serverRole = resolveServerRole();
+        this.ledgerServerId = resolveLedgerServerId(serverName);
+        this.ledgerCounterMillis = System.currentTimeMillis();
         String runtimeFolder = persistence.getString("local_fallback.path", "runtime_data");
         this.runtimeDir = root.resolve(runtimeFolder);
         this.profileDir = runtimeDir.resolve("profiles");
@@ -2989,7 +2994,8 @@ public final class RpgNetworkService {
             return;
         }
         long now = System.currentTimeMillis();
-        long sequence = ledgerSequence.incrementAndGet();
+        long operationNumericId = nextLedgerOperationNumericId(now);
+        long sequence = operationNumericId;
         Map<String, Integer> copy = new LinkedHashMap<>();
         if (itemDelta != null) {
             for (Map.Entry<String, Integer> entry : itemDelta.entrySet()) {
@@ -2999,9 +3005,9 @@ public final class RpgNetworkService {
             }
         }
         long previousHash = ledgerHashChain.get();
-        long hash = Objects.hash(sequence, now, serverName, playerUuid.toString(), category, reference == null ? "" : reference, goldDelta, copy, previousHash);
-        String operationId = UUID.nameUUIDFromBytes((serverName + "|" + sequence + "|" + hash).getBytes(StandardCharsets.UTF_8)).toString();
         String normalizedReference = reference == null ? "" : reference;
+        long hash = Objects.hash(operationNumericId, now, serverName, playerUuid.toString(), category, normalizedReference, goldDelta, copy, previousHash);
+        String operationId = Long.toUnsignedString(operationNumericId);
         String payloadWithoutHash = ledgerPayload(operationId, sequence, now, serverName, playerUuid, category, normalizedReference, goldDelta, copy, previousHash, hash, "");
         String payloadHash = sha256(payloadWithoutHash);
         String payload = ledgerPayload(operationId, sequence, now, serverName, playerUuid, category, normalizedReference, goldDelta, copy, previousHash, hash, payloadHash);
@@ -3012,6 +3018,32 @@ public final class RpgNetworkService {
         int immediateFlushThreshold = Math.max(16, persistence.getInt("write_policy.ledger_immediate_flush_queue_threshold", 64));
         if (ledgerQueue.size() >= immediateFlushThreshold) {
             Bukkit.getScheduler().runTaskAsynchronously(plugin, this::flushLedger);
+        }
+    }
+
+    private int resolveLedgerServerId(String name) {
+        int hash = Math.abs((name == null ? "unknown" : name.toLowerCase(Locale.ROOT)).hashCode());
+        return hash % 1024;
+    }
+
+    private long nextLedgerOperationNumericId(long nowMillis) {
+        long timestamp = Math.max(nowMillis, ledgerCounterMillis);
+        synchronized (ledgerCounter) {
+            if (timestamp != ledgerCounterMillis) {
+                ledgerCounterMillis = timestamp;
+                ledgerCounter.set(0);
+            }
+            int counterValue = ledgerCounter.getAndIncrement();
+            if (counterValue >= 4096) {
+                ledgerCounterMillis = ledgerCounterMillis + 1L;
+                ledgerCounter.set(0);
+                counterValue = 0;
+            }
+            long epochMillis = ledgerCounterMillis - 1_700_000_000_000L;
+            long timePart = (epochMillis & ((1L << 41) - 1)) << 22;
+            long serverPart = ((long) ledgerServerId & 0x3FFL) << 12;
+            long counterPart = counterValue & 0xFFFL;
+            return timePart | serverPart | counterPart;
         }
     }
 
@@ -3048,9 +3080,9 @@ public final class RpgNetworkService {
                         String operationId = yaml.getString("operation_id", "");
                         long sequence = yaml.getLong("sequence", 0L);
                         String playerRaw = yaml.getString("player", "");
-                        String entryServer = yaml.getString("server", serverName);
+                        String entryServer = yaml.getString("server", "");
                         String category = yaml.getString("category", "");
-                        if (sequence <= 0L || playerRaw.isBlank() || category.isBlank()) {
+                        if (sequence <= 0L || playerRaw.isBlank() || category.isBlank() || entryServer.isBlank()) {
                             return;
                         }
                         UUID playerUuid = UUID.fromString(playerRaw);
@@ -3069,7 +3101,8 @@ public final class RpgNetworkService {
                             entryHash = expectedHash;
                         }
                         if (operationId.isBlank()) {
-                            operationId = UUID.nameUUIDFromBytes((entryServer + "|" + sequence + "|" + entryHash).getBytes(StandardCharsets.UTF_8)).toString();
+                            enterSafeMode("Pending ledger operation id missing");
+                            return;
                         }
                         String payloadHash = yaml.getString("payload_hash", "");
                         String payloadWithoutHash = ledgerPayload(operationId, sequence, createdAt, entryServer, playerUuid, category, reference, goldDelta, items, previousHash, entryHash, "");
@@ -3081,7 +3114,6 @@ public final class RpgNetworkService {
                         payloadHash = expectedPayloadHash;
                         String canonicalPayload = ledgerPayload(operationId, sequence, createdAt, entryServer, playerUuid, category, reference, goldDelta, items, previousHash, entryHash, payloadHash);
                         recovered.add(new LedgerEntry(operationId, entryServer, sequence, createdAt, playerUuid, category, reference, goldDelta, items, canonicalPayload, payloadHash));
-                        ledgerSequence.accumulateAndGet(sequence, Math::max);
                     } catch (Exception exception) {
                         plugin.getLogger().warning("Unable to recover pending ledger entry " + path + ": " + exception.getMessage());
                     }
@@ -3664,7 +3696,7 @@ public final class RpgNetworkService {
             try (Statement statement = connection.createStatement()) {
                 statement.executeUpdate("CREATE TABLE IF NOT EXISTS rpg_profiles (uuid VARCHAR(36) PRIMARY KEY, last_name VARCHAR(32), guild_name VARCHAR(32), gold DOUBLE NOT NULL, payload LONGTEXT NOT NULL, updated_at BIGINT NOT NULL)");
                 statement.executeUpdate("CREATE TABLE IF NOT EXISTS rpg_guilds (name VARCHAR(32) PRIMARY KEY, owner_uuid VARCHAR(36), member_count INT NOT NULL, bank_gold DOUBLE NOT NULL, payload LONGTEXT NOT NULL, updated_at BIGINT NOT NULL)");
-                statement.executeUpdate("CREATE TABLE IF NOT EXISTS rpg_ledger (operation_id VARCHAR(36) PRIMARY KEY, server VARCHAR(64) NOT NULL, sequence_id BIGINT NOT NULL, created_at BIGINT NOT NULL, player_uuid VARCHAR(36) NOT NULL, category VARCHAR(64) NOT NULL, reference_id VARCHAR(128) NOT NULL, gold_delta DOUBLE NOT NULL, item_delta LONGTEXT NOT NULL, payload LONGTEXT NOT NULL, payload_hash VARCHAR(64) NOT NULL, UNIQUE KEY uq_server_sequence (server, sequence_id), UNIQUE KEY uq_payload_identity (server, sequence_id, payload_hash))");
+                statement.executeUpdate("CREATE TABLE IF NOT EXISTS rpg_ledger (operation_id VARCHAR(64) PRIMARY KEY, server VARCHAR(64) NOT NULL, sequence_id BIGINT NOT NULL, created_at BIGINT NOT NULL, player_uuid VARCHAR(36) NOT NULL, category VARCHAR(64) NOT NULL, reference_id VARCHAR(128) NOT NULL, gold_delta DOUBLE NOT NULL, item_delta LONGTEXT NOT NULL, payload LONGTEXT NOT NULL, payload_hash VARCHAR(64) NOT NULL, UNIQUE KEY uq_server_sequence (server, sequence_id), UNIQUE KEY uq_payload_identity (server, sequence_id, payload_hash))");
                 mysqlSchemaReady = true;
             }
         }
