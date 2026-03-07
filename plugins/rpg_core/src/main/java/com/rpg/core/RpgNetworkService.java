@@ -36,6 +36,7 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
 import java.security.MessageDigest;
+import java.util.StringJoiner;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ThreadLocalRandom;
@@ -90,6 +91,8 @@ public final class RpgNetworkService {
         UNAVAILABLE
     }
     private record LedgerEntry(String operationId, String server, long sequence, long createdAt, UUID playerUuid, String category, String reference, double goldDelta, Map<String, Integer> itemDelta, String payload, String payloadHash) {}
+    private record LedgerPayloadSnapshot(String operationId, long sequence, long createdAt, String server, UUID playerUuid, String category,
+                                         String reference, double goldDelta, Map<String, Integer> itemDelta, long previousHash, long entryHash, String payloadHash) {}
 
     private enum InstanceLifecycleState {
         REQUESTED,
@@ -397,11 +400,13 @@ public final class RpgNetworkService {
     private final AtomicLong dbOperationErrors = new AtomicLong();
     private final AtomicLong dbLatencyTotalNanos = new AtomicLong();
     private final AtomicLong dbLatencyMaxNanos = new AtomicLong();
+    private final AtomicLong managedEntitySpawnDenied = new AtomicLong();
     private volatile boolean mysqlSchemaReady;
     private volatile boolean mysqlDriverReady;
     private volatile boolean mysqlDriverUnavailableLogged;
     private volatile boolean safeMode;
     private volatile String safeModeReason = "";
+    private volatile long lastEntityPressureWarningAt;
     private HikariDataSource mysqlPool;
     private BukkitTask flushTask;
     private BukkitTask ledgerFlushTask;
@@ -620,6 +625,18 @@ public final class RpgNetworkService {
 
     public int managedEntityTotalCount() {
         return managedEntityCount(null);
+    }
+
+    public double entityPressure() {
+        int serverCap = Math.max(1, scaling.getInt("limits.max_entities_per_server." + serverName, Integer.MAX_VALUE));
+        if (serverCap >= Integer.MAX_VALUE / 2) {
+            return 0.0D;
+        }
+        return Math.min(1.0D, managedEntityTotalCount() / (double) serverCap);
+    }
+
+    public long managedEntitySpawnDeniedCount() {
+        return managedEntitySpawnDenied.get();
     }
 
     public int ledgerQueueDepth() {
@@ -3184,7 +3201,30 @@ public final class RpgNetworkService {
 
     private boolean canSpawnRpgEntity(String category) {
         int serverCap = scaling.getInt("limits.max_entities_per_server." + serverName, Integer.MAX_VALUE);
-        return managedEntityCount(null) < serverCap && managedEntityCount(category) < entityCap(category);
+        int total = managedEntityCount(null);
+        int categoryCount = managedEntityCount(category);
+        int categoryCap = entityCap(category);
+        double pressure = serverCap <= 0 || serverCap >= Integer.MAX_VALUE / 2 ? 0.0D : (total / (double) Math.max(1, serverCap));
+        double hardPressureCap = Math.max(0.05D, Math.min(0.99D, scaling.getDouble("limits.entity_spawn_pressure_hard_cap", 0.95D)));
+        if (total >= serverCap || categoryCount >= categoryCap || pressure >= hardPressureCap) {
+            managedEntitySpawnDenied.incrementAndGet();
+            maybeWarnEntityPressure(category, total, serverCap, categoryCount, categoryCap, pressure);
+            return false;
+        }
+        return true;
+    }
+
+    private void maybeWarnEntityPressure(String category, int total, int serverCap, int categoryCount, int categoryCap, double pressure) {
+        long now = System.currentTimeMillis();
+        long everyMillis = Math.max(15_000L, scaling.getLong("limits.entity_spawn_pressure_warning_seconds", 30L) * 1000L);
+        if (now - lastEntityPressureWarningAt < everyMillis) {
+            return;
+        }
+        lastEntityPressureWarningAt = now;
+        plugin.getLogger().warning("Entity spawn pressure active category=" + category
+            + " total=" + total + "/" + serverCap
+            + " category=" + categoryCount + "/" + categoryCap
+            + " pressure=" + String.format(Locale.US, "%.3f", pressure));
     }
 
     private int managedEntityCount(String category) {
@@ -3302,11 +3342,15 @@ public final class RpgNetworkService {
         }
         long previousHash = ledgerHashChain.get();
         String normalizedReference = reference == null ? "" : reference;
+
+        LedgerPayloadSnapshot snapshot = new LedgerPayloadSnapshot(operationId, sequence, now, serverName, playerUuid, category, normalizedReference, goldDelta, copy, previousHash, hash, "");
+        String payloadWithoutHash = ledgerPayload(snapshot);
+
         long hash = Objects.hash(operationNumericId, now, serverName, playerUuid.toString(), category, normalizedReference, goldDelta, copy, previousHash);
         String operationId = Long.toUnsignedString(operationNumericId);
         String payloadWithoutHash = ledgerPayload(operationId, sequence, now, serverName, playerUuid, category, normalizedReference, goldDelta, copy, previousHash, hash, "");
         String payloadHash = sha256(payloadWithoutHash);
-        String payload = ledgerPayload(operationId, sequence, now, serverName, playerUuid, category, normalizedReference, goldDelta, copy, previousHash, hash, payloadHash);
+        String payload = ledgerPayload(new LedgerPayloadSnapshot(operationId, sequence, now, serverName, playerUuid, category, normalizedReference, goldDelta, copy, previousHash, hash, payloadHash));
         LedgerEntry entry = new LedgerEntry(operationId, serverName, sequence, now, playerUuid, category, normalizedReference, goldDelta, copy, payload, payloadHash);
         persistPendingLedgerEntry(entry);
         ledgerQueue.add(entry);
@@ -3316,6 +3360,45 @@ public final class RpgNetworkService {
             Bukkit.getScheduler().runTaskAsynchronously(plugin, this::flushLedger);
         }
     }
+
+    private String ledgerPayload(LedgerPayloadSnapshot snapshot) {
+        StringJoiner itemJoiner = new StringJoiner(",");
+        for (Map.Entry<String, Integer> item : snapshot.itemDelta().entrySet()) {
+            itemJoiner.add(item.getKey() + ":" + item.getValue());
+        }
+        return "operation_id=" + snapshot.operationId() + "\n"
+            + "sequence=" + snapshot.sequence() + "\n"
+            + "created_at=" + snapshot.createdAt() + "\n"
+            + "server=" + snapshot.server() + "\n"
+            + "player=" + snapshot.playerUuid() + "\n"
+            + "category=" + snapshot.category() + "\n"
+            + "reference=" + snapshot.reference() + "\n"
+            + "gold_delta=" + snapshot.goldDelta() + "\n"
+            + "items=" + itemJoiner + "\n"
+            + "previous_hash=" + snapshot.previousHash() + "\n"
+            + "entry_hash=" + snapshot.entryHash() + "\n"
+            + "payload_hash=" + snapshot.payloadHash() + "\n";
+    }
+
+    private Map<String, Integer> parseLedgerItems(String rawItems) {
+        Map<String, Integer> items = new LinkedHashMap<>();
+        if (rawItems == null || rawItems.isBlank()) {
+            return items;
+        }
+        for (String token : rawItems.split(",")) {
+            if (token == null || token.isBlank()) {
+                continue;
+            }
+            String[] parts = token.split(":", 2);
+            if (parts.length != 2 || parts[0].isBlank()) {
+                continue;
+            }
+            try {
+                items.put(parts[0], Integer.parseInt(parts[1]));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return items;
 
     private int resolveLedgerServerId(String name) {
         int hash = Math.abs((name == null ? "unknown" : name.toLowerCase(Locale.ROOT)).hashCode());
@@ -3372,6 +3455,13 @@ public final class RpgNetworkService {
                 .sorted(Comparator.comparing(path -> path.getFileName().toString()))
                 .forEach(path -> {
                     try {
+                        Properties props = readProperties(path);
+                        String operationId = props.getProperty("operation_id", "");
+                        long sequence = parseLong(props.getProperty("sequence"), 0L);
+                        String playerRaw = props.getProperty("player", "");
+                        String entryServer = props.getProperty("server", serverName);
+                        String category = props.getProperty("category", "");
+                        if (sequence <= 0L || playerRaw.isBlank() || category.isBlank()) {
                         YamlConfiguration yaml = readYaml(path);
                         String operationId = yaml.getString("operation_id", "");
                         long sequence = yaml.getLong("sequence", 0L);
@@ -3382,12 +3472,12 @@ public final class RpgNetworkService {
                             return;
                         }
                         UUID playerUuid = UUID.fromString(playerRaw);
-                        long createdAt = yaml.getLong("created_at", System.currentTimeMillis());
-                        String reference = yaml.getString("reference", "");
-                        double goldDelta = yaml.getDouble("gold_delta", 0.0D);
-                        Map<String, Integer> items = intMap(yaml.getConfigurationSection("items"));
-                        long previousHash = yaml.getLong("previous_hash", 0L);
-                        long entryHash = yaml.getLong("entry_hash", 0L);
+                        long createdAt = parseLong(props.getProperty("created_at"), System.currentTimeMillis());
+                        String reference = props.getProperty("reference", "");
+                        double goldDelta = parseDouble(props.getProperty("gold_delta"), 0.0D);
+                        Map<String, Integer> items = parseLedgerItems(props.getProperty("items", ""));
+                        long previousHash = parseLong(props.getProperty("previous_hash"), 0L);
+                        long entryHash = parseLong(props.getProperty("entry_hash"), 0L);
                         long expectedHash = Objects.hash(sequence, createdAt, entryServer, playerUuid.toString(), category, reference, goldDelta, items, previousHash);
                         if (entryHash != 0L && entryHash != expectedHash) {
                             enterSafeMode("Pending ledger hash mismatch");
@@ -3400,15 +3490,16 @@ public final class RpgNetworkService {
                             enterSafeMode("Pending ledger operation id missing");
                             return;
                         }
-                        String payloadHash = yaml.getString("payload_hash", "");
-                        String payloadWithoutHash = ledgerPayload(operationId, sequence, createdAt, entryServer, playerUuid, category, reference, goldDelta, items, previousHash, entryHash, "");
+                        String payloadHash = props.getProperty("payload_hash", "");
+                        LedgerPayloadSnapshot snapshot = new LedgerPayloadSnapshot(operationId, sequence, createdAt, entryServer, playerUuid, category, reference, goldDelta, items, previousHash, entryHash, "");
+                        String payloadWithoutHash = ledgerPayload(snapshot);
                         String expectedPayloadHash = sha256(payloadWithoutHash);
                         if (!payloadHash.isBlank() && !payloadHash.equalsIgnoreCase(expectedPayloadHash)) {
                             enterSafeMode("Pending ledger payload hash mismatch");
                             return;
                         }
                         payloadHash = expectedPayloadHash;
-                        String canonicalPayload = ledgerPayload(operationId, sequence, createdAt, entryServer, playerUuid, category, reference, goldDelta, items, previousHash, entryHash, payloadHash);
+                        String canonicalPayload = ledgerPayload(new LedgerPayloadSnapshot(operationId, sequence, createdAt, entryServer, playerUuid, category, reference, goldDelta, items, previousHash, entryHash, payloadHash));
                         recovered.add(new LedgerEntry(operationId, entryServer, sequence, createdAt, playerUuid, category, reference, goldDelta, items, canonicalPayload, payloadHash));
                     } catch (Exception exception) {
                         plugin.getLogger().warning("Unable to recover pending ledger entry " + path + ": " + exception.getMessage());
@@ -3419,10 +3510,8 @@ public final class RpgNetworkService {
         }
         recovered.sort(Comparator.comparingLong(LedgerEntry::sequence));
         for (LedgerEntry entry : recovered) {
-            YamlConfiguration yaml = yamlFromString(entry.payload());
-            if (yaml != null) {
-                chain = yaml.getLong("entry_hash", chain);
-            }
+            Properties props = propertiesFromString(entry.payload());
+            chain = parseLong(props.getProperty("entry_hash"), chain);
             ledgerQueue.add(entry);
         }
         ledgerHashChain.set(chain);
@@ -4448,6 +4537,8 @@ public final class RpgNetworkService {
         yaml.set("instance_allocation_latency_ms_avg", allocationLatencyMsAvg());
         yaml.set("instance_allocation_latency_ms_max", allocationLatencyMsMax());
         yaml.set("managed_entities", managedEntityTotalCount());
+        yaml.set("entity_pressure", entityPressure());
+        yaml.set("entity_spawn_denied", managedEntitySpawnDeniedCount());
         yaml.set("safe_mode", safeMode);
         yaml.set("safe_mode_reason", safeModeReason);
         yaml.set("mysql_enabled", persistence.getBoolean("mysql.enabled", true));
@@ -4501,5 +4592,68 @@ public final class RpgNetworkService {
             }
         }
         return yaml;
+    }
+
+    private long parseLong(String value, long fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        try {
+            return Long.parseLong(value.trim());
+        } catch (NumberFormatException exception) {
+            return fallback;
+        }
+    }
+
+    private double parseDouble(String value, double fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        try {
+            return Double.parseDouble(value.trim());
+        } catch (NumberFormatException exception) {
+            return fallback;
+        }
+    }
+
+    private Properties propertiesFromString(String raw) {
+        Properties properties = new Properties();
+        if (raw == null || raw.isBlank()) {
+            return properties;
+        }
+        try (InputStream stream = new java.io.ByteArrayInputStream(raw.getBytes(StandardCharsets.UTF_8))) {
+            properties.load(stream);
+        } catch (IOException ignored) {
+        }
+        return properties;
+    }
+
+    private Properties readProperties(Path path) {
+        Properties properties = new Properties();
+        if (!Files.exists(path)) {
+            return properties;
+        }
+        try (InputStream stream = Files.newInputStream(path)) {
+            properties.load(stream);
+        } catch (IOException exception) {
+            YamlConfiguration yaml = readYaml(path);
+            properties.setProperty("operation_id", yaml.getString("operation_id", ""));
+            properties.setProperty("sequence", Long.toString(yaml.getLong("sequence", 0L)));
+            properties.setProperty("created_at", Long.toString(yaml.getLong("created_at", 0L)));
+            properties.setProperty("server", yaml.getString("server", serverName));
+            properties.setProperty("player", yaml.getString("player", ""));
+            properties.setProperty("category", yaml.getString("category", ""));
+            properties.setProperty("reference", yaml.getString("reference", ""));
+            properties.setProperty("gold_delta", Double.toString(yaml.getDouble("gold_delta", 0.0D)));
+            StringJoiner itemJoiner = new StringJoiner(",");
+            for (Map.Entry<String, Integer> item : intMap(yaml.getConfigurationSection("items")).entrySet()) {
+                itemJoiner.add(item.getKey() + ":" + item.getValue());
+            }
+            properties.setProperty("items", itemJoiner.toString());
+            properties.setProperty("previous_hash", Long.toString(yaml.getLong("previous_hash", 0L)));
+            properties.setProperty("entry_hash", Long.toString(yaml.getLong("entry_hash", 0L)));
+            properties.setProperty("payload_hash", yaml.getString("payload_hash", ""));
+        }
+        return properties;
     }
 }

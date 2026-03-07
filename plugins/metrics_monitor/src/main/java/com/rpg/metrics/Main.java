@@ -12,6 +12,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 public class Main extends JavaPlugin implements CommandExecutor {
     private RpgNetworkService service;
+    private volatile long lastAlertAt;
 
     @Override
     public void onEnable() {
@@ -37,6 +38,8 @@ public class Main extends JavaPlugin implements CommandExecutor {
         out.append("rpg_runtime_active_dungeons ").append(service.activeDungeonCount()).append('\n');
         out.append("rpg_runtime_active_instances ").append(service.activeInstanceCount()).append('\n');
         out.append("rpg_runtime_managed_entities ").append(service.managedEntityTotalCount()).append('\n');
+        out.append("rpg_runtime_entity_pressure ").append(String.format(Locale.US, "%.4f", service.entityPressure())).append('\n');
+        out.append("rpg_runtime_entity_spawn_denied_total ").append(service.managedEntitySpawnDeniedCount()).append('\n');
         out.append("rpg_runtime_ledger_queue_depth ").append(service.ledgerQueueDepth()).append('\n');
         out.append("rpg_runtime_ledger_pending_files ").append(service.pendingLedgerFileCount()).append('\n');
         out.append("rpg_runtime_db_operations_total ").append(service.dbOperationCount()).append('\n');
@@ -46,6 +49,34 @@ public class Main extends JavaPlugin implements CommandExecutor {
         out.append("rpg_runtime_tps ").append(String.format(Locale.US, "%.2f", tps)).append('\n');
         out.append("rpg_runtime_role{role=\"").append(service.serverRole()).append("\"} 1\n");
         service.writeMetricSnapshot(out.toString());
+        emitAlerts(tps);
+    }
+
+    private void emitAlerts(double tps) {
+        long now = System.currentTimeMillis();
+        long cooldownMs = Math.max(15_000L, service.scaling().getLong("operational.alert_cooldown_seconds", 30L) * 1000L);
+        if (now - lastAlertAt < cooldownMs) {
+            return;
+        }
+
+        double tpsWarn = Math.max(5.0D, service.scaling().getDouble("operational.alert_tps_below", 17.0D));
+        int ledgerWarn = Math.max(1, service.scaling().getInt("operational.alert_ledger_backlog", 64));
+        int leakWarn = Math.max(1, service.scaling().getInt("operational.alert_instance_leak", 50));
+
+        if (tps < tpsWarn) {
+            getLogger().warning("ALERT tps_drop tps=" + String.format(Locale.US, "%.2f", tps) + " threshold=" + String.format(Locale.US, "%.2f", tpsWarn));
+            lastAlertAt = now;
+            return;
+        }
+        if (service.ledgerQueueDepth() >= ledgerWarn || service.pendingLedgerFileCount() >= ledgerWarn) {
+            getLogger().warning("ALERT ledger_backlog queue=" + service.ledgerQueueDepth() + " pendingFiles=" + service.pendingLedgerFileCount() + " threshold=" + ledgerWarn);
+            lastAlertAt = now;
+            return;
+        }
+        if (service.activeInstanceCount() >= leakWarn) {
+            getLogger().warning("ALERT instance_leak activeInstances=" + service.activeInstanceCount() + " threshold=" + leakWarn);
+            lastAlertAt = now;
+        }
     }
 
     private double currentTps() {
@@ -70,6 +101,7 @@ public class Main extends JavaPlugin implements CommandExecutor {
             + " activeDungeons=" + service.activeDungeonCount()
             + " activeInstances=" + service.activeInstanceCount()
             + " managedEntities=" + service.managedEntityTotalCount()
+            + " entityPressure=" + String.format(Locale.US, "%.4f", service.entityPressure())
             + " ledgerQueue=" + service.ledgerQueueDepth()
             + " pendingLedgerFiles=" + service.pendingLedgerFileCount()
             + " dbAvgMs=" + String.format(Locale.US, "%.3f", service.dbLatencyMsAvg()));
