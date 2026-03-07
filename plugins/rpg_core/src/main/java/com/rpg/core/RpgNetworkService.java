@@ -32,7 +32,9 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import net.kyori.adventure.text.Component;
@@ -70,6 +72,7 @@ public final class RpgNetworkService {
     public record BossSummonResult(boolean ok, String bossId, String message, LivingEntity entity) {}
     private record LiveSession(String server, String role, boolean online, String guild, String activeDungeon, String activeDungeonInstanceId, long updatedAt) {}
     private record TravelTicket(String sourceServer, String targetServer, long expiresAt) {}
+    private record LedgerEntry(long sequence, long createdAt, UUID playerUuid, String category, String reference, double goldDelta, Map<String, Integer> itemDelta, String payload) {}
 
     private static final class DungeonInstanceState {
         private final String instanceId;
@@ -140,6 +143,7 @@ public final class RpgNetworkService {
     private final Path ticketDir;
     private final Path instanceDir;
     private final Path auditDir;
+    private final Path ledgerDir;
     private final Path metricsDir;
     private final Path eventDir;
     private final String serverName;
@@ -165,6 +169,8 @@ public final class RpgNetworkService {
     private final Map<UUID, Long> lastMobRewardAt = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastCommandAt = new ConcurrentHashMap<>();
     private final Map<String, BukkitTask> bossTasks = new ConcurrentHashMap<>();
+    private final ConcurrentLinkedQueue<LedgerEntry> ledgerQueue = new ConcurrentLinkedQueue<>();
+    private final AtomicLong ledgerSequence = new AtomicLong(System.currentTimeMillis());
     private final Map<String, DungeonInstanceState> dungeonInstances = new ConcurrentHashMap<>();
     private final Map<UUID, String> dungeonOwnerInstances = new ConcurrentHashMap<>();
     private volatile boolean mysqlSchemaReady;
@@ -202,6 +208,7 @@ public final class RpgNetworkService {
         this.ticketDir = runtimeDir.resolve("travel_tickets");
         this.instanceDir = runtimeDir.resolve("instances");
         this.auditDir = runtimeDir.resolve("audit");
+        this.ledgerDir = runtimeDir.resolve("ledger");
         this.metricsDir = root.resolve("metrics");
         this.eventDir = runtimeDir.resolve("events");
     }
@@ -213,6 +220,7 @@ public final class RpgNetworkService {
         ensurePath(ticketDir);
         ensurePath(instanceDir);
         ensurePath(auditDir);
+        ensurePath(ledgerDir);
         ensurePath(metricsDir);
         ensurePath(eventDir);
         validateBackendBaseline();
@@ -453,6 +461,7 @@ public final class RpgNetworkService {
     }
 
     public void flushDirty() {
+        flushLedger();
         List<UUID> profileIds = new ArrayList<>(dirtyProfiles);
         List<String> guildKeys = new ArrayList<>(dirtyGuilds);
         for (UUID uuid : profileIds) {
@@ -661,6 +670,7 @@ public final class RpgNetworkService {
             }
             int rewardXp = quests.getInt(questId + ".reward.xp", 0);
             applyQuestRewardXp(profile, objective, rewardXp);
+            appendLedgerMutation(profile.getUuid(), "quest_turnin", questId, rewardGold, intMap(quests.getConfigurationSection(questId + ".reward.items")));
             if (quests.getBoolean(questId + ".repeatable", false)) {
                 int cooldownHours = quests.getInt(questId + ".cooldown_hours", 0);
                 if (cooldownHours > 0) {
@@ -700,6 +710,7 @@ public final class RpgNetworkService {
             for (Map.Entry<String, Integer> entry : rolled.entrySet()) {
                 profile.addItem(entry.getKey(), entry.getValue());
             }
+            appendLedgerMutation(profile.getUuid(), "mob_kill", mobId, goldReward, rolled);
             awardSkillXp(profile, "combat", "mob_kill");
             updateQuestProgressForKill(profile, mobId, false, "");
             syncCollectQuestProgress(profile);
@@ -755,6 +766,7 @@ public final class RpgNetworkService {
             }
             int lockoutHours = bosses.getInt(bossId + ".summon.lockout_hours", 0);
             profile.setBossLockout(bossId, System.currentTimeMillis() + lockoutHours * 3_600_000L);
+            appendLedgerMutation(profile.getUuid(), "boss_kill", bossId, bonusGold, itemsGranted);
             awardSkillXp(profile, "combat", "boss_kill");
             updateQuestProgressForKill(profile, "", true, bossId);
             syncCollectQuestProgress(profile);
@@ -907,6 +919,7 @@ public final class RpgNetworkService {
             String bonusKey = dungeonId + "_clear_bonus";
             double goldReward = economy.getDouble("faucets.dungeons." + bonusKey, 0.0D);
             profile.addGold(goldReward);
+            appendLedgerMutation(profile.getUuid(), "dungeon_complete", dungeonId, goldReward, rewards);
             profile.setDungeonCooldown(dungeonId, System.currentTimeMillis() + dungeons.getLong(dungeonId + ".repeat_cooldown_seconds", 30L) * 1000L);
             teleportToPrimaryWorldSpawn(player);
             cleanupOwnedDungeonInstance(player.getUniqueId(), "complete");
@@ -1065,6 +1078,7 @@ public final class RpgNetworkService {
             }
             removeItems(profile, req);
             profile.setGearTier(gearPath, nextTier);
+            appendLedgerMutation(profile.getUuid(), "gear_upgrade", gearPath + ":" + currentTier + "->" + nextTier, -goldCost, negativeItemMap(req));
             awardSkillXp(profile, "crafting", "gear_upgrade");
             syncCollectQuestProgress(profile);
             writeAudit("gear_upgrade", player.getUniqueId() + ":" + gearPath + ":" + currentTier + "->" + nextTier);
@@ -1110,6 +1124,7 @@ public final class RpgNetworkService {
                 return new OperationResult(false, color("&cNeed " + money(fee) + " gold to travel."));
             }
             profile.incrementTransfers();
+            appendLedgerMutation(profile.getUuid(), "travel_fee", serverName + "->" + targetServer, -fee, Collections.emptyMap());
             feeHolder[0] = fee;
             sessionSnapshot[0] = RpgProfile.fromYaml(profile.getUuid(), profile.getLastName(), profile.toYaml());
             return new OperationResult(true, "");
@@ -1126,6 +1141,7 @@ public final class RpgNetworkService {
             clearTravelTicket(player.getUniqueId());
             withProfile(player, profile -> {
                 profile.addGold(fee);
+                appendLedgerMutation(profile.getUuid(), "travel_refund", serverName + "->" + targetServer, fee, Collections.emptyMap());
                 return null;
             });
             return new OperationResult(false, color("&cUnable to authorize the server switch."));
@@ -1134,6 +1150,7 @@ public final class RpgNetworkService {
             clearTravelTicket(player.getUniqueId());
             withProfile(player, profile -> {
                 profile.addGold(fee);
+                appendLedgerMutation(profile.getUuid(), "travel_refund", serverName + "->" + targetServer, fee, Collections.emptyMap());
                 return null;
             });
             return new OperationResult(false, color("&cLive routing state unavailable. Travel aborted."));
@@ -1142,6 +1159,7 @@ public final class RpgNetworkService {
             clearTravelTicket(player.getUniqueId());
             withProfile(player, profile -> {
                 profile.addGold(fee);
+                appendLedgerMutation(profile.getUuid(), "travel_refund", serverName + "->" + targetServer, fee, Collections.emptyMap());
                 return null;
             });
             return new OperationResult(false, color("&cProxy routing rejected the request."));
@@ -1839,6 +1857,10 @@ public final class RpgNetworkService {
         if (targetRole.isBlank()) {
             return false;
         }
+        String targetAddress = network.getString("servers." + targetServer + ".address", "");
+        if (!targetAddress.startsWith("127.0.0.1:")) {
+            return false;
+        }
         return switch (serverRole.toLowerCase(Locale.ROOT)) {
             case "lobby" -> "progression".equalsIgnoreCase(targetRole);
             case "progression" -> Set.of("lobby", "instance", "boss", "event").contains(targetRole.toLowerCase(Locale.ROOT));
@@ -1902,6 +1924,7 @@ public final class RpgNetworkService {
             }
             withProfile(uuid, latestName, profile -> {
                 profile.addGold(fee);
+                appendLedgerMutation(profile.getUuid(), "travel_refund", serverName + "->" + targetServer, fee, Collections.emptyMap());
                 clearTravelTicket(uuid);
                 localPlayer.sendMessage(color("&cTravel routing failed. Fee refunded."));
                 writeAudit("travel_refund", uuid + ":" + serverName + "->" + targetServer + ":fee=" + fee);
@@ -2439,6 +2462,9 @@ public final class RpgNetworkService {
     }
 
     private boolean canClaimReservedEntityKill(Player killer, Entity entity, boolean ignoreInstance) {
+        if (killer == null || entity == null) {
+            return false;
+        }
         String owner = tagValue(entity, "rpg_owner:");
         if (owner != null && !owner.equalsIgnoreCase(killer.getUniqueId().toString())) {
             return false;
@@ -2451,12 +2477,54 @@ public final class RpgNetworkService {
             return true;
         }
         DungeonInstanceState instance = loadDungeonInstance(instanceId);
-        return instance != null && killer.getUniqueId().equals(instance.ownerUuid);
+        return instance != null
+            && killer.getUniqueId().equals(instance.ownerUuid)
+            && entity.getWorld() != null
+            && instance.worldName.equals(entity.getWorld().getName());
     }
 
     private boolean isBoundMaterial(String itemId) {
         String key = itemId == null ? "" : itemId.toLowerCase(Locale.ROOT);
         return items.getBoolean("materials." + key + ".bound", false);
+    }
+
+    private void appendLedgerMutation(UUID playerUuid, String category, String reference, double goldDelta, Map<String, Integer> itemDelta) {
+        if (playerUuid == null || category == null || category.isBlank()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        long sequence = ledgerSequence.incrementAndGet();
+        Map<String, Integer> copy = new LinkedHashMap<>();
+        if (itemDelta != null) {
+            for (Map.Entry<String, Integer> entry : itemDelta.entrySet()) {
+                if (entry.getValue() != null && entry.getValue() != 0) {
+                    copy.put(entry.getKey(), entry.getValue());
+                }
+            }
+        }
+        YamlConfiguration yaml = new YamlConfiguration();
+        yaml.set("sequence", sequence);
+        yaml.set("created_at", now);
+        yaml.set("server", serverName);
+        yaml.set("player", playerUuid.toString());
+        yaml.set("category", category);
+        yaml.set("reference", reference == null ? "" : reference);
+        yaml.set("gold_delta", goldDelta);
+        yaml.set("items", copy);
+        ledgerQueue.add(new LedgerEntry(sequence, now, playerUuid, category, reference == null ? "" : reference, goldDelta, copy, yaml.saveToString()));
+    }
+
+    private Map<String, Integer> negativeItemMap(Map<String, Integer> source) {
+        Map<String, Integer> negative = new LinkedHashMap<>();
+        if (source == null) {
+            return negative;
+        }
+        for (Map.Entry<String, Integer> entry : source.entrySet()) {
+            if (entry.getValue() != null && entry.getValue() > 0) {
+                negative.put(entry.getKey(), -entry.getValue());
+            }
+        }
+        return negative;
     }
 
     private void evaluateBackendSafety() {
@@ -2476,6 +2544,9 @@ public final class RpgNetworkService {
         }
         if (redisSessionRequired() && !endpointReachable(persistence.getString("redis.host", "127.0.0.1"), persistence.getInt("redis.port", 6379), persistence.getInt("health_checks.redis_connect_timeout_ms", 500))) {
             enterSafeMode("Redis session backend unavailable");
+        }
+        if (mysqlAuthorityRequired() && persistence.getBoolean("local_fallback.allow_writes_when_db_unavailable", false)) {
+            enterSafeMode("Unsafe degraded local-authority mode is disabled in production");
         }
     }
 
@@ -2934,6 +3005,7 @@ public final class RpgNetworkService {
             try (Statement statement = connection.createStatement()) {
                 statement.executeUpdate("CREATE TABLE IF NOT EXISTS rpg_profiles (uuid VARCHAR(36) PRIMARY KEY, last_name VARCHAR(32), guild_name VARCHAR(32), gold DOUBLE NOT NULL, payload LONGTEXT NOT NULL, updated_at BIGINT NOT NULL)");
                 statement.executeUpdate("CREATE TABLE IF NOT EXISTS rpg_guilds (name VARCHAR(32) PRIMARY KEY, owner_uuid VARCHAR(36), member_count INT NOT NULL, bank_gold DOUBLE NOT NULL, payload LONGTEXT NOT NULL, updated_at BIGINT NOT NULL)");
+                statement.executeUpdate("CREATE TABLE IF NOT EXISTS rpg_ledger (sequence_id BIGINT PRIMARY KEY, created_at BIGINT NOT NULL, server VARCHAR(64) NOT NULL, player_uuid VARCHAR(36) NOT NULL, category VARCHAR(64) NOT NULL, reference_id VARCHAR(128) NOT NULL, gold_delta DOUBLE NOT NULL, item_delta LONGTEXT NOT NULL, payload LONGTEXT NOT NULL)");
                 mysqlSchemaReady = true;
             }
         }
@@ -3055,6 +3127,83 @@ public final class RpgNetworkService {
                 return false;
             }
             return false;
+        }
+    }
+
+    private void flushLedger() {
+        if (ledgerQueue.isEmpty()) {
+            return;
+        }
+        List<LedgerEntry> pending = new ArrayList<>();
+        for (int i = 0; i < 250; i++) {
+            LedgerEntry entry = ledgerQueue.poll();
+            if (entry == null) {
+                break;
+            }
+            pending.add(entry);
+        }
+        if (pending.isEmpty()) {
+            return;
+        }
+        int index = 0;
+        for (; index < pending.size(); index++) {
+            LedgerEntry entry = pending.get(index);
+            if (!persistLedgerEntry(entry)) {
+                break;
+            }
+            mirrorLedgerEntry(entry);
+        }
+        if (index < pending.size()) {
+            for (int i = pending.size() - 1; i >= index; i--) {
+                ledgerQueue.add(pending.get(i));
+            }
+        }
+    }
+
+    private void mirrorLedgerEntry(LedgerEntry entry) {
+        if (!persistence.getBoolean("local_fallback.enabled", true)) {
+            return;
+        }
+        String fileName = "ledger-" + LocalDate.now(ZoneId.systemDefault()) + ".log";
+        String line = entry.sequence() + "|" + entry.createdAt() + "|" + serverName + "|" + entry.playerUuid() + "|" + entry.category() + "|" + entry.reference() + "|" + entry.goldDelta() + "|" + entry.itemDelta() + System.lineSeparator();
+        appendAuditLine(fileName, line);
+    }
+
+    private boolean persistLedgerEntry(LedgerEntry entry) {
+        boolean required = "mysql".equalsIgnoreCase(network.getString("data_flow.economy_ledger", ""));
+        if (!persistence.getBoolean("mysql.enabled", true)) {
+            if (required) {
+                enterSafeMode("Economy ledger authority unavailable");
+            }
+            return !required;
+        }
+        try (Connection connection = mysqlConnection()) {
+            if (connection == null) {
+                if (required) {
+                    enterSafeMode("Economy ledger authority unavailable");
+                }
+                return !required;
+            }
+            ensureMysqlSchema(connection);
+            try (PreparedStatement statement = connection.prepareStatement("INSERT INTO rpg_ledger (sequence_id, created_at, server, player_uuid, category, reference_id, gold_delta, item_delta, payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                statement.setLong(1, entry.sequence());
+                statement.setLong(2, entry.createdAt());
+                statement.setString(3, serverName);
+                statement.setString(4, entry.playerUuid().toString());
+                statement.setString(5, entry.category());
+                statement.setString(6, entry.reference());
+                statement.setDouble(7, entry.goldDelta());
+                statement.setString(8, String.valueOf(entry.itemDelta()));
+                statement.setString(9, entry.payload());
+                statement.executeUpdate();
+                return true;
+            }
+        } catch (Exception exception) {
+            plugin.getLogger().fine("MySQL ledger write unavailable: " + exception.getMessage());
+            if (required) {
+                enterSafeMode("Economy ledger authority unavailable");
+            }
+            return !required;
         }
     }
 
