@@ -104,12 +104,16 @@ public final class RpgNetworkService {
         REWARD_COMMIT,
         EGRESS,
         CLEANUP,
-        TERMINATED
+        TERMINATED,
+        FAILED,
+        ORPHANED
     }
 
     private enum InstanceType {
         DUNGEON,
-        BOSS_ENCOUNTER
+        BOSS_ENCOUNTER,
+        EVENT,
+        EXPLORATION_SANDBOX
     }
 
     private static final class DungeonInstanceState {
@@ -394,6 +398,10 @@ public final class RpgNetworkService {
     private final AtomicLong allocationLatencyTotalMillis = new AtomicLong();
     private final AtomicLong allocationLatencyMaxMillis = new AtomicLong();
     private final InstanceOrchestrator instanceOrchestrator = new InstanceOrchestrator();
+    private final AuthorityCoordinationPlane authorityPlane = new AuthorityCoordinationPlane();
+    private final EconomyItemAuthorityPlane economyItemPlane = new EconomyItemAuthorityPlane();
+    private final InstanceExperimentControlPlane instanceExperimentPlane = new InstanceExperimentControlPlane();
+    private final ExploitForensicsPlane exploitForensicsPlane = new ExploitForensicsPlane();
     private final Map<String, Integer> managedEntityCounters = new ConcurrentHashMap<>();
     private final Set<UUID> managedEntityIds = ConcurrentHashMap.newKeySet();
     private final AtomicLong dbOperationCount = new AtomicLong();
@@ -472,6 +480,7 @@ public final class RpgNetworkService {
         loadPersistedInstances();
         rebuildManagedEntityCounters();
         runStartupConsistencyChecks();
+        initializeControlPlanes();
         plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, "BungeeCord");
         long flushIntervalTicks = Math.max(20L, persistence.getLong("write_policy.profile_save_interval_seconds", 60L) * 20L);
         long ledgerFlushTicks = Math.max(1L, persistence.getLong("write_policy.ledger_flush_interval_seconds", 1L) * 20L);
@@ -733,6 +742,12 @@ public final class RpgNetworkService {
     }
 
     public void handleJoin(Player player) {
+        long now = System.currentTimeMillis();
+        if (authorityPlane.rejectDuplicateLogin(player.getUniqueId(), serverName, now)) {
+            player.sendMessage(color("&cDuplicate login rejected by authority plane."));
+            player.kickPlayer(color("&cAuthority conflict detected."));
+            return;
+        }
         if (!authorizeJoin(player, loadLiveSession(player.getUniqueId()))) {
             return;
         }
@@ -759,6 +774,7 @@ public final class RpgNetworkService {
             return profile.copy();
         });
         writeSession(sessionSnapshot, true);
+        authorityPlane.claimSession(player.getUniqueId(), serverName, UUID.randomUUID().toString(), System.currentTimeMillis(), transferLeaseMillis());
         applyPassiveStats(player);
         if (safeMode) {
             player.sendMessage(color("&cBackend safe mode active: &e" + safeModeReason));
@@ -767,6 +783,7 @@ public final class RpgNetworkService {
     }
 
     public void handleQuit(Player player) {
+        authorityPlane.releaseSession(player.getUniqueId());
         RpgProfile sessionSnapshot = withProfile(player, profile -> {
             profile.setLastQuitAt(System.currentTimeMillis());
             holdDungeonInstance(profile);
@@ -1502,6 +1519,8 @@ public final class RpgNetworkService {
                 DungeonInstanceState encounterInstance = null;
                 if (dungeonIdForBoss == null) {
                     encounterInstance = instanceOrchestrator.allocateBossEncounter(player.getUniqueId(), bossId, Set.of(player.getUniqueId()));
+                    instanceExperimentPlane.registerInstance(InstanceExperimentControlPlane.RuntimeInstanceClass.BOSS_ENCOUNTER_INSTANCE,
+                        player.getUniqueId().toString(), "reward_idempotency_policy:v1", "drop_rate_canary", instanceHoldMillis());
                     World encounterWorld = instanceOrchestrator.bootInstanceWorld(encounterInstance);
                     if (encounterWorld == null) {
                         profile.addGold(goldCost);
@@ -1578,6 +1597,8 @@ public final class RpgNetworkService {
                 DungeonInstanceState encounterInstance = null;
                 if (dungeonIdForBoss == null) {
                     encounterInstance = instanceOrchestrator.allocateBossEncounter(player.getUniqueId(), bossId, Set.of(player.getUniqueId()));
+                    instanceExperimentPlane.registerInstance(InstanceExperimentControlPlane.RuntimeInstanceClass.BOSS_ENCOUNTER_INSTANCE,
+                        player.getUniqueId().toString(), "reward_idempotency_policy:v1", "drop_rate_canary", instanceHoldMillis());
                     World encounterWorld = instanceOrchestrator.bootInstanceWorld(encounterInstance);
                     if (encounterWorld == null) {
                         guild.addBankGold(goldCost);
@@ -2827,7 +2848,10 @@ public final class RpgNetworkService {
     }
 
     private DungeonInstanceState createDungeonInstance(UUID ownerUuid, String dungeonId, Set<UUID> partyMembers) {
-        return instanceOrchestrator.allocateDungeonInstance(ownerUuid, dungeonId, partyMembers);
+        DungeonInstanceState instance = instanceOrchestrator.allocateDungeonInstance(ownerUuid, dungeonId, partyMembers);
+        instanceExperimentPlane.registerInstance(InstanceExperimentControlPlane.RuntimeInstanceClass.DUNGEON_INSTANCE,
+            ownerUuid == null ? "" : ownerUuid.toString(), "transfer_safety_policy:v1", "drop_rate_canary", instanceHoldMillis());
+        return instance;
     }
 
     private void loadPersistedInstances() {
@@ -3045,6 +3069,7 @@ public final class RpgNetworkService {
 
     private void cleanupExpiredInstances() {
         long now = System.currentTimeMillis();
+        instanceExperimentPlane.recoverOrphans(now);
         long holdMillis = instanceHoldMillis();
         for (DungeonInstanceState instance : new ArrayList<>(dungeonInstances.values())) {
             if (Bukkit.getPlayer(instance.ownerUuid) != null) {
@@ -3061,6 +3086,7 @@ public final class RpgNetworkService {
             }
         }
         cleanupOrphanWorlds();
+        instanceExperimentPlane.sweepTerminated();
     }
 
     private void cleanupOrphanWorlds() {
@@ -3411,6 +3437,15 @@ public final class RpgNetworkService {
         String payloadHash = sha256(payloadWithoutHash);
         String payload = ledgerPayload(new LedgerPayloadSnapshot(operationId, sequence, now, serverName, playerUuid, category, normalizedReference, goldDelta, copy, previousHash, hash, payloadHash));
         LedgerEntry entry = new LedgerEntry(operationId, serverName, sequence, now, playerUuid, category, normalizedReference, goldDelta, copy, payload, payloadHash);
+        try {
+            economyItemPlane.appendMutation(operationId, playerUuid, category, normalizedReference, goldDelta, copy, serverName);
+        } catch (IllegalStateException mismatch) {
+            exploitForensicsPlane.record("duplicate_reward", playerUuid, category + ":" + normalizedReference, payloadHash,
+                ExploitForensicsPlane.Action.REWARD_DELAY,
+                Map.of("reason", "ledger_duplicate_payload_mismatch", "operation_id", operationId));
+            enterSafeMode("Ledger duplicate payload mismatch");
+            throw mismatch;
+        }
         persistPendingLedgerEntry(entry);
         ledgerQueue.add(entry);
         ledgerHashChain.set(hash);
@@ -4722,6 +4757,12 @@ public final class RpgNetworkService {
         }
     }
 
+    private void initializeControlPlanes() {
+        instanceExperimentPlane.activatePolicy("transfer_safety_policy", "v1", "artifact:policy:transfer_safety:v1");
+        instanceExperimentPlane.activatePolicy("reward_idempotency_policy", "v1", "artifact:policy:reward_idempotency:v1");
+        instanceExperimentPlane.registerExperiment("drop_rate_canary", "drop_rates", serverRole, "artifact:exp:drop_rate_canary:v1", 0.30D);
+    }
+
     private void writeHealthSnapshot() {
         YamlConfiguration yaml = new YamlConfiguration();
         yaml.set("server", serverName);
@@ -4764,7 +4805,31 @@ public final class RpgNetworkService {
         yaml.set("guild_value_drift", guildValueDriftCount());
         yaml.set("replay_divergence", replayDivergenceCount());
         yaml.set("ledger_last_flush_at", ledgerLastFlushAt.get());
+        YamlConfiguration authority = authorityPlane.metricsSnapshot();
+        YamlConfiguration economyAuthority = economyItemPlane.snapshot();
+        YamlConfiguration instanceControl = instanceExperimentPlane.snapshot();
+        YamlConfiguration exploitForensics = exploitForensicsPlane.snapshot();
+        yaml.set("authority_plane", authority.getValues(true));
+        yaml.set("economy_item_authority_plane", economyAuthority.getValues(true));
+        yaml.set("instance_experiment_control_plane", instanceControl.getValues(true));
+        yaml.set("exploit_forensics_plane", exploitForensics.getValues(true));
         writeYaml(runtimeDir.resolve("status").resolve(serverName + ".yml"), yaml.saveToString());
+    }
+
+    public long authoritySplitBrainDetectionCount() {
+        return authorityPlane.metricsSnapshot().getLong("split_brain_detections", 0L);
+    }
+
+    public long authoritySessionConflictCount() {
+        return authorityPlane.metricsSnapshot().getLong("session_ownership_conflicts", 0L);
+    }
+
+    public long economyItemQuarantineCount() {
+        return economyItemPlane.snapshot().getLong("quarantined_items", 0L);
+    }
+
+    public long exploitIncidentCount() {
+        return exploitForensicsPlane.snapshot().getLong("incident_total", 0L);
     }
 
     private boolean endpointReachable(String host, int port, int timeoutMs) {
