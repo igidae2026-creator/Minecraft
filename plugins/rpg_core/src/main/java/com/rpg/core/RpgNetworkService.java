@@ -401,6 +401,9 @@ public final class RpgNetworkService {
     private final AtomicLong dbLatencyTotalNanos = new AtomicLong();
     private final AtomicLong dbLatencyMaxNanos = new AtomicLong();
     private final AtomicLong managedEntitySpawnDenied = new AtomicLong();
+    private final AtomicLong transferBarrierRejects = new AtomicLong();
+    private final AtomicLong casConflictCount = new AtomicLong();
+    private final AtomicLong rewardDuplicateSuppressed = new AtomicLong();
     private volatile boolean mysqlSchemaReady;
     private volatile boolean mysqlDriverReady;
     private volatile boolean mysqlDriverUnavailableLogged;
@@ -637,6 +640,18 @@ public final class RpgNetworkService {
 
     public long managedEntitySpawnDeniedCount() {
         return managedEntitySpawnDenied.get();
+    }
+
+    public long transferBarrierRejectCount() {
+        return transferBarrierRejects.get();
+    }
+
+    public long casConflictCount() {
+        return casConflictCount.get();
+    }
+
+    public long rewardDuplicateSuppressionCount() {
+        return rewardDuplicateSuppressed.get();
     }
 
     public int ledgerQueueDepth() {
@@ -1342,6 +1357,7 @@ public final class RpgNetworkService {
             }
             String completionClaimKey = "dungeon-complete:" + profile.getUuid() + ":" + instanceId;
             if (profile.hasClaimedOperation(completionClaimKey)) {
+                rewardDuplicateSuppressed.incrementAndGet();
                 return new DungeonCompletion(true, false, dungeonId, 0.0D, Collections.emptyMap(), color("&eDungeon rewards already claimed for this run."));
             }
             String requiredBoss = dungeons.getString(dungeonId + ".boss", "");
@@ -1386,6 +1402,7 @@ public final class RpgNetworkService {
             }
             String opKey = "event-bonus:" + eventId + ":" + nonce;
             if (profile.hasClaimedOperation(opKey)) {
+                rewardDuplicateSuppressed.incrementAndGet();
                 return new OperationResult(true, color("&7Duplicate event reward suppressed."));
             }
             profile.markClaimedOperation(opKey);
@@ -2733,6 +2750,7 @@ public final class RpgNetworkService {
             return null;
         }
         if (ticket.transferLease().isBlank() || ticket.versionClaim() <= 0L) {
+            transferBarrierRejects.incrementAndGet();
             writeAudit("travel_fence_reject", uuid + ":invalid_lease:" + expectedTarget + ":transfer=" + ticket.transferId());
             clearTravelTicket(uuid);
             return null;
@@ -2740,6 +2758,7 @@ public final class RpgNetworkService {
         if (previousSession != null && previousSession.updatedAt() > 0L && ticket.issuedAt() > 0L
             && previousSession.updatedAt() > ticket.issuedAt()
             && !ticket.sourceServer().equalsIgnoreCase(previousSession.server())) {
+            transferBarrierRejects.incrementAndGet();
             writeAudit("travel_fence_reject", uuid + ":" + previousSession.server() + "->" + expectedTarget + ":transfer=" + ticket.transferId());
             clearTravelTicket(uuid);
             return null;
@@ -3342,13 +3361,9 @@ public final class RpgNetworkService {
         }
         long previousHash = ledgerHashChain.get();
         String normalizedReference = reference == null ? "" : reference;
-
-        LedgerPayloadSnapshot snapshot = new LedgerPayloadSnapshot(operationId, sequence, now, serverName, playerUuid, category, normalizedReference, goldDelta, copy, previousHash, hash, "");
-        String payloadWithoutHash = ledgerPayload(snapshot);
-
         long hash = Objects.hash(operationNumericId, now, serverName, playerUuid.toString(), category, normalizedReference, goldDelta, copy, previousHash);
         String operationId = Long.toUnsignedString(operationNumericId);
-        String payloadWithoutHash = ledgerPayload(operationId, sequence, now, serverName, playerUuid, category, normalizedReference, goldDelta, copy, previousHash, hash, "");
+        String payloadWithoutHash = ledgerPayload(new LedgerPayloadSnapshot(operationId, sequence, now, serverName, playerUuid, category, normalizedReference, goldDelta, copy, previousHash, hash, ""));
         String payloadHash = sha256(payloadWithoutHash);
         String payload = ledgerPayload(new LedgerPayloadSnapshot(operationId, sequence, now, serverName, playerUuid, category, normalizedReference, goldDelta, copy, previousHash, hash, payloadHash));
         LedgerEntry entry = new LedgerEntry(operationId, serverName, sequence, now, playerUuid, category, normalizedReference, goldDelta, copy, payload, payloadHash);
@@ -3356,9 +3371,30 @@ public final class RpgNetworkService {
         ledgerQueue.add(entry);
         ledgerHashChain.set(hash);
         int immediateFlushThreshold = Math.max(16, persistence.getInt("write_policy.ledger_immediate_flush_queue_threshold", 64));
-        if (ledgerQueue.size() >= immediateFlushThreshold) {
-            Bukkit.getScheduler().runTaskAsynchronously(plugin, this::flushLedger);
+        if (requiresImmediateLedgerDurability(category) || ledgerQueue.size() >= immediateFlushThreshold) {
+            flushLedger();
         }
+    }
+
+    private boolean requiresImmediateLedgerDurability(String category) {
+        if (category == null || category.isBlank()) {
+            return false;
+        }
+        List<String> categories = persistence.getStringList("write_policy.ledger_immediate_flush_categories");
+        if (!categories.isEmpty()) {
+            for (String configured : categories) {
+                if (category.equalsIgnoreCase(configured)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return category.startsWith("travel_")
+            || category.startsWith("boss_summon")
+            || category.startsWith("guild_bank_")
+            || category.startsWith("dungeon_complete")
+            || category.startsWith("event_bonus_reward")
+            || category.startsWith("admin_reward");
     }
 
     private String ledgerPayload(LedgerPayloadSnapshot snapshot) {
@@ -4156,11 +4192,13 @@ public final class RpgNetworkService {
                         if (durableVersion == version) {
                             return PersistOutcome.SUCCESS;
                         }
+                        casConflictCount.incrementAndGet();
                         plugin.getLogger().warning("CAS profile write rejected for " + profile.getUuid() + " expected=" + expectedStoredVersion + " durable=" + durableVersion + " next=" + version);
                         return PersistOutcome.CONFLICT;
                     }
                 }
             }
+            casConflictCount.incrementAndGet();
             return PersistOutcome.CONFLICT;
         } catch (Exception exception) {
             plugin.getLogger().fine("MySQL profile persistence unavailable: " + exception.getMessage());
@@ -4224,11 +4262,13 @@ public final class RpgNetworkService {
                         if (durableVersion == version) {
                             return PersistOutcome.SUCCESS;
                         }
+                        casConflictCount.incrementAndGet();
                         plugin.getLogger().warning("CAS guild write rejected for " + guild.getName() + " expected=" + expectedStoredVersion + " durable=" + durableVersion + " next=" + version);
                         return PersistOutcome.CONFLICT;
                     }
                 }
             }
+            casConflictCount.incrementAndGet();
             return PersistOutcome.CONFLICT;
         } catch (Exception exception) {
             plugin.getLogger().fine("MySQL guild persistence unavailable: " + exception.getMessage());
@@ -4555,7 +4595,9 @@ public final class RpgNetworkService {
         yaml.set("db_operation_errors_total", dbOperationErrorCount());
         yaml.set("db_latency_ms_avg", dbLatencyMsAvg());
         yaml.set("db_latency_ms_max", dbLatencyMsMax());
-        yaml.set("ledger_queue_pending", ledgerQueue.size());
+        yaml.set("transfer_fence_rejects", transferBarrierRejectCount());
+        yaml.set("cas_conflicts", casConflictCount());
+        yaml.set("reward_duplicate_suppressed", rewardDuplicateSuppressionCount());
         yaml.set("ledger_last_flush_at", ledgerLastFlushAt.get());
         writeYaml(runtimeDir.resolve("status").resolve(serverName + ".yml"), yaml.saveToString());
     }

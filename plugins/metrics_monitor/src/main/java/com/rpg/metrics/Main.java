@@ -46,6 +46,9 @@ public class Main extends JavaPlugin implements CommandExecutor {
         out.append("rpg_runtime_db_operation_errors_total ").append(service.dbOperationErrorCount()).append('\n');
         out.append("rpg_runtime_db_latency_ms_avg ").append(String.format(Locale.US, "%.3f", service.dbLatencyMsAvg())).append('\n');
         out.append("rpg_runtime_db_latency_ms_max ").append(String.format(Locale.US, "%.3f", service.dbLatencyMsMax())).append('\n');
+        out.append("rpg_runtime_transfer_fence_rejects_total ").append(service.transferBarrierRejectCount()).append('\n');
+        out.append("rpg_runtime_cas_conflicts_total ").append(service.casConflictCount()).append('\n');
+        out.append("rpg_runtime_reward_duplicate_suppressed_total ").append(service.rewardDuplicateSuppressionCount()).append('\n');
         out.append("rpg_runtime_tps ").append(String.format(Locale.US, "%.2f", tps)).append('\n');
         out.append("rpg_runtime_role{role=\"").append(service.serverRole()).append("\"} 1\n");
         service.writeMetricSnapshot(out.toString());
@@ -62,6 +65,8 @@ public class Main extends JavaPlugin implements CommandExecutor {
         double tpsWarn = Math.max(5.0D, service.scaling().getDouble("operational.alert_tps_below", 17.0D));
         int ledgerWarn = Math.max(1, service.scaling().getInt("operational.alert_ledger_backlog", 64));
         int leakWarn = Math.max(1, service.scaling().getInt("operational.alert_instance_leak", 50));
+        int transferFenceWarn = Math.max(1, service.scaling().getInt("operational.alert_transfer_fence_rejects", 5));
+        int casConflictWarn = Math.max(1, service.scaling().getInt("operational.alert_cas_conflicts", 5));
 
         if (tps < tpsWarn) {
             getLogger().warning("ALERT tps_drop tps=" + String.format(Locale.US, "%.2f", tps) + " threshold=" + String.format(Locale.US, "%.2f", tpsWarn));
@@ -75,6 +80,16 @@ public class Main extends JavaPlugin implements CommandExecutor {
         }
         if (service.activeInstanceCount() >= leakWarn) {
             getLogger().warning("ALERT instance_leak activeInstances=" + service.activeInstanceCount() + " threshold=" + leakWarn);
+            lastAlertAt = now;
+            return;
+        }
+        if (service.transferBarrierRejectCount() >= transferFenceWarn) {
+            getLogger().warning("ALERT transfer_fence_rejects rejects=" + service.transferBarrierRejectCount() + " threshold=" + transferFenceWarn);
+            lastAlertAt = now;
+            return;
+        }
+        if (service.casConflictCount() >= casConflictWarn) {
+            getLogger().warning("ALERT cas_conflicts count=" + service.casConflictCount() + " threshold=" + casConflictWarn);
             lastAlertAt = now;
         }
     }
