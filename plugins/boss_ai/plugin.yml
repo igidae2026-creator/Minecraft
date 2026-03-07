@@ -1,0 +1,15 @@
+name: boss_ai
+main: com.rpg.boss.Main
+version: 1.2.0
+api-version: '1.20'
+author: RPGNetwork
+depend:
+- rpg_core
+description: Boss summon, lockout, ability, and reward runtime
+commands:
+  boss:
+    usage: /boss summon <boss_id> [guild]
+    permission: rpg.boss
+permissions:
+  rpg.boss:
+    default: true

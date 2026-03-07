@@ -1,0 +1,134 @@
+tiers:
+  common:
+    stat_bonus: 1
+    upgrade_cost_gold: 50
+    required_materials:
+      goblin_ear: 20
+      iron_fragment: 10
+    tradable: true
+  rare:
+    stat_bonus: 3
+    upgrade_cost_gold: 150
+    required_materials:
+      wolf_pelt: 16
+      dungeon_shard: 10
+    tradable: true
+  epic:
+    stat_bonus: 6
+    upgrade_cost_gold: 400
+    required_materials:
+      guardian_core: 1
+      dungeon_shard: 25
+    tradable: false
+  legendary:
+    stat_bonus: 10
+    upgrade_cost_gold: 900
+    required_materials:
+      ancient_emblem: 2
+      guardian_core: 2
+    tradable: false
+materials:
+  gold_coin:
+    vendor_value: 1
+    stack_size: 64
+    tradable: true
+    bound: false
+  goblin_ear:
+    vendor_value: 2
+    stack_size: 64
+    tradable: true
+    bound: false
+    progression_use: quest_and_upgrade
+  wolf_pelt:
+    vendor_value: 3
+    stack_size: 64
+    tradable: true
+    bound: false
+    progression_use: upgrade
+  iron_fragment:
+    vendor_value: 4
+    stack_size: 64
+    tradable: true
+    bound: false
+    progression_use: upgrade
+  cave_map_scrap:
+    vendor_value: 0
+    stack_size: 64
+    tradable: false
+    bound: true
+    progression_use: dungeon_entry
+  dungeon_shard:
+    vendor_value: 8
+    stack_size: 64
+    tradable: true
+    bound: false
+    progression_use: epic_upgrade
+  boss_totem_fragment:
+    vendor_value: 0
+    stack_size: 64
+    tradable: false
+    bound: true
+    progression_use: boss_summon
+  guardian_seed:
+    vendor_value: 0
+    stack_size: 16
+    tradable: false
+    bound: true
+    progression_use: boss_summon
+  guardian_core:
+    vendor_value: 0
+    stack_size: 8
+    tradable: false
+    bound: true
+    progression_use: epic_upgrade
+  ancient_emblem:
+    vendor_value: 0
+    stack_size: 8
+    tradable: false
+    bound: true
+    progression_use: legendary_upgrade
+  gold_coin_bundle:
+    vendor_value: 40
+    stack_size: 16
+    tradable: false
+    bound: true
+    progression_use: boss_bonus
+gear_paths:
+  trainee_blade:
+    starting_tier: common
+    upgrade_path:
+    - common
+    - rare
+    - epic
+  ranger_bow:
+    starting_tier: common
+    upgrade_path:
+    - common
+    - rare
+    - epic
+crafting:
+  goblin_slasher:
+    tier: rare
+    required_materials:
+      goblin_ear: 20
+      iron_fragment: 10
+    gold_cost: 50
+  wolf_hunter_jerkin:
+    tier: rare
+    required_materials:
+      wolf_pelt: 16
+      iron_fragment: 8
+    gold_cost: 60
+  guardian_blade:
+    tier: epic
+    required_materials:
+      guardian_core: 1
+      dungeon_shard: 25
+    gold_cost: 400
+  guardian_mail:
+    tier: epic
+    required_materials:
+      guardian_core: 1
+      dungeon_shard: 20
+      wolf_pelt: 24
+    gold_cost: 380

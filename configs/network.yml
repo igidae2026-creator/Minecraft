@@ -1,0 +1,97 @@
+proxy:
+  bind: 0.0.0.0:25565
+  motd: <gold>RPG Network</gold> <gray>- Production Baseline</gray>
+  show_max_players: 500
+  online_mode: true
+  force_key_authentication: true
+  player_info_forwarding_mode: modern
+  prevent_client_proxy_connections: true
+  forwarding_secret_file: forwarding.secret
+  ping_passthrough: DESCRIPTION
+  kick_existing_players: true
+  sample_players_in_ping: false
+  enable_player_address_logging: false
+  try:
+  - lobby
+  - rpg_world
+  advanced:
+    compression_threshold: 256
+    compression_level: -1
+    login_ratelimit: 3000
+    connection_timeout: 5000
+    read_timeout: 30000
+    haproxy_protocol: false
+    tcp_fast_open: false
+    bungee_plugin_message_channel: true
+    show_ping_requests: false
+    failover_on_unexpected_server_disconnect: true
+    announce_proxy_commands: false
+    log_command_executions: true
+    log_player_connections: true
+    accepts_transfers: false
+    enable_reuse_port: true
+    command_rate_limit: 75
+    forward_commands_if_rate_limited: false
+    kick_after_rate_limited_commands: 5
+    tab_complete_rate_limit: 25
+    kick_after_rate_limited_tab_completes: 10
+  query:
+    enabled: false
+    port: 25565
+    map: RPG-Network
+    show_plugins: false
+servers:
+  lobby:
+    address: 127.0.0.1:25566
+    role: lobby
+    max_players: 250
+    view_distance: 6
+    simulation_distance: 4
+    motd: RPG Lobby
+    difficulty: easy
+  rpg_world:
+    address: 127.0.0.1:25567
+    role: progression
+    max_players: 180
+    view_distance: 8
+    simulation_distance: 6
+    motd: RPG World
+    difficulty: normal
+  dungeons:
+    address: 127.0.0.1:25568
+    role: instance
+    max_players: 120
+    view_distance: 6
+    simulation_distance: 4
+    motd: Dungeon Instances
+    difficulty: normal
+  boss_world:
+    address: 127.0.0.1:25569
+    role: boss
+    max_players: 80
+    view_distance: 6
+    simulation_distance: 4
+    motd: Boss Arena
+    difficulty: hard
+  events:
+    address: 127.0.0.1:25570
+    role: event
+    max_players: 150
+    view_distance: 7
+    simulation_distance: 5
+    motd: World Events
+    difficulty: normal
+operational:
+  backend_bind_localhost: true
+  save_before_transfer: true
+  maintenance_mode_server: lobby
+  proxy_failover_server: lobby
+  disable_reload_in_production: true
+  required_java_version: 21
+data_flow:
+  player_profile: mysql
+  inventory_authority: mysql
+  live_session_state: redis
+  guild_state: mysql
+  economy_ledger: mysql
+  metrics_sink: prometheus_textfile

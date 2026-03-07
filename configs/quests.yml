@@ -1,0 +1,43 @@
+starter_hunt:
+  objective: kill
+  mob: goblin
+  amount: 10
+  repeatable: false
+  reward:
+    xp: 100
+    gold: 35
+    items:
+      cave_map_scrap: 2
+pelt_collection:
+  objective: collect
+  item: wolf_pelt
+  amount: 12
+  repeatable: true
+  cooldown_hours: 6
+  reward:
+    xp: 120
+    gold: 30
+    items:
+      iron_fragment: 4
+cave_recon:
+  objective: dungeon_clear
+  dungeon: goblin_cave
+  amount: 1
+  repeatable: true
+  cooldown_hours: 6
+  reward:
+    xp: 250
+    gold: 60
+    items:
+      boss_totem_fragment: 1
+guardian_hunt:
+  objective: boss_kill
+  boss: forest_guardian
+  amount: 1
+  repeatable: true
+  cooldown_hours: 24
+  reward:
+    xp: 500
+    gold: 120
+    items:
+      ancient_emblem: 1

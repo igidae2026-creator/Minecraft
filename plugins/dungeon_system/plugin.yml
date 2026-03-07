@@ -1,0 +1,16 @@
+name: dungeon_system
+main: com.rpg.dungeon.Main
+version: 1.2.0
+api-version: '1.20'
+author: RPGNetwork
+depend:
+- rpg_core
+- boss_ai
+description: Dungeon entry, wave, boss, and completion runtime
+commands:
+  dungeon:
+    usage: /dungeon <status|enter|abandon>
+    permission: rpg.dungeon
+permissions:
+  rpg.dungeon:
+    default: true

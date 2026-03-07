@@ -1,0 +1,28 @@
+name: economy_engine
+main: com.rpg.economy.Main
+version: 1.2.0
+api-version: '1.20'
+author: RPGNetwork
+depend:
+- rpg_core
+loadbefore:
+- quest_system
+- guild_system
+description: Economy safety, rewards, sinks, vendor, and upgrade runtime
+commands:
+  wallet:
+    usage: /wallet
+    permission: rpg.wallet
+  rpgvendor:
+    usage: /rpgvendor sell <item> <amount>
+    permission: rpg.vendor
+  rpgupgrade:
+    usage: /rpgupgrade <gear_path>
+    permission: rpg.upgrade
+permissions:
+  rpg.wallet:
+    default: true
+  rpg.vendor:
+    default: true
+  rpg.upgrade:
+    default: true

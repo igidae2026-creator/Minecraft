@@ -1,0 +1,43 @@
+mysql:
+  enabled: true
+  host: 127.0.0.1
+  port: 3306
+  database: rpg_network
+  username: rpg_app
+  password_env: RPG_MYSQL_PASSWORD
+  mirror_snapshots: true
+  pool:
+    max_size: 20
+    min_idle: 5
+    connection_timeout_ms: 3000
+    idle_timeout_ms: 600000
+    max_lifetime_ms: 1800000
+redis:
+  enabled: true
+  host: 127.0.0.1
+  port: 6379
+  database: 0
+  password_env: RPG_REDIS_PASSWORD
+  timeout_ms: 1500
+  mirror_live_sessions: true
+local_fallback:
+  enabled: true
+  path: runtime_data
+  allow_writes_when_db_unavailable: false
+  mirror_snapshots: true
+write_policy:
+  profile_save_interval_seconds: 60
+  save_on_server_transfer: true
+  save_on_disconnect: true
+  idempotent_transaction_window_seconds: 300
+  transaction_ledger_retention_days: 14
+  lock_timeout_seconds: 15
+recovery:
+  startup_consistency_check: true
+  inventory_backup_slots: 3
+  partial_write_quarantine: true
+  read_only_mode_on_db_failure: true
+  fail_closed_on_economy_ledger_loss: true
+health_checks:
+  mysql_connect_timeout_ms: 1000
+  redis_connect_timeout_ms: 500

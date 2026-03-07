@@ -1,0 +1,41 @@
+targets:
+  steady_state_players: 300
+  peak_players: 600
+  peak_database_qps: 250
+limits:
+  max_view_distance_by_role:
+    lobby: 6
+    progression: 8
+    instance: 6
+    boss: 6
+    event: 7
+  max_simulation_distance_by_role:
+    lobby: 4
+    progression: 6
+    instance: 4
+    boss: 4
+    event: 5
+  max_entities_per_server:
+    rpg_world: 800
+    dungeons: 400
+    boss_world: 250
+    events: 450
+  instance_expiry_seconds: 180
+  transfer_ticket_seconds: 15
+  rpg_entity_caps:
+    dungeon_mobs: 160
+    dungeon_bosses: 20
+    event_mobs: 150
+    boss_mobs: 40
+  entity_ttl_seconds:
+    dungeon_mobs: 1800
+    dungeon_bosses: 1800
+    event_mobs: 900
+    boss_mobs: 1800
+mitigations:
+  spread_player_saves_across_ticks: true
+  instance_world_reuse_pool: true
+  boss_phase_minion_cap: 12
+  chunk_preload_budget_per_tick: 8
+  database_backpressure_mode: queue_and_degrade_noncritical_writes
+  proxy_reuse_port: true

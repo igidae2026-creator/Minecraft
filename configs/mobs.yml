@@ -1,0 +1,27 @@
+goblin:
+  zone: starter_plains
+  health: 20
+  damage: 3
+  currency_drop: 2
+  drops:
+    goblin_ear: 1.0
+    cave_map_scrap: 0.2
+    gold_coin: 0.5
+forest_wolf:
+  zone: whispering_woods
+  health: 28
+  damage: 4
+  currency_drop: 3
+  drops:
+    wolf_pelt: 0.8
+    iron_fragment: 0.35
+    gold_coin: 0.4
+cave_shaman:
+  zone: goblin_cave
+  health: 40
+  damage: 6
+  currency_drop: 4
+  drops:
+    dungeon_shard: 0.7
+    boss_totem_fragment: 0.4
+    iron_fragment: 0.4

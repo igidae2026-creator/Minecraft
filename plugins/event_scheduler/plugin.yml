@@ -1,0 +1,15 @@
+name: event_scheduler
+main: com.rpg.event.Main
+version: 1.2.0
+api-version: '1.20'
+author: RPGNetwork
+depend:
+- rpg_core
+description: Timed event rotation and bonus reward runtime
+commands:
+  rpgevent:
+    usage: /rpgevent <status|force>
+    permission: rpg.event
+permissions:
+  rpg.event:
+    default: true

@@ -1,0 +1,20 @@
+combat:
+  levels: 100
+  xp_sources:
+    mob_kill: 10
+    dungeon_clear: 60
+    boss_kill: 120
+exploration:
+  levels: 50
+  xp_sources:
+    discover_zone: 25
+    dungeon_entry: 15
+crafting:
+  levels: 50
+  xp_sources:
+    gear_upgrade: 30
+    boss_material_spend: 80
+mining:
+  levels: 100
+  xp_sources:
+    node_break: 5

@@ -1,0 +1,39 @@
+currency: gold
+starting_balance: 25
+market_tax: 0.08
+vendor_buyback_ratio: 0.25
+faucets:
+  quests:
+    starter_hunt: 35
+    pelt_collection: 30
+    cave_recon: 60
+    guardian_hunt: 120
+  mobs:
+    goblin: 2
+    forest_wolf: 3
+    cave_shaman: 4
+  dungeons:
+    goblin_cave_clear_bonus: 20
+  bosses:
+    forest_guardian_first_daily_bonus: 80
+sinks:
+  repair:
+    durability_point_cost: 0.15
+  travel:
+    local_transfer_fee: 5
+  dungeon_entry:
+    goblin_cave: 15
+  boss_summon:
+    goblin_king: 50
+    forest_guardian: 100
+  crafting_upgrade:
+    common_to_rare: 50
+    rare_to_epic: 150
+    epic_to_legendary: 400
+  market:
+    tax: 0.08
+stability:
+  raw_gold_primary_source: quest_completion
+  raw_gold_from_passive_systems: false
+  high_tier_materials_are_bound: true
+  vendor_buy_price_multiplier: 4.0

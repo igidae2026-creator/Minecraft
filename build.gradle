@@ -1,0 +1,89 @@
+allprojects {
+    group = 'com.rpg'
+    version = '1.2.0'
+}
+
+subprojects {
+    apply plugin: 'java'
+
+    repositories {
+        mavenCentral()
+        maven {
+            name = 'papermc'
+            url = 'https://repo.papermc.io/repository/maven-public/'
+        }
+    }
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(21)
+        }
+    }
+
+    dependencies {
+        compileOnly 'io.papermc.paper:paper-api:1.20.6-R0.1-SNAPSHOT'
+    }
+
+    sourceSets {
+        main {
+            java {
+                srcDirs = ['src/main/java']
+            }
+            resources {
+                srcDirs = ['.']
+                include 'plugin.yml'
+            }
+        }
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+        options.release = 21
+    }
+
+    tasks.withType(ProcessResources).configureEach {
+        duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    }
+
+    jar {
+        archiveBaseName = project.name
+    }
+}
+
+project(':plugins:rpg_core') {
+    dependencies {
+        implementation 'com.mysql:mysql-connector-j:8.4.0'
+    }
+    tasks.named('jar') {
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+        from {
+            configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+        }
+        exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
+    }
+}
+
+project(':plugins:economy_engine') {
+    dependencies { compileOnly project(':plugins:rpg_core') }
+}
+project(':plugins:quest_system') {
+    dependencies { compileOnly project(':plugins:rpg_core') }
+}
+project(':plugins:boss_ai') {
+    dependencies { compileOnly project(':plugins:rpg_core') }
+}
+project(':plugins:dungeon_system') {
+    dependencies { compileOnly project(':plugins:rpg_core') }
+}
+project(':plugins:guild_system') {
+    dependencies { compileOnly project(':plugins:rpg_core') }
+}
+project(':plugins:skill_system') {
+    dependencies { compileOnly project(':plugins:rpg_core') }
+}
+project(':plugins:event_scheduler') {
+    dependencies { compileOnly project(':plugins:rpg_core') }
+}
+project(':plugins:metrics_monitor') {
+    dependencies { compileOnly project(':plugins:rpg_core') }
+}

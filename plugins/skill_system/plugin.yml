@@ -1,0 +1,15 @@
+name: skill_system
+main: com.rpg.skill.Main
+version: 1.2.0
+api-version: '1.20'
+author: RPGNetwork
+depend:
+- rpg_core
+description: Skill progression, passive stats, and combat scaling runtime
+commands:
+  skill:
+    usage: /skill
+    permission: rpg.skill
+permissions:
+  rpg.skill:
+    default: true

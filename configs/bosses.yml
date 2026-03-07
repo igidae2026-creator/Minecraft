@@ -1,0 +1,35 @@
+goblin_king:
+  health: 350
+  summon:
+    required_items:
+      boss_totem_fragment: 3
+    gold_cost: 50
+    lockout_hours: 1
+  drops:
+    guaranteed:
+      dungeon_shard: 8
+      guardian_seed: 1
+    rare:
+      ancient_emblem: 0
+  abilities:
+  - smash
+  - leap
+  - summon_minions
+forest_guardian:
+  health: 500
+  summon:
+    required_items:
+      guardian_seed: 1
+      dungeon_shard: 25
+    gold_cost: 100
+    lockout_hours: 6
+  drops:
+    guaranteed:
+      guardian_core: 1
+      gold_coin_bundle: 1
+    rare:
+      ancient_emblem: 1
+  abilities:
+  - slam
+  - summon_minions
+  - root_snare

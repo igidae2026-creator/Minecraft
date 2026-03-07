@@ -1,0 +1,21 @@
+rotation_minutes: 30
+duration_minutes: 10
+events:
+  goblin_raid:
+    mob: goblin
+    spawn_count: 10
+    spawn_radius: 18
+    bonus_gold: 10
+    bonus_item: goblin_ear
+    bonus_item_amount: 2
+    bonus_item_chance: 0.45
+    broadcast: Goblin raiders are hitting the frontier.
+  wolf_frenzy:
+    mob: forest_wolf
+    spawn_count: 8
+    spawn_radius: 20
+    bonus_gold: 12
+    bonus_item: wolf_pelt
+    bonus_item_amount: 2
+    bonus_item_chance: 0.4
+    broadcast: Whispering Woods is in a frenzy.

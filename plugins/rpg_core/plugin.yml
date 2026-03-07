@@ -1,0 +1,24 @@
+name: rpg_core
+main: com.rpg.core.Main
+version: 1.2.0
+api-version: '1.20'
+author: RPGNetwork
+load: STARTUP
+description: Core bootstrap, persistence, profile cache, and secure network runtime
+commands:
+  rpgprofile:
+    usage: /rpgprofile
+    permission: rpg.profile
+  rpgtravel:
+    usage: /rpgtravel <server>
+    permission: rpg.travel
+  rpgadmin:
+    usage: /rpgadmin <item|gold|status> ...
+    permission: rpg.admin
+permissions:
+  rpg.profile:
+    default: true
+  rpg.travel:
+    default: true
+  rpg.admin:
+    default: op

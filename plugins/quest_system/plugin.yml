@@ -1,0 +1,16 @@
+name: quest_system
+main: com.rpg.quest.Main
+version: 1.2.0
+api-version: '1.20'
+author: RPGNetwork
+depend:
+- rpg_core
+- economy_engine
+description: Quest progression, acceptance, and reward turn-in runtime
+commands:
+  quest:
+    usage: /quest <list|accept|turnin>
+    permission: rpg.quest
+permissions:
+  rpg.quest:
+    default: true

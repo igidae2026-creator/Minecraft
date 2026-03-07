@@ -1,0 +1,11 @@
+rootProject.name = 'rpg-network'
+
+include 'plugins:rpg_core'
+include 'plugins:economy_engine'
+include 'plugins:quest_system'
+include 'plugins:boss_ai'
+include 'plugins:dungeon_system'
+include 'plugins:guild_system'
+include 'plugins:skill_system'
+include 'plugins:event_scheduler'
+include 'plugins:metrics_monitor'

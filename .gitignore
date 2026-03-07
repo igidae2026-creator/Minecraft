@@ -1,0 +1,12 @@
+/run/
+/logs/
+/backups/
+/runtime_data/
+/metrics.prom
+/metrics/*.prom
+/proxy/forwarding.secret
+/.pytest_cache/
+/tests/__pycache__/
+/**/__pycache__/
+/**/build/
+/**/plugins/*.jar

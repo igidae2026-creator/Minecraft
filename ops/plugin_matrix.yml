@@ -1,0 +1,36 @@
+lobby:
+  - rpg_core
+  - guild_system
+  - metrics_monitor
+rpg_world:
+  - rpg_core
+  - economy_engine
+  - quest_system
+  - guild_system
+  - skill_system
+  - metrics_monitor
+dungeons:
+  - rpg_core
+  - economy_engine
+  - quest_system
+  - boss_ai
+  - dungeon_system
+  - guild_system
+  - skill_system
+  - metrics_monitor
+boss_world:
+  - rpg_core
+  - economy_engine
+  - quest_system
+  - boss_ai
+  - guild_system
+  - skill_system
+  - metrics_monitor
+events:
+  - rpg_core
+  - economy_engine
+  - quest_system
+  - event_scheduler
+  - guild_system
+  - skill_system
+  - metrics_monitor

@@ -1,0 +1,16 @@
+goblin_cave:
+  recommended_level: 5
+  entry_fee_gold: 15
+  entry_requirements:
+    cave_map_scrap: 5
+  repeat_cooldown_seconds: 30
+  trash_mobs:
+  - goblin
+  - cave_shaman
+  boss: goblin_king
+  completion_rewards:
+    dungeon_shard: 5
+    boss_totem_fragment: 1
+  progression_gate:
+    next_boss: forest_guardian
+    requires_totem_fragments: 3

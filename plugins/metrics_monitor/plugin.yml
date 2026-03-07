@@ -1,0 +1,22 @@
+name: metrics_monitor
+main: com.rpg.metrics.Main
+version: 1.2.0
+api-version: '1.20'
+author: RPGNetwork
+softdepend:
+- rpg_core
+- economy_engine
+- quest_system
+- boss_ai
+- dungeon_system
+- guild_system
+- skill_system
+- event_scheduler
+description: Runtime metrics and health export layer
+commands:
+  rpgmetrics:
+    usage: /rpgmetrics
+    permission: rpg.metrics
+permissions:
+  rpg.metrics:
+    default: op
