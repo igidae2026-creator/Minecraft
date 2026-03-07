@@ -466,14 +466,38 @@ public final class RpgNetworkService {
 
     public void flushDirty() {
         flushLedger();
-        List<UUID> profileIds = new ArrayList<>(dirtyProfiles);
-        List<String> guildKeys = new ArrayList<>(dirtyGuilds);
+        List<UUID> profileIds = collectDirtyProfilesForFlush();
+        List<String> guildKeys = collectDirtyGuildsForFlush();
         for (UUID uuid : profileIds) {
             flushPlayer(uuid);
         }
         for (String key : guildKeys) {
             flushGuild(key);
         }
+    }
+
+    private List<UUID> collectDirtyProfilesForFlush() {
+        int limit = Math.max(50, persistence.getInt("write_policy.max_profiles_per_flush", 500));
+        List<UUID> selected = new ArrayList<>(Math.min(dirtyProfiles.size(), limit));
+        for (UUID uuid : dirtyProfiles) {
+            selected.add(uuid);
+            if (selected.size() >= limit) {
+                break;
+            }
+        }
+        return selected;
+    }
+
+    private List<String> collectDirtyGuildsForFlush() {
+        int limit = Math.max(20, persistence.getInt("write_policy.max_guilds_per_flush", 200));
+        List<String> selected = new ArrayList<>(Math.min(dirtyGuilds.size(), limit));
+        for (String guildKey : dirtyGuilds) {
+            selected.add(guildKey);
+            if (selected.size() >= limit) {
+                break;
+            }
+        }
+        return selected;
     }
 
     public void flushPlayer(UUID uuid) {
@@ -1012,6 +1036,7 @@ public final class RpgNetworkService {
                     guild.removeBankItem(entry.getKey(), entry.getValue());
                 }
                 dirtyGuilds.add(normalizeGuild(guild.getName()));
+                appendLedgerMutation(profile.getUuid(), "boss_summon_guild", bossId, -goldCost, negativeItemMap(req));
                 LivingEntity entity = spawnConfiguredBoss(player.getLocation().add(0.0D, 0.0D, 5.0D), bossId, player, dungeonIdForBoss);
                 if (entity == null) {
                     guild.addBankGold(goldCost);
@@ -1049,6 +1074,7 @@ public final class RpgNetworkService {
             profile.removeItem(key, amount);
             double payout = vendorValue * amount;
             profile.addGold(payout);
+            appendLedgerMutation(profile.getUuid(), "vendor_sell", key, payout, Map.of(key, -amount));
             syncCollectQuestProgress(profile);
             writeAudit("vendor_sell", player.getUniqueId() + ":" + key + ":" + amount + ":gold=" + payout);
             return new OperationResult(true, color("&aSold &e" + key + " x" + amount + " &7for &e" + money(payout)));
@@ -1360,6 +1386,7 @@ public final class RpgNetworkService {
                 RpgGuild guild = guildOptional.get();
                 guild.addBankGold(amount);
                 dirtyGuilds.add(guildKey);
+                appendLedgerMutation(profile.getUuid(), "guild_bank_deposit_gold", guild.getName(), -amount, Collections.emptyMap());
                 writeAudit("guild_gold", player.getUniqueId() + ":" + guild.getName() + ":" + amount);
                 return new OperationResult(true, color("&aDeposited &e" + money(amount) + " &7to guild bank."));
             }
@@ -1392,6 +1419,7 @@ public final class RpgNetworkService {
                 RpgGuild guild = guildOptional.get();
                 guild.addBankItem(itemId, amount);
                 dirtyGuilds.add(guildKey);
+                appendLedgerMutation(profile.getUuid(), "guild_bank_deposit_item", guild.getName(), 0.0D, Map.of(itemId.toLowerCase(Locale.ROOT), -amount));
                 syncCollectQuestProgress(profile);
                 writeAudit("guild_item", player.getUniqueId() + ":" + guild.getName() + ":" + itemId + ":" + amount);
                 return new OperationResult(true, color("&aDeposited &e" + itemId + " x" + amount + " &7to guild bank."));
@@ -3259,12 +3287,30 @@ public final class RpgNetworkService {
                 return true;
             }
         } catch (Exception exception) {
+            if (isDuplicateLedgerSequence(exception)) {
+                return true;
+            }
             plugin.getLogger().fine("MySQL ledger write unavailable: " + exception.getMessage());
             if (required) {
                 enterSafeMode("Economy ledger authority unavailable");
             }
             return !required;
         }
+    }
+
+    private boolean isDuplicateLedgerSequence(Exception exception) {
+        Throwable current = exception;
+        while (current != null) {
+            if (current instanceof java.sql.SQLException sqlException) {
+                String state = sqlException.getSQLState();
+                String message = sqlException.getMessage() == null ? "" : sqlException.getMessage().toLowerCase(Locale.ROOT);
+                if ((state != null && state.startsWith("23")) || message.contains("duplicate") || message.contains("primary")) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private void persistPendingLedgerEntry(LedgerEntry entry) {
