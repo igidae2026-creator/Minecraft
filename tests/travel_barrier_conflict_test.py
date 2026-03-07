@@ -50,3 +50,15 @@ def test_durable_barrier_reads_guard_against_stale_target_loads():
     assert "readGuildDurableVersion" in source
     assert "SELECT updated_at FROM rpg_profiles" in source
     assert "SELECT updated_at FROM rpg_guilds" in source
+
+
+def test_transfer_ticket_lifecycle_states_are_explicit_and_fail_closed():
+    source = (ROOT / "plugins" / "rpg_core" / "src" / "main" / "java" / "com" / "rpg" / "core" / "RpgNetworkService.java").read_text(encoding="utf-8")
+
+    assert "enum TransferTicketState" in source
+    assert "PENDING" in source
+    assert "ACTIVATED" in source
+    assert "CONSUMED" in source
+    assert "FAILED" in source
+    assert "EXPIRED" in source
+    assert "persistTravelTicket(uuid, failTravelTicket(ticket, \"invalid_lease\"))" in source

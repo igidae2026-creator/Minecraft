@@ -1,7 +1,6 @@
 /run/
 /logs/
 /backups/
-/runtime_data/
 /metrics.prom
 /metrics/*.prom
 /proxy/forwarding.secret
@@ -10,3 +9,5 @@
 /**/__pycache__/
 /**/build/
 /**/plugins/*.jar
+/runtime_data/*
+!/runtime_data/.gitkeep
