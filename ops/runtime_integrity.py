@@ -25,10 +25,11 @@ def main() -> int:
     experiments = RUNTIME / "experiments"
     incidents = RUNTIME / "incidents"
     coordination = RUNTIME / "coordination"
+    knowledge = RUNTIME / "knowledge"
     item_authority = RUNTIME / "item_authority" / "owners"
     status_dir = RUNTIME / "status"
 
-    for required in (artifacts, policies, experiments, incidents, coordination, item_authority, status_dir):
+    for required in (artifacts, policies, experiments, incidents, coordination, knowledge, item_authority, status_dir):
         if not required.exists():
             errors.append(f"missing_runtime_surface:{required.relative_to(ROOT)}")
 
@@ -47,16 +48,26 @@ def main() -> int:
     if status_dir.exists():
         for status_path in sorted(status_dir.glob("*.yml")):
             status = load_yaml(status_path) or {}
+            transfer = status.get("deterministic_transfer_service", {}) or {}
+            session = status.get("session_authority_service", {}) or {}
+            knowledge_index = status.get("runtime_knowledge_index", {}) or {}
+            pressure_plane = status.get("pressure_control_plane", {}) or {}
             if status.get("safe_mode"):
                 errors.append(f"safe_mode:{status_path.stem}:{status.get('safe_mode_reason', '')}")
             if status.get("reconciliation_mismatches", 0) > 0:
                 errors.append(f"reconciliation_mismatch:{status_path.stem}")
             if status.get("item_ownership_conflicts", 0) > 0:
                 errors.append(f"item_ownership_conflict:{status_path.stem}")
-            if status.get("deterministic_transfer_service.stale_load_rejections", 0) > 0:
+            if transfer.get("stale_load_rejections", 0) > 0:
                 errors.append(f"stale_transfer_load:{status_path.stem}")
-            if status.get("session_authority_service.split_brain_detections", 0) > 0:
+            if transfer.get("quarantines", 0) > 0:
+                errors.append(f"transfer_quarantine:{status_path.stem}")
+            if session.get("split_brain_detections", 0) > 0:
                 errors.append(f"split_brain:{status_path.stem}")
+            if knowledge_index.get("records", 0) <= 0:
+                errors.append(f"knowledge_missing:{status_path.stem}")
+            if pressure_plane.get("composite", 0) >= 1.0:
+                errors.append(f"pressure_saturated:{status_path.stem}")
 
     if errors:
         for error in errors:
@@ -67,6 +78,7 @@ def main() -> int:
     print(f"ARTIFACTS={len(list(artifacts.glob('*.yml'))) if artifacts.exists() else 0}")
     print(f"ITEM_MANIFESTS={len(list(item_authority.glob('*.yml'))) if item_authority.exists() else 0}")
     print(f"EXPERIMENTS={len(list(experiments.glob('*.yml'))) if experiments.exists() else 0}")
+    print(f"KNOWLEDGE={len(list(knowledge.glob('*.yml'))) if knowledge.exists() else 0}")
     return 0
 
 

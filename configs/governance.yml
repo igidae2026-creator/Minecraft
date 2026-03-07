@@ -1,0 +1,23 @@
+policies:
+  spawn_regulation:
+    activation: runtime_hot_swappable
+  drop_regulation:
+    activation: runtime_hot_swappable
+  economy_sink_faucet_control:
+    activation: runtime_hot_swappable
+  transfer_safety:
+    activation: runtime_hot_swappable
+  instance_allocation:
+    activation: runtime_hot_swappable
+  reward_idempotency:
+    activation: runtime_hot_swappable
+  anti_exploit_response:
+    activation: runtime_hot_swappable
+  experiment_admission:
+    activation: runtime_hot_swappable
+  queue_admission_control:
+    activation: runtime_hot_swappable
+operations:
+  rollback_enabled: true
+  replay_attribution_required: true
+  artifact_export_required: true

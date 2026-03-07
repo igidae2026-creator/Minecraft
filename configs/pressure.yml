@@ -1,0 +1,19 @@
+signals:
+  novelty: 0.35
+  diversity: 0.40
+  efficiency: 0.25
+  repair: 0.20
+  domain_shift: 0.25
+scales:
+  ledger_backlog: 128
+  repair: 8
+  instance_queue: 32
+  authority: 8
+  reconciliation: 8
+  experiment: 4
+controls:
+  noncritical_spawn_suppression: true
+  noncritical_spawn_suppression_threshold: 0.75
+  experiment_admission_threshold: 0.80
+  queue_admission_threshold: 0.85
+  repair_priority_threshold: 0.60

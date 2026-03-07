@@ -28,6 +28,9 @@ def main() -> int:
     bosses = load(CONFIG / "bosses.yml")
     dungeons = load(CONFIG / "dungeons.yml")
     events = load(CONFIG / "events.yml")
+    pressure = load(CONFIG / "pressure.yml")
+    experiments = load(CONFIG / "experiments.yml")
+    governance = load(CONFIG / "governance.yml")
     matrix = load(OPS / "plugin_matrix.yml")
 
     build_gradle = (ROOT / "build.gradle").read_text(encoding="utf-8")
@@ -165,6 +168,16 @@ def main() -> int:
         errors.append("network.data_flow.experiment_registry drift detected")
     if network["data_flow"].get("incident_artifacts") != "runtime_data/incidents":
         errors.append("network.data_flow.incident_artifacts drift detected")
+    if network["data_flow"].get("knowledge_index") != "runtime_data/knowledge":
+        errors.append("network.data_flow.knowledge_index drift detected")
+    if network["data_flow"].get("pressure_control") != "runtime_data/status":
+        errors.append("network.data_flow.pressure_control drift detected")
+    if not pressure["controls"]["noncritical_spawn_suppression"]:
+        errors.append("pressure controls must suppress noncritical spawns")
+    if not experiments["operations"]["kill_switch"]:
+        errors.append("experiment kill switch must remain enabled")
+    if not governance["operations"]["rollback_enabled"]:
+        errors.append("governance rollback must remain enabled")
 
     expected_plugins = {
         "rpg_core", "economy_engine", "quest_system", "boss_ai",

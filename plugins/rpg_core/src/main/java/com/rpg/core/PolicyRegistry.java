@@ -3,76 +3,78 @@ package com.rpg.core;
 import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
 
-public final class GovernancePolicyRegistry {
-    public record PolicyVersion(
+public final class PolicyRegistry {
+    public record PolicyRecord(
         String policyId,
         String versionId,
         String artifactId,
         String state,
         String activatedBy,
-        long activatedAt,
-        long deactivatedAt,
+        long createdAt,
+        long updatedAt,
         List<String> metrics
     ) {}
 
-    private final ConcurrentMap<String, PolicyVersion> activePolicies = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, PolicyRecord> records = new ConcurrentHashMap<>();
+    private final AtomicLong activations = new AtomicLong();
     private final AtomicLong rollbacks = new AtomicLong();
 
-    public PolicyVersion activate(String policyId, String artifactId, String activatedBy, List<String> metrics) {
+    public PolicyRecord activate(String policyId, String artifactId, String activatedBy, List<String> metrics) {
         long now = Instant.now().toEpochMilli();
-        PolicyVersion version = new PolicyVersion(
+        PolicyRecord record = new PolicyRecord(
             normalize(policyId),
-            "policy_version_" + UUID.randomUUID().toString().replace("-", ""),
+            "pol_" + UUID.randomUUID().toString().replace("-", ""),
             normalize(artifactId),
             "ACTIVE",
             normalize(activatedBy),
             now,
-            0L,
-            metrics == null ? List.of() : new ArrayList<>(metrics)
+            now,
+            metrics == null ? List.of() : List.copyOf(metrics)
         );
-        activePolicies.put(version.policyId(), version);
-        return version;
+        records.put(record.policyId(), record);
+        activations.incrementAndGet();
+        return record;
     }
 
-    public PolicyVersion rollback(String policyId, String activatedBy) {
-        String key = normalize(policyId);
-        PolicyVersion current = activePolicies.get(key);
+    public PolicyRecord rollback(String policyId, String activatedBy) {
+        PolicyRecord current = records.get(normalize(policyId));
         if (current == null) {
             return null;
         }
-        PolicyVersion rolledBack = new PolicyVersion(
+        PolicyRecord rolledBack = new PolicyRecord(
             current.policyId(),
             current.versionId(),
             current.artifactId(),
             "ROLLED_BACK",
             normalize(activatedBy),
-            current.activatedAt(),
+            current.createdAt(),
             Instant.now().toEpochMilli(),
             current.metrics()
         );
-        activePolicies.put(key, rolledBack);
+        records.put(rolledBack.policyId(), rolledBack);
         rollbacks.incrementAndGet();
         return rolledBack;
     }
 
     public YamlConfiguration snapshot() {
         YamlConfiguration yaml = new YamlConfiguration();
-        yaml.set("active_policies", activePolicies.size());
+        yaml.set("policies", records.size());
+        yaml.set("activations", activations.get());
         yaml.set("rollbacks", rollbacks.get());
-        yaml.set("policy_controls", Arrays.asList(
+        yaml.set("controls", Arrays.asList(
             "spawn_regulation",
             "drop_regulation",
-            "economy_sinks",
-            "economy_faucets",
+            "economy_sink_faucet_control",
             "transfer_safety",
             "instance_allocation",
             "reward_idempotency",
@@ -80,7 +82,17 @@ public final class GovernancePolicyRegistry {
             "experiment_admission",
             "queue_admission_control"
         ));
-        yaml.set("policies", activePolicies.keySet().stream().sorted().toList());
+        Map<String, Object> active = new LinkedHashMap<>();
+        for (PolicyRecord record : records.values()) {
+            active.put(record.policyId(), Map.of(
+                "version_id", record.versionId(),
+                "artifact_id", record.artifactId(),
+                "state", record.state(),
+                "activated_by", record.activatedBy(),
+                "metrics", record.metrics()
+            ));
+        }
+        yaml.set("records", active);
         return yaml;
     }
 

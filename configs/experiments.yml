@@ -1,0 +1,35 @@
+surfaces:
+  drop_rates:
+    rollout: canary
+    safety_budget: 0.30
+  spawn_logic:
+    rollout: cohort
+    safety_budget: 0.25
+  boss_tuning:
+    rollout: canary
+    safety_budget: 0.20
+  dungeon_pacing:
+    rollout: canary
+    safety_budget: 0.20
+  quest_structure:
+    rollout: cohort
+    safety_budget: 0.20
+  economy_sinks_faucets:
+    rollout: guarded
+    safety_budget: 0.10
+  reward_distribution:
+    rollout: canary
+    safety_budget: 0.15
+  travel_costs:
+    rollout: guarded
+    safety_budget: 0.10
+  scarcity_curves:
+    rollout: guarded
+    safety_budget: 0.15
+  progression_pacing:
+    rollout: cohort
+    safety_budget: 0.20
+operations:
+  kill_switch: true
+  rollback_on_anomaly: true
+  attach_experiment_ids_to_mutations: true

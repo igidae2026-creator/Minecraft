@@ -104,3 +104,5 @@ data_flow:
   runtime_coordination: runtime_data/coordination
   experiment_registry: runtime_data/experiments
   incident_artifacts: runtime_data/incidents
+  knowledge_index: runtime_data/knowledge
+  pressure_control: runtime_data/status

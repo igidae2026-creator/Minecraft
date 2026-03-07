@@ -78,6 +78,8 @@ public final class SessionAuthorityService {
     private final AtomicLong activationConfirmations = new AtomicLong();
     private final AtomicLong crashInvalidations = new AtomicLong();
     private final AtomicLong expiries = new AtomicLong();
+    private final AtomicLong leaseRenewals = new AtomicLong();
+    private final AtomicLong transferFenceFailures = new AtomicLong();
 
     public SessionAuthorityService(Path coordinationRoot) {
         this.coordinationRoot = coordinationRoot;
@@ -134,6 +136,7 @@ public final class SessionAuthorityService {
             current.fenceToken()
         );
         ownerships.put(playerId, refreshed);
+        leaseRenewals.incrementAndGet();
         return refreshed;
     }
 
@@ -210,6 +213,7 @@ public final class SessionAuthorityService {
         }
         if (!current.expectedOwnerEpoch().equals(normalize(expectedOwnerEpoch))) {
             splitBrainDetections.incrementAndGet();
+            transferFenceFailures.incrementAndGet();
             TransferActivation failed = new TransferActivation(
                 current.transferId(), current.playerId(), current.sourceServer(), current.targetServer(),
                 current.sourceLeaseId(), current.targetLeaseId(), current.issuedAt(), current.expiresAt(),
@@ -317,6 +321,33 @@ public final class SessionAuthorityService {
         yaml.set("activation_confirmations", activationConfirmations.get());
         yaml.set("crash_owner_invalidations", crashInvalidations.get());
         yaml.set("expiries", expiries.get());
+        yaml.set("lease_renewals", leaseRenewals.get());
+        yaml.set("transfer_fence_failures", transferFenceFailures.get());
+        Map<String, Object> live = new LinkedHashMap<>();
+        for (SessionOwnership ownership : ownerships.values()) {
+            live.put(ownership.playerId().toString(), Map.of(
+                "owner_server", ownership.ownerServer(),
+                "owner_epoch", ownership.ownerEpoch(),
+                "lease_id", ownership.leaseId(),
+                "lease_expires_at", ownership.leaseExpiresAt(),
+                "state", ownership.state().name(),
+                "transfer_id", ownership.transferId(),
+                "fence_token", ownership.fenceToken()
+            ));
+        }
+        yaml.set("live_registry", live);
+        Map<String, Object> transferRegistry = new LinkedHashMap<>();
+        for (TransferActivation activation : transfers.values()) {
+            transferRegistry.put(activation.transferId(), Map.of(
+                "player_id", activation.playerId().toString(),
+                "source_server", activation.sourceServer(),
+                "target_server", activation.targetServer(),
+                "state", activation.state(),
+                "failure_reason", activation.failureReason(),
+                "expires_at", activation.expiresAt()
+            ));
+        }
+        yaml.set("transfer_registry", transferRegistry);
         return yaml;
     }
 

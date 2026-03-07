@@ -33,7 +33,8 @@ public final class InstanceExperimentControlPlane {
         CLEANUP,
         TERMINATED,
         FAILED,
-        ORPHANED
+        ORPHANED,
+        DEGRADED
     }
 
     public enum ExperimentState {
@@ -63,6 +64,7 @@ public final class InstanceExperimentControlPlane {
     private final AtomicLong cleanupRuns = new AtomicLong();
     private final AtomicLong policyRollbacks = new AtomicLong();
     private final AtomicLong experimentRollbacks = new AtomicLong();
+    private final AtomicLong degradations = new AtomicLong();
 
     public RuntimeInstance registerInstance(RuntimeInstanceClass type, String ownerRef, String policyVersion,
                                             String experimentId, long ttlMillis) {
@@ -86,6 +88,9 @@ public final class InstanceExperimentControlPlane {
         RuntimeInstance current = instances.get(instanceId);
         if (current == null) {
             return null;
+        }
+        if (nextState == RuntimeInstanceState.DEGRADED) {
+            degradations.incrementAndGet();
         }
         RuntimeInstance next = new RuntimeInstance(current.id(), current.type(), nextState, current.ownerRef(),
             current.policyVersion(), current.experimentId(), current.createdAt(), Instant.now().toEpochMilli(), current.expiresAt());
@@ -171,6 +176,7 @@ public final class InstanceExperimentControlPlane {
         yaml.set("cleanup_runs", cleanupRuns.get());
         yaml.set("policy_rollbacks", policyRollbacks.get());
         yaml.set("experiment_rollbacks", experimentRollbacks.get());
+        yaml.set("degradations", degradations.get());
         yaml.set("instance_types", Arrays.stream(RuntimeInstanceClass.values()).map(Enum::name).toList());
         yaml.set("instance_states", Arrays.stream(RuntimeInstanceState.values()).map(Enum::name).toList());
         return yaml;

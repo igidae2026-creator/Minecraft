@@ -17,12 +17,14 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class DeterministicTransferService {
     public enum TransferState {
         INITIATED,
+        FREEZING,
         PERSISTING,
         LEASED,
         ACTIVATING,
         ACTIVE,
         FAILED,
-        EXPIRED
+        EXPIRED,
+        ROLLED_BACK
     }
 
     public record TransferRecord(
@@ -37,6 +39,7 @@ public final class DeterministicTransferService {
         boolean mutationFreeze,
         boolean staleLoadRefused,
         boolean refunded,
+        boolean quarantined,
         long createdAt,
         long updatedAt,
         List<String> transitionLog
@@ -46,6 +49,8 @@ public final class DeterministicTransferService {
     private final AtomicLong staleLoadRejections = new AtomicLong();
     private final AtomicLong rollbackRefunds = new AtomicLong();
     private final AtomicLong leaseVerificationFailures = new AtomicLong();
+    private final AtomicLong quarantines = new AtomicLong();
+    private final AtomicLong ambiguityFailures = new AtomicLong();
 
     public TransferRecord begin(UUID playerId, String sourceServer, String targetServer, String leaseId, long durableVersionBarrier, long fenceToken) {
         long now = Instant.now().toEpochMilli();
@@ -61,6 +66,7 @@ public final class DeterministicTransferService {
             durableVersionBarrier,
             fenceToken,
             TransferState.INITIATED,
+            false,
             false,
             false,
             false,
@@ -92,6 +98,7 @@ public final class DeterministicTransferService {
             current.mutationFreeze(),
             current.staleLoadRefused(),
             current.refunded(),
+            current.quarantined(),
             current.createdAt(),
             now,
             log
@@ -101,6 +108,7 @@ public final class DeterministicTransferService {
     }
 
     public TransferRecord freezeMutations(String transferId) {
+        transition(transferId, TransferState.FREEZING, "mutation_freeze");
         return update(transferId, "mutation_freeze");
     }
 
@@ -123,14 +131,22 @@ public final class DeterministicTransferService {
 
     public TransferRecord refund(String transferId, String reason) {
         rollbackRefunds.incrementAndGet();
-        return update(transferId, "refund:" + normalize(reason), null, true);
+        transition(transferId, TransferState.ROLLED_BACK, "refund:" + normalize(reason));
+        return update(transferId, "refund:" + normalize(reason), null, true, null);
+    }
+
+    public TransferRecord quarantine(String transferId, String reason) {
+        ambiguityFailures.incrementAndGet();
+        quarantines.incrementAndGet();
+        transition(transferId, TransferState.FAILED, "quarantine:" + normalize(reason));
+        return update(transferId, "quarantine:" + normalize(reason), null, null, true);
     }
 
     private TransferRecord update(String transferId, String note) {
-        return update(transferId, note, null, null);
+        return update(transferId, note, null, null, null);
     }
 
-    private TransferRecord update(String transferId, String note, Boolean staleLoadRefused, Boolean refunded) {
+    private TransferRecord update(String transferId, String note, Boolean staleLoadRefused, Boolean refunded, Boolean quarantined) {
         TransferRecord current = transfers.get(transferId);
         if (current == null) {
             return null;
@@ -150,6 +166,7 @@ public final class DeterministicTransferService {
             true,
             staleLoadRefused != null ? staleLoadRefused : current.staleLoadRefused(),
             refunded != null ? refunded : current.refunded(),
+            quarantined != null ? quarantined : current.quarantined(),
             current.createdAt(),
             now,
             log
@@ -165,6 +182,8 @@ public final class DeterministicTransferService {
         yaml.set("stale_load_rejections", staleLoadRejections.get());
         yaml.set("rollback_refunds", rollbackRefunds.get());
         yaml.set("lease_verification_failures", leaseVerificationFailures.get());
+        yaml.set("quarantines", quarantines.get());
+        yaml.set("ambiguity_failures", ambiguityFailures.get());
         return yaml;
     }
 

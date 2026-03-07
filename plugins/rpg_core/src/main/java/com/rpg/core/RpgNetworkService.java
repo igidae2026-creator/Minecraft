@@ -117,7 +117,8 @@ public final class RpgNetworkService {
         CLEANUP,
         TERMINATED,
         FAILED,
-        ORPHANED
+        ORPHANED,
+        DEGRADED
     }
 
     private enum InstanceType {
@@ -377,6 +378,7 @@ public final class RpgNetworkService {
     private final Path coordinationDir;
     private final Path experimentRegistryDir;
     private final Path incidentDir;
+    private final Path knowledgeDir;
     private final String serverName;
     private final String serverRole;
     private final YamlConfiguration network;
@@ -391,6 +393,9 @@ public final class RpgNetworkService {
     private final YamlConfiguration dungeons;
     private final YamlConfiguration skills;
     private final YamlConfiguration events;
+    private final YamlConfiguration governance;
+    private final YamlConfiguration experimentation;
+    private final YamlConfiguration pressureConfig;
     private final Map<UUID, RpgProfile> profiles = new ConcurrentHashMap<>();
     private final Map<String, RpgGuild> guilds = new ConcurrentHashMap<>();
     private final Set<UUID> dirtyProfiles = ConcurrentHashMap.newKeySet();
@@ -426,6 +431,10 @@ public final class RpgNetworkService {
     private final GameplayArtifactRegistry gameplayArtifactRegistry = new GameplayArtifactRegistry();
     private final GovernancePolicyRegistry governancePolicyRegistry = new GovernancePolicyRegistry();
     private final ExploitDetectorRegistry exploitDetectorRegistry = new ExploitDetectorRegistry();
+    private final ExperimentRegistry experimentRegistry = new ExperimentRegistry();
+    private final PolicyRegistry policyRegistry = new PolicyRegistry();
+    private final PressureControlPlane pressureControlPlane = new PressureControlPlane();
+    private final RuntimeKnowledgeIndex runtimeKnowledgeIndex = new RuntimeKnowledgeIndex();
     private final Map<String, Integer> managedEntityCounters = new ConcurrentHashMap<>();
     private final Set<UUID> managedEntityIds = ConcurrentHashMap.newKeySet();
     private final AtomicLong dbOperationCount = new AtomicLong();
@@ -474,6 +483,9 @@ public final class RpgNetworkService {
         this.dungeons = loadConfig("dungeons.yml");
         this.skills = loadConfig("skills.yml");
         this.events = loadOptionalConfig("events.yml");
+        this.governance = loadOptionalConfig("governance.yml");
+        this.experimentation = loadOptionalConfig("experiments.yml");
+        this.pressureConfig = loadOptionalConfig("pressure.yml");
         this.serverName = resolveServerName();
         this.serverRole = resolveServerRole();
         this.ledgerServerId = resolveLedgerServerId(serverName);
@@ -496,6 +508,7 @@ public final class RpgNetworkService {
         this.coordinationDir = runtimeDir.resolve("coordination");
         this.experimentRegistryDir = runtimeDir.resolve("experiments");
         this.incidentDir = runtimeDir.resolve("incidents");
+        this.knowledgeDir = runtimeDir.resolve("knowledge");
         this.sessionAuthorityService = new SessionAuthorityService(coordinationDir);
     }
 
@@ -516,6 +529,7 @@ public final class RpgNetworkService {
         ensurePath(coordinationDir);
         ensurePath(experimentRegistryDir);
         ensurePath(incidentDir);
+        ensurePath(knowledgeDir);
         validateBackendBaseline();
         loadPendingLedgerEntries();
         loadPersistedInstances();
@@ -706,6 +720,11 @@ public final class RpgNetworkService {
             return 0.0D;
         }
         return Math.min(1.0D, managedEntityTotalCount() / (double) serverCap);
+    }
+
+    public double runtimeCompositePressure() {
+        refreshPressureModel();
+        return pressureControlPlane.current().composite();
     }
 
     public long managedEntitySpawnDeniedCount() {
@@ -3650,18 +3669,38 @@ public final class RpgNetworkService {
     }
 
     private boolean canSpawnRpgEntity(String category) {
+        refreshPressureModel();
         int serverCap = scaling.getInt("limits.max_entities_per_server." + serverName, Integer.MAX_VALUE);
         int total = managedEntityCount(null);
         int categoryCount = managedEntityCount(category);
         int categoryCap = entityCap(category);
         double pressure = serverCap <= 0 || serverCap >= Integer.MAX_VALUE / 2 ? 0.0D : (total / (double) Math.max(1, serverCap));
         double hardPressureCap = Math.max(0.05D, Math.min(0.99D, scaling.getDouble("limits.entity_spawn_pressure_hard_cap", 0.95D)));
-        if (total >= serverCap || categoryCount >= categoryCap || pressure >= hardPressureCap) {
+        double compositePressure = pressureControlPlane.current().composite();
+        boolean suppressNoncritical = pressureConfig.getBoolean("controls.noncritical_spawn_suppression", true)
+            && compositePressure >= pressureConfig.getDouble("controls.noncritical_spawn_suppression_threshold", 0.75D)
+            && !"dungeon_bosses".equalsIgnoreCase(category);
+        if (total >= serverCap || categoryCount >= categoryCap || pressure >= hardPressureCap || suppressNoncritical) {
             managedEntitySpawnDenied.incrementAndGet();
-            maybeWarnEntityPressure(category, total, serverCap, categoryCount, categoryCap, pressure);
+            maybeWarnEntityPressure(category, total, serverCap, categoryCount, categoryCap, Math.max(pressure, compositePressure));
             return false;
         }
         return true;
+    }
+
+    private void refreshPressureModel() {
+        pressureControlPlane.update(
+            pressureConfig.getDouble("signals.novelty", 0.35D),
+            pressureConfig.getDouble("signals.diversity", 0.40D),
+            Math.min(1.0D, ledgerQueueDepth() / Math.max(1.0D, pressureConfig.getDouble("scales.ledger_backlog", 128.0D))),
+            Math.min(1.0D, (reconciliationMismatchCount() + itemOwnershipConflictCount()) / Math.max(1.0D, pressureConfig.getDouble("scales.repair", 8.0D))),
+            pressureConfig.getDouble("signals.domain_shift", 0.25D),
+            Math.min(1.0D, activeInstanceCount() / Math.max(1.0D, pressureConfig.getDouble("scales.instance_queue", 32.0D))),
+            entityPressure(),
+            Math.min(1.0D, (duplicateLoginRejectCount() + transferBarrierRejectCount()) / Math.max(1.0D, pressureConfig.getDouble("scales.authority", 8.0D))),
+            Math.min(1.0D, reconciliationMismatchCount() / Math.max(1.0D, pressureConfig.getDouble("scales.reconciliation", 8.0D))),
+            Math.min(1.0D, experimentRollbackCount() / Math.max(1.0D, pressureConfig.getDouble("scales.experiment", 4.0D)))
+        );
     }
 
     private void maybeWarnEntityPressure(String category, int total, int serverCap, int categoryCount, int categoryCap, double pressure) {
@@ -3863,6 +3902,7 @@ public final class RpgNetworkService {
                     String previousOwner = seenOwners.putIfAbsent(itemInstanceId, ownerRef);
                     if (previousOwner != null && !previousOwner.equals(ownerRef)) {
                         itemOwnershipConflictCount.incrementAndGet();
+                        economyItemPlane.assertOwner(itemInstanceId, previousOwner);
                         economyItemPlane.quarantineItem(itemInstanceId, "duplicate_manifest_owner");
                         exploitForensicsPlane.record("impossible_ownership", null, itemInstanceId, sha256(previousOwner + "|" + ownerRef + "|" + itemInstanceId),
                             ExploitForensicsPlane.Action.ITEM_QUARANTINE,
@@ -3887,6 +3927,10 @@ public final class RpgNetworkService {
         yaml.set("role", serverRole);
         yaml.set("generated_at", System.currentTimeMillis());
         yaml.set("payload", payload == null ? Map.of() : new LinkedHashMap<>(payload));
+        double usefulness = payload == null ? 0.0D : Math.min(1.0D, payload.size() / 10.0D);
+        List<String> tags = new ArrayList<>();
+        tags.add(normalize(artifactType));
+        tags.add(normalize(scope));
         writeYaml(artifactDir.resolve(artifactId + ".yml"), yaml.saveToString());
         gameplayArtifactRegistry.register(
             resolveArtifactClass(artifactType),
@@ -3895,8 +3939,12 @@ public final class RpgNetworkService {
             "evaluation:pending",
             "selection:active",
             List.of(parentArtifactId == null ? "" : parentArtifactId),
-            artifactDir.resolve(artifactId + ".yml").toString()
+            artifactDir.resolve(artifactId + ".yml").toString(),
+            usefulness,
+            tags
         );
+        runtimeKnowledgeIndex.remember(artifactId, artifactType, scope, artifactId, parentArtifactId, usefulness, tags);
+        writeYaml(knowledgeDir.resolve(artifactId + ".yml"), yaml.saveToString());
         return artifactId;
     }
 
@@ -3912,9 +3960,13 @@ public final class RpgNetworkService {
             case "economy_parameter_set" -> GameplayArtifactRegistry.ArtifactClass.ECONOMY_PARAMETER_SET;
             case "spawn_distribution_variant" -> GameplayArtifactRegistry.ArtifactClass.SPAWN_DISTRIBUTION_VARIANT;
             case "player_strategy_cluster" -> GameplayArtifactRegistry.ArtifactClass.PLAYER_STRATEGY_CLUSTER;
-            case "balancing_decision", "governance_decision" -> GameplayArtifactRegistry.ArtifactClass.BALANCING_DECISION;
+            case "balancing_decision" -> GameplayArtifactRegistry.ArtifactClass.BALANCING_DECISION;
+            case "experiment_definition" -> GameplayArtifactRegistry.ArtifactClass.EXPERIMENT_DEFINITION;
+            case "experiment_result" -> GameplayArtifactRegistry.ArtifactClass.EXPERIMENT_RESULT;
+            case "governance_decision" -> GameplayArtifactRegistry.ArtifactClass.GOVERNANCE_DECISION;
             case "exploit_signature" -> GameplayArtifactRegistry.ArtifactClass.EXPLOIT_SIGNATURE;
             case "recovery_action" -> GameplayArtifactRegistry.ArtifactClass.RECOVERY_ACTION;
+            case "compensation_action" -> GameplayArtifactRegistry.ArtifactClass.COMPENSATION_ACTION;
             default -> GameplayArtifactRegistry.ArtifactClass.BALANCING_DECISION;
         };
     }
@@ -5322,12 +5374,29 @@ public final class RpgNetworkService {
     }
 
     private void initializeControlPlanes() {
+        pressureControlPlane.update(
+            pressureConfig.getDouble("signals.novelty", 0.35D),
+            pressureConfig.getDouble("signals.diversity", 0.40D),
+            pressureConfig.getDouble("signals.efficiency", Math.min(1.0D, ledgerQueueDepth() / 128.0D)),
+            pressureConfig.getDouble("signals.repair", Math.min(1.0D, (reconciliationMismatchCount() + itemOwnershipConflictCount()) / 8.0D)),
+            pressureConfig.getDouble("signals.domain_shift", 0.25D),
+            Math.min(1.0D, ledgerQueueDepth() / 128.0D),
+            entityPressure(),
+            Math.min(1.0D, (duplicateLoginRejectCount() + transferBarrierRejectCount()) / 8.0D),
+            Math.min(1.0D, reconciliationMismatchCount() / 8.0D),
+            Math.min(1.0D, experimentRollbackCount() / 4.0D)
+        );
         instanceExperimentPlane.activatePolicy("transfer_safety_policy", "v1", "artifact:policy:transfer_safety:v1");
         instanceExperimentPlane.activatePolicy("reward_idempotency_policy", "v1", "artifact:policy:reward_idempotency:v1");
         governancePolicyRegistry.activate("spawn_regulation", "artifact:policy:spawn_regulation:v1", serverName, List.of("spawn_denials", "entity_pressure"));
         governancePolicyRegistry.activate("transfer_safety", "artifact:policy:transfer_safety:v1", serverName, List.of("transfer_failures", "stale_load_rejections"));
         governancePolicyRegistry.activate("reward_idempotency", "artifact:policy:reward_idempotency:v1", serverName, List.of("reward_duplicate_suppressed", "ledger_backlog"));
+        policyRegistry.activate("spawn_regulation", "artifact:policy:spawn_regulation:v1", serverName, List.of("spawn_denials", "entity_pressure"));
+        policyRegistry.activate("transfer_safety", "artifact:policy:transfer_safety:v1", serverName, List.of("transfer_failures", "stale_load_rejections"));
+        policyRegistry.activate("reward_idempotency", "artifact:policy:reward_idempotency:v1", serverName, List.of("reward_duplicate_suppressed", "ledger_backlog"));
         instanceExperimentPlane.registerExperiment("drop_rate_canary", "drop_rates", serverRole, "artifact:exp:drop_rate_canary:v1", 0.30D);
+        ExperimentRegistry.ExperimentRecord experiment = experimentRegistry.register("drop_rates", serverRole, "canary", "artifact:exp:drop_rate_canary:v1", experimentation.getDouble("surfaces.drop_rates.safety_budget", 0.30D));
+        experimentRegistry.transition(experiment.experimentId(), ExperimentRegistry.ExperimentLifecycle.CANARY, 0.0D, List.of("drop_rates"));
         exportArtifact("loot_table_variant", "global", "", Map.of("mobs", mobs.getValues(true), "bosses", bosses.getValues(true)));
         exportArtifact("dungeon_topology_variant", "global", "", Map.of("dungeons", dungeons.getValues(true)));
         exportArtifact("boss_mechanic_variant", "global", "", Map.of("bosses", bosses.getValues(true)));
@@ -5337,13 +5406,20 @@ public final class RpgNetworkService {
         exportArtifact("spawn_distribution_variant", "global", "", Map.of("mobs", mobs.getValues(true), "events", events.getValues(true)));
         exportArtifact("encounter_pacing_variant", serverRole, "", Map.of("dungeons", dungeons.getValues(true), "bosses", bosses.getValues(true), "events", events.getValues(true)));
         exportArtifact("player_strategy_cluster", serverRole, "", Map.of("skills", skills.getValues(true), "quests", quests.getValues(true)));
-        exportArtifact("experiment_definition", serverRole, "", Map.of("experiments", instanceExperimentPlane.snapshot().getValues(true)));
-        exportArtifact("governance_decision", "startup", "", Map.of("policies", instanceExperimentPlane.snapshot().getValues(true), "network", network.getValues(true)));
+        exportArtifact("experiment_definition", serverRole, "", Map.of("experiments", experimentRegistry.snapshot().getValues(true), "instance_plane", instanceExperimentPlane.snapshot().getValues(true)));
+        exportArtifact("experiment_result", serverRole, "", Map.of("pressure", pressureControlPlane.snapshot().getValues(true), "knowledge", runtimeKnowledgeIndex.snapshot().getValues(true)));
+        exportArtifact("governance_decision", "startup", "", Map.of("policies", policyRegistry.snapshot().getValues(true), "governance", governance.getValues(true), "network", network.getValues(true)));
+        exportArtifact("balancing_decision", serverRole, "", Map.of("pressure", pressureControlPlane.snapshot().getValues(true), "economy", economy.getValues(true)));
+        exportArtifact("exploit_signature", "startup", "", Map.of("detectors", exploitDetectorRegistry.snapshot().getValues(true), "guards", exploit.getValues(true)));
+        exportArtifact("recovery_action", "startup", "", Map.of("recovery", persistence.getConfigurationSection("recovery") == null ? Map.of() : persistence.getConfigurationSection("recovery").getValues(true)));
         writeYaml(policyDir.resolve("active-policies.yml"), instanceExperimentPlane.snapshot().saveToString());
         writeYaml(experimentRegistryDir.resolve(serverName + "-experiments.yml"), instanceExperimentPlane.snapshot().saveToString());
+        writeYaml(experimentRegistryDir.resolve(serverName + "-experiment-registry.yml"), experimentRegistry.snapshot().saveToString());
+        writeYaml(policyDir.resolve(serverName + "-policy-registry.yml"), policyRegistry.snapshot().saveToString());
         writeYaml(coordinationDir.resolve(serverName + "-session-authority.yml"), sessionAuthorityService.snapshot().saveToString());
         writeYaml(coordinationDir.resolve(serverName + "-transfers.yml"), deterministicTransferService.snapshot().saveToString());
         writeYaml(incidentDir.resolve(serverName + "-incident-registry.yml"), exploitDetectorRegistry.snapshot().saveToString());
+        writeYaml(knowledgeDir.resolve(serverName + "-knowledge.yml"), runtimeKnowledgeIndex.snapshot().saveToString());
     }
 
     private void writeHealthSnapshot() {
@@ -5364,6 +5440,8 @@ public final class RpgNetworkService {
         yaml.set("instance_cleanup_failures", cleanupFailureCount());
         yaml.set("managed_entities", managedEntityTotalCount());
         yaml.set("entity_pressure", entityPressure());
+        yaml.set("runtime_composite_pressure", runtimeCompositePressure());
+        yaml.set("pressure_control_plane", pressureControlPlane.snapshot().getValues(true));
         yaml.set("entity_spawn_denied", managedEntitySpawnDeniedCount());
         yaml.set("safe_mode", safeMode);
         yaml.set("safe_mode_reason", safeModeReason);
@@ -5412,6 +5490,9 @@ public final class RpgNetworkService {
         yaml.set("gameplay_artifact_registry", artifactRegistry.getValues(true));
         yaml.set("governance_policy_registry", governanceRegistry.getValues(true));
         yaml.set("exploit_detector_registry", detectorRegistry.getValues(true));
+        yaml.set("experiment_registry", experimentRegistry.snapshot().getValues(true));
+        yaml.set("policy_registry", policyRegistry.snapshot().getValues(true));
+        yaml.set("runtime_knowledge_index", runtimeKnowledgeIndex.snapshot().getValues(true));
         writeYaml(runtimeDir.resolve("status").resolve(serverName + ".yml"), yaml.saveToString());
     }
 

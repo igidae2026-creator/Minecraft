@@ -21,3 +21,6 @@
 - Experiment exports, incident artifacts, and coordination surfaces are now exposed under `runtime_data/experiments`, `runtime_data/incidents`, and `runtime_data/coordination`.
 - Metrics and alerts now cover guild drift, replay divergence, item ownership conflicts, cleanup failures, and experiment/policy rollback anomalies in addition to prior authority and ledger signals.
 - Ops now include `validate_runtime_truth.py`, `reconcile_runtime.py`, `recover_runtime.sh`, `orchestrate_cluster.sh`, a repo-truth runbook, and stronger health validation for artifact exports, rare-item authority, and session authority requirements.
+- Added explicit `ExperimentRegistry`, `PolicyRegistry`, `PressureControlPlane`, and `RuntimeKnowledgeIndex` runtime services so experiment/governance/pressure/knowledge guarantees are surfaced as first-class exports rather than implicit side effects.
+- Added `configs/pressure.yml`, `configs/experiments.yml`, and `configs/governance.yml` to eliminate hidden control-plane policy and make pressure/rollout/rollback settings truthful and auditable.
+- Runtime artifact exports now feed a knowledge index under `runtime_data/knowledge`, and health snapshots export pressure, policy, experiment, and knowledge planes alongside existing authority/economy/incident telemetry.

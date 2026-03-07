@@ -26,7 +26,11 @@ public final class GameplayArtifactRegistry {
         PLAYER_STRATEGY_CLUSTER,
         BALANCING_DECISION,
         EXPLOIT_SIGNATURE,
-        RECOVERY_ACTION
+        EXPERIMENT_DEFINITION,
+        EXPERIMENT_RESULT,
+        GOVERNANCE_DECISION,
+        RECOVERY_ACTION,
+        COMPENSATION_ACTION
     }
 
     public record ArtifactRecord(
@@ -38,6 +42,8 @@ public final class GameplayArtifactRegistry {
         String selectionMetadataRef,
         List<String> mutationLineage,
         String archiveExportPath,
+        double usefulnessScore,
+        List<String> tags,
         long createdAt
     ) {}
 
@@ -45,7 +51,8 @@ public final class GameplayArtifactRegistry {
 
     public ArtifactRecord register(ArtifactClass artifactClass, String lineageParent, String generationMetadataRef,
                                    String evaluationMetadataRef, String selectionMetadataRef,
-                                   List<String> mutationLineage, String archiveExportPath) {
+                                   List<String> mutationLineage, String archiveExportPath,
+                                   double usefulnessScore, List<String> tags) {
         ArtifactRecord record = new ArtifactRecord(
             "artifact_" + UUID.randomUUID().toString().replace("-", ""),
             artifactClass,
@@ -55,6 +62,8 @@ public final class GameplayArtifactRegistry {
             normalize(selectionMetadataRef),
             mutationLineage == null ? List.of() : new ArrayList<>(mutationLineage),
             archiveExportPath == null ? "" : archiveExportPath,
+            Math.max(0.0D, usefulnessScore),
+            tags == null ? List.of() : new ArrayList<>(tags),
             Instant.now().toEpochMilli()
         );
         artifacts.put(record.artifactId(), record);
@@ -70,6 +79,17 @@ public final class GameplayArtifactRegistry {
             counts.merge(artifact.artifactClass().name().toLowerCase(Locale.ROOT), 1, Integer::sum);
         }
         yaml.set("counts", counts);
+        yaml.set("top_useful", artifacts.values().stream()
+            .sorted((left, right) -> Double.compare(right.usefulnessScore(), left.usefulnessScore()))
+            .limit(16)
+            .map(artifact -> Map.of(
+                "artifact_id", artifact.artifactId(),
+                "class", artifact.artifactClass().name(),
+                "usefulness", artifact.usefulnessScore(),
+                "archive_export_path", artifact.archiveExportPath(),
+                "tags", artifact.tags()
+            ))
+            .toList());
         return yaml;
     }
 

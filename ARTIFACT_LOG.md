@@ -13,3 +13,5 @@ Append-only artifact log
 - 2026-03-08: Replaced Redis-authority config fiction with truthful in-repo session authority semantics plus optional Redis mirroring, and added explicit session/transfer substrate classes.
 - 2026-03-08: Added first-class gameplay artifact, governance policy, and exploit detector registries plus new runtime exports under `runtime_data/coordination`, `runtime_data/experiments`, and `runtime_data/incidents`.
 - 2026-03-08: Added runtime truth validation, reconciliation tooling, recovery/orchestration scripts, and runbook surfaces aligned to the implemented guarantees.
+- 2026-03-08: Added first-class experiment, policy, pressure, and knowledge registries with runtime exports under `runtime_data/experiments`, `runtime_data/policies`, `runtime_data/status`, and `runtime_data/knowledge`.
+- 2026-03-08: Expanded artifact registry classes to cover experiment results, governance decisions, and compensation/recovery actions with usefulness scoring for future retrieval.

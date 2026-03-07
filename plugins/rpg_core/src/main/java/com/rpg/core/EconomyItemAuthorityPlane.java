@@ -33,9 +33,11 @@ public final class EconomyItemAuthorityPlane {
     private final ConcurrentMap<String, LedgerMutation> opIndex = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, ItemLineage> itemLineage = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, ItemLineage> quarantine = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, String> itemOwners = new ConcurrentHashMap<>();
 
     private final AtomicLong duplicateMismatchCount = new AtomicLong();
     private final AtomicLong quarantineCount = new AtomicLong();
+    private final AtomicLong duplicatePossessionDetections = new AtomicLong();
 
     public synchronized LedgerMutation appendMutation(String operationId, UUID ownerId, String category,
                                                       String reference, double goldDelta, Map<String, Integer> itemDelta,
@@ -72,6 +74,7 @@ public final class EconomyItemAuthorityPlane {
         history.add(now + ":mint:" + normalize(mintSource) + ":owner=" + normalize(ownerRef));
         ItemLineage item = new ItemLineage(itemId, normalize(archetype), mintedFor, normalize(mintSource), normalize(ownerRef), "ACTIVE", now, now, history);
         itemLineage.put(itemId, item);
+        itemOwners.put(itemId, normalize(ownerRef));
         return item;
     }
 
@@ -89,6 +92,7 @@ public final class EconomyItemAuthorityPlane {
         ItemLineage next = new ItemLineage(existing.itemInstanceId(), existing.archetype(), existing.mintedFor(), existing.mintSource(),
             normalize(nextOwnerRef), existing.state(), existing.mintedAt(), now, history);
         itemLineage.put(next.itemInstanceId(), next);
+        itemOwners.put(next.itemInstanceId(), normalize(nextOwnerRef));
         return next;
     }
 
@@ -104,7 +108,19 @@ public final class EconomyItemAuthorityPlane {
             existing.ownerRef(), "QUARANTINED", existing.mintedAt(), now, history);
         itemLineage.put(itemInstanceId, quarantined);
         quarantine.put(itemInstanceId, quarantined);
+        itemOwners.put(itemInstanceId, quarantined.ownerRef());
         quarantineCount.incrementAndGet();
+    }
+
+    public boolean assertOwner(String itemInstanceId, String ownerRef) {
+        String expected = normalize(ownerRef);
+        String current = itemOwners.get(itemInstanceId);
+        if (current == null || current.equals(expected)) {
+            return true;
+        }
+        duplicatePossessionDetections.incrementAndGet();
+        quarantineItem(itemInstanceId, "duplicate_possession_detection");
+        return false;
     }
 
     public YamlConfiguration snapshot() {
@@ -114,6 +130,7 @@ public final class EconomyItemAuthorityPlane {
         yaml.set("tracked_items", itemLineage.size());
         yaml.set("quarantined_items", quarantine.size());
         yaml.set("quarantine_total", quarantineCount.get());
+        yaml.set("duplicate_possession_detections", duplicatePossessionDetections.get());
         return yaml;
     }
 
