@@ -290,7 +290,7 @@ public final class RpgNetworkService {
             }
             instance.setLifecycleState(InstanceLifecycleState.BOOTING);
             persistDungeonInstance(instance);
-            World world = instanceOrchestrator.bootInstanceWorld(instance);
+            World world = ensureDungeonWorld(instance);
             if (world == null) {
                 return null;
             }
@@ -3221,6 +3221,7 @@ public final class RpgNetworkService {
 
     private void cleanupExpiredInstances() {
         long now = System.currentTimeMillis();
+        authorityPlane.sweepExpiredState(now);
         instanceExperimentPlane.recoverOrphans(now);
         long holdMillis = instanceHoldMillis();
         for (DungeonInstanceState instance : new ArrayList<>(dungeonInstances.values())) {

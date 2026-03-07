@@ -17,7 +17,8 @@ public final class AuthorityCoordinationPlane {
     public enum TicketState {
         PENDING,
         CONSUMED,
-        FAILED
+        FAILED,
+        EXPIRED
     }
 
     public record SessionAuthority(UUID playerId, String serverId, String leaseId, long leaseExpiresAt, long updatedAt) {
@@ -42,6 +43,7 @@ public final class AuthorityCoordinationPlane {
     private final AtomicLong duplicateLoginRejects = new AtomicLong();
     private final AtomicLong transferFenceRejects = new AtomicLong();
     private final AtomicLong leaseExpiries = new AtomicLong();
+    private final AtomicLong expiredTicketTransitions = new AtomicLong();
 
     public TransferTicket issueTicket(UUID playerId, String sourceServer, String targetServer,
                                       long expectedProfileVersion, long expectedGuildVersion,
@@ -105,6 +107,25 @@ public final class AuthorityCoordinationPlane {
         return next;
     }
 
+    public void sweepExpiredState(long now) {
+        for (Map.Entry<UUID, SessionAuthority> entry : liveAuthorities.entrySet()) {
+            SessionAuthority authority = entry.getValue();
+            if (authority == null || !authority.expired(now)) {
+                continue;
+            }
+            liveAuthorities.remove(entry.getKey(), authority);
+        }
+        for (Map.Entry<String, TransferTicket> entry : tickets.entrySet()) {
+            TransferTicket ticket = entry.getValue();
+            if (ticket == null) {
+                continue;
+            }
+            if ((ticket.state() == TicketState.PENDING || ticket.state() == TicketState.FAILED) && ticket.expired(now)) {
+                markExpired(ticket, "expired");
+            }
+        }
+    }
+
     public boolean rejectDuplicateLogin(UUID playerId, String serverId, long now) {
         SessionAuthority existing = liveAuthorities.get(playerId);
         if (existing == null || existing.expired(now)) {
@@ -130,8 +151,54 @@ public final class AuthorityCoordinationPlane {
         yaml.set("duplicate_login_rejects", duplicateLoginRejects.get());
         yaml.set("transfer_fence_rejects", transferFenceRejects.get());
         yaml.set("transfer_lease_expiry", leaseExpiries.get());
+        yaml.set("ticket_expired_transitions", expiredTicketTransitions.get());
+        yaml.set("transfer_tickets_total", tickets.size());
+        long pending = 0L;
+        long consumed = 0L;
+        long failed = 0L;
+        long expired = 0L;
+        for (TransferTicket ticket : tickets.values()) {
+            if (ticket == null) {
+                continue;
+            }
+            if (ticket.state() == TicketState.PENDING) {
+                pending++;
+            } else if (ticket.state() == TicketState.CONSUMED) {
+                consumed++;
+            } else if (ticket.state() == TicketState.FAILED) {
+                failed++;
+            } else if (ticket.state() == TicketState.EXPIRED) {
+                expired++;
+            }
+        }
+        yaml.set("transfer_tickets_pending", pending);
+        yaml.set("transfer_tickets_consumed", consumed);
+        yaml.set("transfer_tickets_failed", failed);
+        yaml.set("transfer_tickets_expired", expired);
         yaml.set("live_authority_sessions", liveAuthorities.size());
         return yaml;
+    }
+
+    private TransferTicket markExpired(TransferTicket ticket, String reason) {
+        TransferTicket expired = new TransferTicket(
+            ticket.ticketId(),
+            ticket.playerId(),
+            ticket.sourceServer(),
+            ticket.targetServer(),
+            ticket.issuedAt(),
+            ticket.expiresAt(),
+            ticket.expectedProfileVersion(),
+            ticket.expectedGuildVersion(),
+            ticket.sourceLeaseId(),
+            TicketState.EXPIRED,
+            reason
+        );
+        if (tickets.replace(expired.ticketId(), ticket, expired)) {
+            leaseExpiries.incrementAndGet();
+            expiredTicketTransitions.incrementAndGet();
+            return expired;
+        }
+        return tickets.getOrDefault(ticket.ticketId(), expired);
     }
 
     private TransferTicket failTicket(TransferTicket ticket, String reason) {
