@@ -47,3 +47,6 @@ operational:
   alert_instance_leak: 50
   alert_transfer_fence_rejects: 5
   alert_cas_conflicts: 5
+  alert_duplicate_login_rejects: 2
+  alert_transfer_lease_expiry: 3
+  alert_startup_quarantine: 1

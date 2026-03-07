@@ -92,7 +92,8 @@ operational:
 data_flow:
   player_profile: mysql
   inventory_authority: mysql
-  live_session_state: redis
+  live_session_state: local_fallback
+  live_session_mirror: redis
   guild_state: mysql
   economy_ledger: mysql
   metrics_sink: prometheus_textfile

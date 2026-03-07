@@ -49,6 +49,12 @@ public class Main extends JavaPlugin implements CommandExecutor {
         out.append("rpg_runtime_transfer_fence_rejects_total ").append(service.transferBarrierRejectCount()).append('\n');
         out.append("rpg_runtime_cas_conflicts_total ").append(service.casConflictCount()).append('\n');
         out.append("rpg_runtime_reward_duplicate_suppressed_total ").append(service.rewardDuplicateSuppressionCount()).append('\n');
+        out.append("rpg_runtime_duplicate_login_rejects_total ").append(service.duplicateLoginRejectCount()).append('\n');
+        out.append("rpg_runtime_transfer_lease_expiry_total ").append(service.transferLeaseExpiryCount()).append('\n');
+        out.append("rpg_runtime_startup_quarantine_total ").append(service.startupQuarantineCount()).append('\n');
+        out.append("rpg_runtime_reconciliation_mismatches_total ").append(service.reconciliationMismatchCount()).append('\n');
+        out.append("rpg_runtime_guild_value_drift_total ").append(service.guildValueDriftCount()).append('\n');
+        out.append("rpg_runtime_replay_divergence_total ").append(service.replayDivergenceCount()).append('\n');
         out.append("rpg_runtime_tps ").append(String.format(Locale.US, "%.2f", tps)).append('\n');
         out.append("rpg_runtime_role{role=\"").append(service.serverRole()).append("\"} 1\n");
         service.writeMetricSnapshot(out.toString());
@@ -67,6 +73,9 @@ public class Main extends JavaPlugin implements CommandExecutor {
         int leakWarn = Math.max(1, service.scaling().getInt("operational.alert_instance_leak", 50));
         int transferFenceWarn = Math.max(1, service.scaling().getInt("operational.alert_transfer_fence_rejects", 5));
         int casConflictWarn = Math.max(1, service.scaling().getInt("operational.alert_cas_conflicts", 5));
+        int duplicateLoginWarn = Math.max(1, service.scaling().getInt("operational.alert_duplicate_login_rejects", 2));
+        int transferLeaseWarn = Math.max(1, service.scaling().getInt("operational.alert_transfer_lease_expiry", 3));
+        int startupQuarantineWarn = Math.max(1, service.scaling().getInt("operational.alert_startup_quarantine", 1));
 
         if (tps < tpsWarn) {
             getLogger().warning("ALERT tps_drop tps=" + String.format(Locale.US, "%.2f", tps) + " threshold=" + String.format(Locale.US, "%.2f", tpsWarn));
@@ -90,6 +99,21 @@ public class Main extends JavaPlugin implements CommandExecutor {
         }
         if (service.casConflictCount() >= casConflictWarn) {
             getLogger().warning("ALERT cas_conflicts count=" + service.casConflictCount() + " threshold=" + casConflictWarn);
+            lastAlertAt = now;
+            return;
+        }
+        if (service.duplicateLoginRejectCount() >= duplicateLoginWarn) {
+            getLogger().warning("ALERT duplicate_login_rejects count=" + service.duplicateLoginRejectCount() + " threshold=" + duplicateLoginWarn);
+            lastAlertAt = now;
+            return;
+        }
+        if (service.transferLeaseExpiryCount() >= transferLeaseWarn) {
+            getLogger().warning("ALERT transfer_lease_expiry count=" + service.transferLeaseExpiryCount() + " threshold=" + transferLeaseWarn);
+            lastAlertAt = now;
+            return;
+        }
+        if (service.startupQuarantineCount() >= startupQuarantineWarn) {
+            getLogger().warning("ALERT startup_quarantine count=" + service.startupQuarantineCount() + " threshold=" + startupQuarantineWarn);
             lastAlertAt = now;
         }
     }
