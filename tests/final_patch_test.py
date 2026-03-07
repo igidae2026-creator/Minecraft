@@ -15,4 +15,9 @@ def test_final_targeted_production_patch_markers_present():
     assert "canAccessWorld" in source
     assert "canClaimReservedEntityKill" in source
     assert "isTravelAllowed" in source
+    assert "withProfileRead" in source
+    assert "lastFlushedProfileVersion" in source
+    assert "persistProfileSnapshot" in source
+    assert "entry_hash" in source
+    assert "Velocity transfers must remain disabled for deterministic routing" in source
     assert "This event mob is reserved for another player." in event_source

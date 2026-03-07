@@ -167,11 +167,14 @@ public final class RpgNetworkService {
     private final Set<String> dirtyGuilds = ConcurrentHashMap.newKeySet();
     private final Map<UUID, Object> profileLocks = new ConcurrentHashMap<>();
     private final Map<String, Object> guildLocks = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> lastFlushedProfileVersion = new ConcurrentHashMap<>();
+    private final Map<String, Long> lastFlushedGuildVersion = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastMobRewardAt = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastCommandAt = new ConcurrentHashMap<>();
     private final Map<String, BukkitTask> bossTasks = new ConcurrentHashMap<>();
     private final ConcurrentLinkedQueue<LedgerEntry> ledgerQueue = new ConcurrentLinkedQueue<>();
     private final AtomicLong ledgerSequence = new AtomicLong(System.currentTimeMillis());
+    private final AtomicLong ledgerHashChain = new AtomicLong(0L);
     private final Map<String, DungeonInstanceState> dungeonInstances = new ConcurrentHashMap<>();
     private final Map<UUID, String> dungeonOwnerInstances = new ConcurrentHashMap<>();
     private volatile boolean mysqlSchemaReady;
@@ -432,6 +435,14 @@ public final class RpgNetworkService {
         }
     }
 
+    public <T> T withProfileRead(UUID uuid, String latestName, Function<RpgProfile, T> action) {
+        Objects.requireNonNull(action, "action");
+        synchronized (profileLocks.computeIfAbsent(uuid, ignored -> new Object())) {
+            RpgProfile profile = profiles.computeIfAbsent(uuid, ignored -> loadProfile(uuid, latestName));
+            return action.apply(profile);
+        }
+    }
+
     public RpgProfile profileSnapshot(Player player) {
         UUID uuid = player.getUniqueId();
         synchronized (profileLocks.computeIfAbsent(uuid, ignored -> new Object())) {
@@ -510,21 +521,21 @@ public final class RpgNetworkService {
                 return;
             }
             version = profile.getUpdatedAt();
+            Long flushed = lastFlushedProfileVersion.get(uuid);
+            if (flushed != null && flushed >= version) {
+                dirtyProfiles.remove(uuid);
+                return;
+            }
             snapshot = RpgProfile.fromYaml(profile.getUuid(), profile.getLastName(), profile.toYaml());
         }
-        String serialized = snapshot.toYaml().saveToString();
-        boolean authoritativeOk = persistProfileAuthoritatively(snapshot);
-        if (!authoritativeOk) {
-            enterSafeMode("MySQL backend unavailable");
+        if (!persistProfileSnapshot(uuid, snapshot)) {
             return;
-        }
-        if (persistence.getBoolean("local_fallback.enabled", true)) {
-            writeYaml(profilePath(uuid), serialized);
         }
         synchronized (profileLocks.computeIfAbsent(uuid, ignored -> new Object())) {
             RpgProfile live = profiles.get(uuid);
             if (live == null || live.getUpdatedAt() == version) {
                 dirtyProfiles.remove(uuid);
+                lastFlushedProfileVersion.put(uuid, version);
             }
         }
     }
@@ -540,23 +551,47 @@ public final class RpgNetworkService {
                 return;
             }
             version = guild.getUpdatedAt();
+            Long flushed = lastFlushedGuildVersion.get(key);
+            if (flushed != null && flushed >= version) {
+                dirtyGuilds.remove(key);
+                return;
+            }
             snapshot = RpgGuild.fromYaml(guild.getName(), guild.toYaml());
         }
-        String serialized = snapshot.toYaml().saveToString();
-        boolean authoritativeOk = persistGuildAuthoritatively(snapshot);
-        if (!authoritativeOk) {
-            enterSafeMode("MySQL backend unavailable");
+        if (!persistGuildSnapshot(key, snapshot)) {
             return;
-        }
-        if (persistence.getBoolean("local_fallback.enabled", true)) {
-            writeYaml(guildPath(key), serialized);
         }
         synchronized (guildLocks.computeIfAbsent(key, ignored -> new Object())) {
             RpgGuild live = guilds.get(key);
             if (live == null || live.getUpdatedAt() == version) {
                 dirtyGuilds.remove(key);
+                lastFlushedGuildVersion.put(key, version);
             }
         }
+    }
+
+    private boolean persistProfileSnapshot(UUID uuid, RpgProfile snapshot) {
+        boolean authoritativeOk = persistProfileAuthoritatively(snapshot);
+        if (!authoritativeOk) {
+            enterSafeMode("MySQL backend unavailable");
+            return false;
+        }
+        if (persistence.getBoolean("local_fallback.enabled", true)) {
+            writeYaml(profilePath(uuid), snapshot.toYaml().saveToString());
+        }
+        return true;
+    }
+
+    private boolean persistGuildSnapshot(String key, RpgGuild snapshot) {
+        boolean authoritativeOk = persistGuildAuthoritatively(snapshot);
+        if (!authoritativeOk) {
+            enterSafeMode("MySQL backend unavailable");
+            return false;
+        }
+        if (persistence.getBoolean("local_fallback.enabled", true)) {
+            writeYaml(guildPath(key), snapshot.toYaml().saveToString());
+        }
+        return true;
     }
 
     public void writeMetricSnapshot(String serverSpecificContent) {
@@ -591,7 +626,7 @@ public final class RpgNetworkService {
     }
 
     public String profileSummary(Player player) {
-        return withProfile(player, profile -> {
+        return withProfileRead(player.getUniqueId(), player.getName(), profile -> {
             String guildText = profile.getGuildName().isBlank() ? "none" : profile.getGuildName();
             String activeDungeon = profile.getActiveDungeon().isBlank() ? "none" : profile.getActiveDungeon() + " (kills=" + profile.getActiveDungeonKills() + ")";
             List<String> gear = new ArrayList<>();
@@ -609,11 +644,11 @@ public final class RpgNetworkService {
     }
 
     public String walletSummary(Player player) {
-        return withProfile(player, profile -> color("&6Wallet &7gold=&e" + money(profile.getGold()) + " &7items=&e" + String.join(", ", profile.inventorySummary(8))));
+        return withProfileRead(player.getUniqueId(), player.getName(), profile -> color("&6Wallet &7gold=&e" + money(profile.getGold()) + " &7items=&e" + String.join(", ", profile.inventorySummary(8))));
     }
 
     public String skillSummary(Player player) {
-        return withProfile(player, profile -> {
+        return withProfileRead(player.getUniqueId(), player.getName(), profile -> {
             List<String> parts = new ArrayList<>();
             ConfigurationSection skillSection = skills.getConfigurationSection("");
             if (skillSection != null) {
@@ -627,7 +662,7 @@ public final class RpgNetworkService {
     }
 
     public List<String> questOverview(Player player) {
-        return withProfile(player, profile -> {
+        return withProfileRead(player.getUniqueId(), player.getName(), profile -> {
             List<String> lines = new ArrayList<>();
             ConfigurationSection section = quests.getConfigurationSection("");
             if (section == null) {
@@ -875,7 +910,7 @@ public final class RpgNetworkService {
     }
 
     public String dungeonStatus(Player player) {
-        return withProfile(player, profile -> {
+        return withProfileRead(player.getUniqueId(), player.getName(), profile -> {
             if (profile.getActiveDungeon().isBlank()) {
                 return color("&eNo active dungeon.");
             }
@@ -2546,6 +2581,8 @@ public final class RpgNetworkService {
                 }
             }
         }
+        long previousHash = ledgerHashChain.get();
+        long hash = Objects.hash(sequence, now, serverName, playerUuid.toString(), category, reference == null ? "" : reference, goldDelta, copy, previousHash);
         YamlConfiguration yaml = new YamlConfiguration();
         yaml.set("sequence", sequence);
         yaml.set("created_at", now);
@@ -2555,10 +2592,13 @@ public final class RpgNetworkService {
         yaml.set("reference", reference == null ? "" : reference);
         yaml.set("gold_delta", goldDelta);
         yaml.set("items", copy);
+        yaml.set("previous_hash", previousHash);
+        yaml.set("entry_hash", hash);
         String payload = yaml.saveToString();
         LedgerEntry entry = new LedgerEntry(sequence, now, playerUuid, category, reference == null ? "" : reference, goldDelta, copy, payload);
         persistPendingLedgerEntry(entry);
         ledgerQueue.add(entry);
+        ledgerHashChain.set(hash);
     }
 
     private void loadPendingLedgerEntries() {
@@ -2566,6 +2606,7 @@ public final class RpgNetworkService {
             return;
         }
         List<LedgerEntry> recovered = new ArrayList<>();
+        long chain = 0L;
         try (var paths = Files.list(ledgerPendingDir)) {
             paths.filter(path -> path.getFileName().toString().endsWith(".yml"))
                 .sorted(Comparator.comparing(path -> path.getFileName().toString()))
@@ -2583,6 +2624,13 @@ public final class RpgNetworkService {
                         String reference = yaml.getString("reference", "");
                         double goldDelta = yaml.getDouble("gold_delta", 0.0D);
                         Map<String, Integer> items = intMap(yaml.getConfigurationSection("items"));
+                        long previousHash = yaml.getLong("previous_hash", 0L);
+                        long entryHash = yaml.getLong("entry_hash", 0L);
+                        if (entryHash == 0L) {
+                            entryHash = Objects.hash(sequence, createdAt, serverName, playerUuid.toString(), category, reference, goldDelta, items, previousHash);
+                            yaml.set("entry_hash", entryHash);
+                            writeYaml(path, yaml.saveToString());
+                        }
                         recovered.add(new LedgerEntry(sequence, createdAt, playerUuid, category, reference, goldDelta, items, yaml.saveToString()));
                         ledgerSequence.accumulateAndGet(sequence, Math::max);
                     } catch (Exception exception) {
@@ -2594,8 +2642,13 @@ public final class RpgNetworkService {
         }
         recovered.sort(Comparator.comparingLong(LedgerEntry::sequence));
         for (LedgerEntry entry : recovered) {
+            YamlConfiguration yaml = yamlFromString(entry.payload());
+            if (yaml != null) {
+                chain = yaml.getLong("entry_hash", chain);
+            }
             ledgerQueue.add(entry);
         }
+        ledgerHashChain.set(chain);
         if (!recovered.isEmpty()) {
             plugin.getLogger().warning("Recovered " + recovered.size() + " pending ledger entries for deterministic replay");
         }
@@ -2762,6 +2815,9 @@ public final class RpgNetworkService {
             if (exploit.getBoolean("network.direct_backend_join_block", true) && !"127.0.0.1".equals(serverIp)) {
                 enterSafeMode("Backend server-ip must remain 127.0.0.1 for direct join protection");
             }
+            if (network.getBoolean("proxy.advanced.accepts_transfers", true)) {
+                enterSafeMode("Velocity transfers must remain disabled for deterministic routing");
+            }
         } catch (IOException exception) {
             plugin.getLogger().warning("Unable to inspect server.properties: " + exception.getMessage());
             enterSafeMode("Unable to inspect server.properties");
@@ -2773,7 +2829,11 @@ public final class RpgNetworkService {
         if (authoritative != null) {
             return authoritative;
         }
-        if (!mysqlAuthorityRequired() && persistence.getBoolean("local_fallback.enabled", true)) {
+        if (mysqlAuthorityRequired()) {
+            enterSafeMode("MySQL authoritative profile unavailable");
+            return new RpgProfile(uuid, name);
+        }
+        if (persistence.getBoolean("local_fallback.enabled", true)) {
             Path path = profilePath(uuid);
             if (Files.exists(path)) {
                 RpgProfile fallback = RpgProfile.fromYaml(uuid, name, readYaml(path));
@@ -2792,7 +2852,11 @@ public final class RpgNetworkService {
         if (authoritative != null) {
             return authoritative;
         }
-        if (!mysqlAuthorityRequired() && persistence.getBoolean("local_fallback.enabled", true)) {
+        if (mysqlAuthorityRequired()) {
+            enterSafeMode("MySQL authoritative guild unavailable");
+            return new RpgGuild(normalized, "");
+        }
+        if (persistence.getBoolean("local_fallback.enabled", true)) {
             Path path = guildPath(normalized);
             if (Files.exists(path)) {
                 RpgGuild fallback = RpgGuild.fromYaml(normalized, readYaml(path));
