@@ -39,6 +39,7 @@ public class Main extends JavaPlugin implements CommandExecutor {
         out.append("rpg_runtime_active_instances ").append(service.activeInstanceCount()).append('\n');
         out.append("rpg_runtime_managed_entities ").append(service.managedEntityTotalCount()).append('\n');
         out.append("rpg_runtime_entity_pressure ").append(String.format(Locale.US, "%.4f", service.entityPressure())).append('\n');
+        out.append("rpg_runtime_composite_pressure ").append(String.format(Locale.US, "%.4f", service.runtimeCompositePressure())).append('\n');
         out.append("rpg_runtime_entity_spawn_denied_total ").append(service.managedEntitySpawnDeniedCount()).append('\n');
         out.append("rpg_runtime_ledger_queue_depth ").append(service.ledgerQueueDepth()).append('\n');
         out.append("rpg_runtime_ledger_pending_files ").append(service.pendingLedgerFileCount()).append('\n');
@@ -62,6 +63,8 @@ public class Main extends JavaPlugin implements CommandExecutor {
         out.append("rpg_runtime_exploit_incidents_total ").append(service.exploitIncidentCount()).append('\n');
         out.append("rpg_runtime_policy_rollbacks_total ").append(service.policyRollbackCount()).append('\n');
         out.append("rpg_runtime_experiment_rollbacks_total ").append(service.experimentRollbackCount()).append('\n');
+        out.append("rpg_runtime_transfer_quarantines_total ").append(service.transferQuarantineCount()).append('\n');
+        out.append("rpg_runtime_knowledge_records ").append(service.runtimeKnowledgeRecordCount()).append('\n');
         out.append("rpg_runtime_instance_cleanup_failures_total ").append(service.cleanupFailureCount()).append('\n');
         out.append("rpg_runtime_instance_cleanup_latency_ms_avg ").append(String.format(Locale.US, "%.3f", service.cleanupLatencyMsAvg())).append('\n');
         out.append("rpg_runtime_instance_cleanup_latency_ms_max ").append(String.format(Locale.US, "%.3f", service.cleanupLatencyMsMax())).append('\n');
@@ -93,6 +96,7 @@ public class Main extends JavaPlugin implements CommandExecutor {
         int cleanupWarn = Math.max(1, service.scaling().getInt("operational.alert_instance_cleanup_failure", 1));
         int experimentWarn = Math.max(1, service.scaling().getInt("operational.alert_experiment_anomaly", 1));
         int dbErrorWarn = Math.max(1, service.scaling().getInt("operational.alert_db_saturation", 5));
+        int transferQuarantineWarn = Math.max(1, service.scaling().getInt("operational.alert_transfer_ambiguity", 1));
 
         if (tps < tpsWarn) {
             getLogger().warning("ALERT tps_drop tps=" + String.format(Locale.US, "%.2f", tps) + " threshold=" + String.format(Locale.US, "%.2f", tpsWarn));
@@ -126,6 +130,11 @@ public class Main extends JavaPlugin implements CommandExecutor {
         }
         if (service.transferLeaseExpiryCount() >= transferLeaseWarn) {
             getLogger().warning("ALERT transfer_lease_expiry count=" + service.transferLeaseExpiryCount() + " threshold=" + transferLeaseWarn);
+            lastAlertAt = now;
+            return;
+        }
+        if (service.transferQuarantineCount() >= transferQuarantineWarn) {
+            getLogger().warning("ALERT transfer_ambiguity quarantines=" + service.transferQuarantineCount() + " threshold=" + transferQuarantineWarn);
             lastAlertAt = now;
             return;
         }
@@ -193,8 +202,17 @@ public class Main extends JavaPlugin implements CommandExecutor {
             + " activeInstances=" + service.activeInstanceCount()
             + " managedEntities=" + service.managedEntityTotalCount()
             + " entityPressure=" + String.format(Locale.US, "%.4f", service.entityPressure())
+            + " compositePressure=" + String.format(Locale.US, "%.4f", service.runtimeCompositePressure())
             + " ledgerQueue=" + service.ledgerQueueDepth()
             + " pendingLedgerFiles=" + service.pendingLedgerFileCount()
+            + " sessionConflicts=" + service.authoritySessionConflictCount()
+            + " splitBrain=" + service.authoritySplitBrainDetectionCount()
+            + " transferQuarantines=" + service.transferQuarantineCount()
+            + " guildDrift=" + service.guildValueDriftCount()
+            + " itemQuarantine=" + service.economyItemQuarantineCount()
+            + " exploitIncidents=" + service.exploitIncidentCount()
+            + " experimentAnomalies=" + (service.experimentRollbackCount() + service.policyRollbackCount())
+            + " knowledgeRecords=" + service.runtimeKnowledgeRecordCount()
             + " dbAvgMs=" + String.format(Locale.US, "%.3f", service.dbLatencyMsAvg()));
         return true;
     }

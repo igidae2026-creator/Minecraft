@@ -2,7 +2,7 @@
 
 - Hard authority coordination plane added with lease-based session ownership, split-brain detection, duplicate-login rejection counters, and transfer-fence ticket lifecycle states.
 - Added first-class in-repo `SessionAuthorityService` with lease ownership, reconnect reclaim, activation confirmation, crash invalidation, split-brain detection, and truthful local authority semantics with optional Redis mirroring only.
-- Added explicit `DeterministicTransferService` state machine (`INITIATED`, `PERSISTING`, `LEASED`, `ACTIVATING`, `ACTIVE`, `FAILED`, `EXPIRED`) with mutation freeze, stale-load refusal, refund markers, and observability export.
+- Added explicit `DeterministicTransferService` state machine (`INITIATED`, `FREEZING`, `PERSISTING`, `LEASED`, `ACTIVATING`, `ACTIVE`, `FAILED`, `EXPIRED`, `ROLLED_BACK`) with mutation freeze, stale-load refusal, refund markers, quarantine accounting, and observability export.
 - Economy/item authority plane added with append-only hash-verifiable mutation model, duplicate payload mismatch fail-closed behavior, and item quarantine accounting.
 - Instance/experiment control plane added with explicit runtime instance classes (dungeon/boss/event/exploration), deterministic lifecycle state taxonomy, orphan recovery, cleanup sweeps, and policy/experiment registries.
 - Exploit forensics plane added with immutable incident records and explicit response classes (flag, restrictions, quarantine, reward delay, admin review).
@@ -24,3 +24,4 @@
 - Added explicit `ExperimentRegistry`, `PolicyRegistry`, `PressureControlPlane`, and `RuntimeKnowledgeIndex` runtime services so experiment/governance/pressure/knowledge guarantees are surfaced as first-class exports rather than implicit side effects.
 - Added `configs/pressure.yml`, `configs/experiments.yml`, and `configs/governance.yml` to eliminate hidden control-plane policy and make pressure/rollout/rollback settings truthful and auditable.
 - Runtime artifact exports now feed a knowledge index under `runtime_data/knowledge`, and health snapshots export pressure, policy, experiment, and knowledge planes alongside existing authority/economy/incident telemetry.
+- Added `ops/runtime_summary.py` and richer metrics/command summaries so operators get direct rollups for session authority, transfer ambiguity, reconciliation drift, item quarantine, exploit incidents, instance leaks, experiment anomalies, and knowledge accumulation.

@@ -31,12 +31,18 @@ def main() -> int:
 
     for status_path in sorted((RUNTIME / "status").glob("*.yml")):
         status = load_yaml(status_path) or {}
+        transfer = status.get("deterministic_transfer_service", {}) or {}
+        session = status.get("session_authority_service", {}) or {}
         if status.get("reconciliation_mismatches", 0) > 0:
             issues.append(f"reconciliation_mismatch:{status_path.stem}")
         if status.get("guild_value_drift", 0) > 0:
             issues.append(f"guild_drift:{status_path.stem}")
         if status.get("replay_divergence", 0) > 0:
             issues.append(f"replay_divergence:{status_path.stem}")
+        if transfer.get("quarantines", 0) > 0:
+            issues.append(f"transfer_quarantine:{status_path.stem}")
+        if session.get("split_brain_detections", 0) > 0:
+            issues.append(f"split_brain:{status_path.stem}")
 
     if issues:
         for issue in issues:

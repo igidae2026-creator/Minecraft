@@ -5512,6 +5512,14 @@ public final class RpgNetworkService {
         return exploitForensicsPlane.snapshot().getLong("incident_total", 0L);
     }
 
+    public long transferQuarantineCount() {
+        return deterministicTransferService.snapshot().getLong("quarantines", 0L);
+    }
+
+    public long runtimeKnowledgeRecordCount() {
+        return runtimeKnowledgeIndex.snapshot().getLong("records", 0L);
+    }
+
     public long policyRollbackCount() {
         return instanceExperimentPlane.snapshot().getLong("policy_rollbacks", 0L) + governancePolicyRegistry.snapshot().getLong("rollbacks", 0L);
     }

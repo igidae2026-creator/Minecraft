@@ -15,3 +15,4 @@ Append-only artifact log
 - 2026-03-08: Added runtime truth validation, reconciliation tooling, recovery/orchestration scripts, and runbook surfaces aligned to the implemented guarantees.
 - 2026-03-08: Added first-class experiment, policy, pressure, and knowledge registries with runtime exports under `runtime_data/experiments`, `runtime_data/policies`, `runtime_data/status`, and `runtime_data/knowledge`.
 - 2026-03-08: Expanded artifact registry classes to cover experiment results, governance decisions, and compensation/recovery actions with usefulness scoring for future retrieval.
+- 2026-03-08: Added operator summary surfaces and behavioral fault-injection tests for transfer quarantine, split-brain detection, knowledge export visibility, and runtime summary aggregation.

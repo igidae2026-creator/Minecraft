@@ -18,6 +18,7 @@ def test_runtime_artifact_and_item_authority_surfaces_exist():
     assert (ROOT / "runtime_data" / "experiments").is_dir()
     assert (ROOT / "runtime_data" / "incidents").is_dir()
     assert (ROOT / "runtime_data" / "coordination").is_dir()
+    assert (ROOT / "runtime_data" / "knowledge").is_dir()
     assert (ROOT / "runtime_data" / "item_authority" / "owners").is_dir()
     assert (ROOT / "runtime_data" / "status").is_dir()
 
@@ -29,9 +30,13 @@ def test_metrics_and_health_surfaces_cover_new_failure_modes():
     assert "rpg_runtime_item_ownership_conflicts_total" in metrics_source
     assert "rpg_runtime_instance_cleanup_failures_total" in metrics_source
     assert "rpg_runtime_policy_rollbacks_total" in metrics_source
+    assert "rpg_runtime_composite_pressure" in metrics_source
+    assert "rpg_runtime_transfer_quarantines_total" in metrics_source
+    assert "rpg_runtime_knowledge_records" in metrics_source
     assert "ALERT guild_drift" in metrics_source
     assert "ALERT replay_divergence" in metrics_source
     assert "ALERT experiment_anomaly" in metrics_source
+    assert "ALERT transfer_ambiguity" in metrics_source
     assert 'yaml.set("instance_cleanup_latency_ms_avg"' in core_source
     assert 'yaml.set("session_authority_service"' in core_source
     assert 'yaml.set("deterministic_transfer_service"' in core_source

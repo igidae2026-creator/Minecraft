@@ -7,6 +7,7 @@ Startup validation:
 - `python3 ops/validate_rpg.py`
 - `python3 ops/validate_runtime_truth.py`
 - `python3 ops/runtime_integrity.py`
+- `python3 ops/runtime_summary.py`
 - `python3 ops/reconcile_runtime.py`
 
 Cluster operations:
@@ -18,6 +19,7 @@ Cluster operations:
 Recovery:
 - `bash ops/recover_runtime.sh`
 - Keep the runtime fail-closed if any `runtime_data/status/*.yml` file reports `reconciliation_mismatches`, `guild_value_drift`, `replay_divergence`, `item_ownership_conflicts`, or transfer ambiguity signals.
+- Use `python3 ops/runtime_summary.py` for the operator rollup of session authority, transfer failures/quarantines, reconciliation mismatches, guild drift, item quarantine, exploit incidents, instance leaks, experiment anomalies, and knowledge records.
 - Treat `runtime_data/knowledge/*.yml` as the balancing and exploit memory surface; future tuning and rollback decisions should consult it before changing pressure, economy, or experiment policy.
 
 Guaranteed by this repo:
