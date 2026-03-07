@@ -84,8 +84,15 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor {
             String itemId = service.events().getString("events." + activeEventId + ".bonus_item", "");
             int amount = service.events().getInt("events." + activeEventId + ".bonus_item_amount", 1);
             double chance = service.events().getDouble("events." + activeEventId + ".bonus_item_chance", 0.0D);
+            int granted = 0;
             if (!itemId.isBlank() && ThreadLocalRandom.current().nextDouble() < chance) {
                 profile.addItem(itemId, amount);
+                granted = amount;
+            }
+            if (granted > 0) {
+                service.appendLedgerMutation(profile.getUuid(), "event_bonus_reward", activeEventId, gold, java.util.Map.of(itemId.toLowerCase(java.util.Locale.ROOT), granted));
+            } else {
+                service.appendLedgerMutation(profile.getUuid(), "event_bonus_reward", activeEventId, gold, java.util.Collections.emptyMap());
             }
             service.awardSkillXp(profile, "combat", "mob_kill");
             service.syncCollectQuestProgress(profile);
