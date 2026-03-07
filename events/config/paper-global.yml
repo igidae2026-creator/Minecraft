@@ -2,7 +2,7 @@ proxies:
   velocity:
     enabled: true
     online-mode: true
-    secret: 648bd8266cc644c2fdaad059851119f9581016bd0fbb80e23f611508373ccc3c
+    secret: b6dbcd359f8c33bcb763e42906da1643af1631d97836e7ce00a1b83239e4a5ae
 player-auto-save:
   max-per-tick: 10
   rate: 6000

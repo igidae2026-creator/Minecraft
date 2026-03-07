@@ -29,10 +29,11 @@ def test_startup_reconciliation_quarantines_on_mismatch():
     assert "startupQuarantineCount.incrementAndGet()" in source
 
 
-def test_config_declares_redis_authoritative_live_session_coordination():
+def test_config_declares_truthful_in_repo_live_session_coordination():
     network = load_yaml("network.yml")
-    assert network["data_flow"]["live_session_state"] == "redis_authoritative"
-    assert network["data_flow"]["live_session_mirror"] == "redis"
+    assert network["data_flow"]["live_session_state"] == "local_authoritative_lease_registry"
+    assert network["data_flow"]["live_session_mirror"] == "optional_redis_session_mirror"
+    assert network["data_flow"]["live_session_coordination"] == "in_repo_deterministic_session_authority"
 
 
 def test_metrics_expose_new_authority_failure_modes():
@@ -57,4 +58,5 @@ def test_authority_plane_tracks_expired_ticket_state_and_counts():
 
 def test_runtime_sweeps_authority_expiry_with_instance_cleanup_loop():
     source = _core()
+    assert "sessionAuthorityService.sweep(now);" in source
     assert "authorityPlane.sweepExpiredState(now);" in source

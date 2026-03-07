@@ -1,12 +1,15 @@
 # RPG Network Release Manifest
 
 - Hard authority coordination plane added with lease-based session ownership, split-brain detection, duplicate-login rejection counters, and transfer-fence ticket lifecycle states.
+- Added first-class in-repo `SessionAuthorityService` with lease ownership, reconnect reclaim, activation confirmation, crash invalidation, split-brain detection, and truthful local authority semantics with optional Redis mirroring only.
+- Added explicit `DeterministicTransferService` state machine (`INITIATED`, `PERSISTING`, `LEASED`, `ACTIVATING`, `ACTIVE`, `FAILED`, `EXPIRED`) with mutation freeze, stale-load refusal, refund markers, and observability export.
 - Economy/item authority plane added with append-only hash-verifiable mutation model, duplicate payload mismatch fail-closed behavior, and item quarantine accounting.
 - Instance/experiment control plane added with explicit runtime instance classes (dungeon/boss/event/exploration), deterministic lifecycle state taxonomy, orphan recovery, cleanup sweeps, and policy/experiment registries.
 - Exploit forensics plane added with immutable incident records and explicit response classes (flag, restrictions, quarantine, reward delay, admin review).
+- Added gameplay artifact, governance policy, and exploit detector registries as first-class runtime substrates, exported in health snapshots and bound to runtime artifact/policy/incident surfaces.
 - `rpg_core` health snapshots now export control-plane telemetry (`authority_plane`, `economy_item_authority_plane`, `instance_experiment_control_plane`, `exploit_forensics_plane`).
 - Metrics monitor expanded with split-brain, item-quarantine, exploit incident, and authority-conflict Prometheus counters plus alert paths.
-- Runtime truth alignment updated: `network.yml` now marks live sessions as `redis_authoritative`, and scaling config removed false promise of world reuse pooling.
+- Runtime truth alignment updated: `network.yml` now marks live sessions as `local_authoritative_lease_registry`, Redis as an optional mirror, and scaling config still removes false promise of world reuse pooling.
 - Added focused config/runtime alignment test covering new control planes and observability wiring.
 - Authority coordination now tracks pending/consumed/failed/expired ticket counts and performs deterministic expiry sweeps during runtime cleanup cycles.
 - Session authority is now explicitly fenced around Redis-backed session/ticket coordination, duplicate-login fail-close behavior, transfer lease expiry accounting, and authority conflict telemetry.
@@ -15,5 +18,6 @@
 - High-value item authority now has first-class owner manifests plus item-lineage mint/transfer/consume tracking tied to exploit forensics and quarantine counters.
 - Instance runtime now fixes recursive world boot failure, exports cleanup latency/failure telemetry, and preserves explicit deterministic lifecycle states through cleanup.
 - Gameplay artifacts are now exported to `runtime_data/artifacts`, active governance state is exported to `runtime_data/policies`, and runtime integrity tooling validates these surfaces.
+- Experiment exports, incident artifacts, and coordination surfaces are now exposed under `runtime_data/experiments`, `runtime_data/incidents`, and `runtime_data/coordination`.
 - Metrics and alerts now cover guild drift, replay divergence, item ownership conflicts, cleanup failures, and experiment/policy rollback anomalies in addition to prior authority and ledger signals.
-- Ops now include `runtime_integrity.py`, stronger health validation, and repo-truth config updates for artifact exports, rare-item authority, and session authority requirements.
+- Ops now include `validate_runtime_truth.py`, `reconcile_runtime.py`, `recover_runtime.sh`, `orchestrate_cluster.sh`, a repo-truth runbook, and stronger health validation for artifact exports, rare-item authority, and session authority requirements.

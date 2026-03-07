@@ -22,10 +22,13 @@ def main() -> int:
 
     artifacts = RUNTIME / "artifacts"
     policies = RUNTIME / "policies"
+    experiments = RUNTIME / "experiments"
+    incidents = RUNTIME / "incidents"
+    coordination = RUNTIME / "coordination"
     item_authority = RUNTIME / "item_authority" / "owners"
     status_dir = RUNTIME / "status"
 
-    for required in (artifacts, policies, item_authority, status_dir):
+    for required in (artifacts, policies, experiments, incidents, coordination, item_authority, status_dir):
         if not required.exists():
             errors.append(f"missing_runtime_surface:{required.relative_to(ROOT)}")
 
@@ -50,6 +53,10 @@ def main() -> int:
                 errors.append(f"reconciliation_mismatch:{status_path.stem}")
             if status.get("item_ownership_conflicts", 0) > 0:
                 errors.append(f"item_ownership_conflict:{status_path.stem}")
+            if status.get("deterministic_transfer_service.stale_load_rejections", 0) > 0:
+                errors.append(f"stale_transfer_load:{status_path.stem}")
+            if status.get("session_authority_service.split_brain_detections", 0) > 0:
+                errors.append(f"split_brain:{status_path.stem}")
 
     if errors:
         for error in errors:
@@ -59,6 +66,7 @@ def main() -> int:
     print("RUNTIME_INTEGRITY_OK")
     print(f"ARTIFACTS={len(list(artifacts.glob('*.yml'))) if artifacts.exists() else 0}")
     print(f"ITEM_MANIFESTS={len(list(item_authority.glob('*.yml'))) if item_authority.exists() else 0}")
+    print(f"EXPERIMENTS={len(list(experiments.glob('*.yml'))) if experiments.exists() else 0}")
     return 0
 
 

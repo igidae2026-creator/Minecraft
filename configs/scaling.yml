@@ -57,3 +57,6 @@ operational:
   alert_replay_divergence: 1
   alert_experiment_anomaly: 1
   alert_db_saturation: 5
+  alert_transfer_ambiguity: 1
+  alert_item_quarantine: 1
+  alert_policy_rollback: 1

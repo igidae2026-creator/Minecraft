@@ -20,6 +20,8 @@ def test_ops_tooling_executes_cleanly(tmp_path: Path):
     assert "rpg_network_servers_total" in text
     assert "rpg_network_plugins_per_server" in text
     assert "rpg_network_runtime_artifact_exports" in text
+    assert "rpg_network_runtime_experiment_exports" in text
+    assert "rpg_network_runtime_incident_exports" in text
 
     for script in (ROOT / "ops").glob("*.sh"):
         subprocess.run(["bash", "-n", str(script)], check=True, cwd=ROOT)

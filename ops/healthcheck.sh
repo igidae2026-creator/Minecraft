@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 python3 "$ROOT_DIR/ops/render_network.py" >/dev/null
 python3 "$ROOT_DIR/ops/validate_rpg.py" >/dev/null
 python3 "$ROOT_DIR/ops/runtime_integrity.py" >/dev/null
+python3 "$ROOT_DIR/ops/validate_runtime_truth.py" >/dev/null
 
 required_files=(
   "$ROOT_DIR/proxy/velocity.toml"
@@ -17,6 +18,11 @@ required_files=(
   "$ROOT_DIR/configs/events.yml"
   "$ROOT_DIR/ops/plugin_matrix.yml"
   "$ROOT_DIR/ops/runtime_integrity.py"
+  "$ROOT_DIR/ops/validate_runtime_truth.py"
+  "$ROOT_DIR/ops/reconcile_runtime.py"
+  "$ROOT_DIR/ops/recover_runtime.sh"
+  "$ROOT_DIR/ops/orchestrate_cluster.sh"
+  "$ROOT_DIR/ops/RUNBOOK.md"
 )
 
 for server in lobby rpg_world dungeons boss_world events; do

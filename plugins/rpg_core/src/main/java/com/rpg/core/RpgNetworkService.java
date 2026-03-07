@@ -374,6 +374,9 @@ public final class RpgNetworkService {
     private final Path artifactDir;
     private final Path policyDir;
     private final Path itemAuthorityDir;
+    private final Path coordinationDir;
+    private final Path experimentRegistryDir;
+    private final Path incidentDir;
     private final String serverName;
     private final String serverRole;
     private final YamlConfiguration network;
@@ -418,6 +421,11 @@ public final class RpgNetworkService {
     private final EconomyItemAuthorityPlane economyItemPlane = new EconomyItemAuthorityPlane();
     private final InstanceExperimentControlPlane instanceExperimentPlane = new InstanceExperimentControlPlane();
     private final ExploitForensicsPlane exploitForensicsPlane = new ExploitForensicsPlane();
+    private final SessionAuthorityService sessionAuthorityService;
+    private final DeterministicTransferService deterministicTransferService = new DeterministicTransferService();
+    private final GameplayArtifactRegistry gameplayArtifactRegistry = new GameplayArtifactRegistry();
+    private final GovernancePolicyRegistry governancePolicyRegistry = new GovernancePolicyRegistry();
+    private final ExploitDetectorRegistry exploitDetectorRegistry = new ExploitDetectorRegistry();
     private final Map<String, Integer> managedEntityCounters = new ConcurrentHashMap<>();
     private final Set<UUID> managedEntityIds = ConcurrentHashMap.newKeySet();
     private final AtomicLong dbOperationCount = new AtomicLong();
@@ -485,6 +493,10 @@ public final class RpgNetworkService {
         this.artifactDir = runtimeDir.resolve("artifacts");
         this.policyDir = runtimeDir.resolve("policies");
         this.itemAuthorityDir = runtimeDir.resolve("item_authority");
+        this.coordinationDir = runtimeDir.resolve("coordination");
+        this.experimentRegistryDir = runtimeDir.resolve("experiments");
+        this.incidentDir = runtimeDir.resolve("incidents");
+        this.sessionAuthorityService = new SessionAuthorityService(coordinationDir);
     }
 
     public void enable() {
@@ -501,6 +513,9 @@ public final class RpgNetworkService {
         ensurePath(artifactDir);
         ensurePath(policyDir);
         ensurePath(itemAuthorityDir);
+        ensurePath(coordinationDir);
+        ensurePath(experimentRegistryDir);
+        ensurePath(incidentDir);
         validateBackendBaseline();
         loadPendingLedgerEntries();
         loadPersistedInstances();
@@ -790,6 +805,11 @@ public final class RpgNetworkService {
 
     public void handleJoin(Player player) {
         long now = System.currentTimeMillis();
+        if (sessionAuthorityService.rejectDuplicateLogin(player.getUniqueId(), serverName, now)) {
+            player.sendMessage(color("&cDuplicate login rejected by session authority service."));
+            player.kickPlayer(color("&cAuthority conflict detected."));
+            return;
+        }
         if (authorityPlane.rejectDuplicateLogin(player.getUniqueId(), serverName, now)) {
             player.sendMessage(color("&cDuplicate login rejected by authority plane."));
             player.kickPlayer(color("&cAuthority conflict detected."));
@@ -821,6 +841,7 @@ public final class RpgNetworkService {
             return profile.copy();
         });
         writeSession(sessionSnapshot, true);
+        sessionAuthorityService.reclaim(player.getUniqueId(), serverName, serverName + ":" + now, UUID.randomUUID().toString(), now, transferLeaseMillis());
         authorityPlane.claimSession(player.getUniqueId(), serverName, UUID.randomUUID().toString(), System.currentTimeMillis(), transferLeaseMillis());
         applyPassiveStats(player);
         if (safeMode) {
@@ -830,6 +851,7 @@ public final class RpgNetworkService {
     }
 
     public void handleQuit(Player player) {
+        sessionAuthorityService.holdReconnect(player.getUniqueId(), System.currentTimeMillis(), instanceHoldMillis());
         authorityPlane.releaseSession(player.getUniqueId());
         RpgProfile sessionSnapshot = withProfile(player, profile -> {
             profile.setLastQuitAt(System.currentTimeMillis());
@@ -1898,12 +1920,24 @@ public final class RpgNetworkService {
         long expectedGuildVersion = guildVersionHolder[0];
         String expectedGuildName = guildNameHolder[0] == null ? "" : guildNameHolder[0];
         RpgProfile snapshot = sessionSnapshot[0];
+        DeterministicTransferService.TransferRecord transferRecord = deterministicTransferService.begin(
+            player.getUniqueId(),
+            serverName,
+            targetServer,
+            transferId,
+            Math.max(expectedProfileVersion, expectedGuildVersion),
+            System.currentTimeMillis()
+        );
+        deterministicTransferService.freezeMutations(transferRecord.transferId());
         if (snapshot == null) {
             return new OperationResult(false, color("&cUnable to prepare travel state."));
         }
         freezeMutationAuthority(player.getUniqueId());
+        deterministicTransferService.transition(transferRecord.transferId(), DeterministicTransferService.TransferState.PERSISTING, "profile_flush");
         flushPlayer(player.getUniqueId());
         if (lastFlushedProfileVersion.getOrDefault(player.getUniqueId(), 0L) < expectedProfileVersion) {
+            deterministicTransferService.refund(transferRecord.transferId(), "profile_persisting_timeout");
+            deterministicTransferService.transition(transferRecord.transferId(), DeterministicTransferService.TransferState.FAILED, "profile_barrier");
             unfreezeMutationAuthority(player.getUniqueId());
             withProfile(player, profile -> {
                 profile.addGold(fee);
@@ -1913,6 +1947,8 @@ public final class RpgNetworkService {
             return new OperationResult(false, color("&cTravel blocked until profile persistence catches up."));
         }
         if (!issueTravelTicket(player.getUniqueId(), transferId, targetServer, expectedProfileVersion, expectedGuildName, expectedGuildVersion)) {
+            deterministicTransferService.refund(transferRecord.transferId(), "lease_issue_failed");
+            deterministicTransferService.transition(transferRecord.transferId(), DeterministicTransferService.TransferState.FAILED, "lease_issue_failed");
             clearTravelTicket(player.getUniqueId());
             unfreezeMutationAuthority(player.getUniqueId());
             withProfile(player, profile -> {
@@ -1922,7 +1958,11 @@ public final class RpgNetworkService {
             });
             return new OperationResult(false, color("&cUnable to authorize the server switch."));
         }
+        deterministicTransferService.transition(transferRecord.transferId(), DeterministicTransferService.TransferState.LEASED, "travel_ticket_issued");
+        sessionAuthorityService.beginTransfer(player.getUniqueId(), serverName, targetServer, transferId, transferId, serverName + ":" + expectedProfileVersion, now, transferLeaseMillis());
         if (!writeSession(snapshot, true)) {
+            deterministicTransferService.refund(transferRecord.transferId(), "session_write_failed");
+            deterministicTransferService.transition(transferRecord.transferId(), DeterministicTransferService.TransferState.FAILED, "session_write_failed");
             clearTravelTicket(player.getUniqueId());
             unfreezeMutationAuthority(player.getUniqueId());
             withProfile(player, profile -> {
@@ -1933,6 +1973,8 @@ public final class RpgNetworkService {
             return new OperationResult(false, color("&cLive routing state unavailable. Travel aborted."));
         }
         if (!sendProxyConnect(player, targetServer, transferId, expectedProfileVersion, expectedGuildName, expectedGuildVersion)) {
+            deterministicTransferService.refund(transferRecord.transferId(), "proxy_connect_failed");
+            deterministicTransferService.transition(transferRecord.transferId(), DeterministicTransferService.TransferState.FAILED, "proxy_connect_failed");
             clearTravelTicket(player.getUniqueId());
             unfreezeMutationAuthority(player.getUniqueId());
             withProfile(player, profile -> {
@@ -1942,6 +1984,7 @@ public final class RpgNetworkService {
             });
             return new OperationResult(false, color("&cProxy routing rejected the request."));
         }
+        deterministicTransferService.transition(transferRecord.transferId(), DeterministicTransferService.TransferState.ACTIVATING, "proxy_connect_sent");
         verifyTravelRouting(player.getUniqueId(), player.getName(), targetServer, fee);
         writeAudit("travel", player.getUniqueId() + ":" + serverName + "->" + targetServer + ":fee=" + fee);
         return new OperationResult(true, color("&aTraveling to &e" + targetServer));
@@ -2744,6 +2787,7 @@ public final class RpgNetworkService {
         }
         TravelTicket ticket = consumeTravelTicket(player.getUniqueId(), serverName, previousSession);
         if (ticket != null) {
+            deterministicTransferService.verifyLease(ticket.transferId(), ticket.transferLease());
             if (ticket.transferId().isBlank()) {
                 enterSafeMode("Travel barrier transfer id missing");
                 rerouteUnauthorizedJoin(player, ticket.sourceServer());
@@ -2760,6 +2804,8 @@ public final class RpgNetworkService {
             if (durableProfileVersion < ticket.expectedProfileVersion()
                 || durableProfileVersion < ticket.expectedInventoryVersion()
                 || durableProfileVersion < ticket.expectedEconomyVersion()) {
+                deterministicTransferService.refuseStaleLoad(ticket.transferId(), durableProfileVersion);
+                deterministicTransferService.transition(ticket.transferId(), DeterministicTransferService.TransferState.FAILED, "stale_target_load");
                 enterSafeMode("Travel version barrier profile mismatch");
                 rerouteUnauthorizedJoin(player, ticket.sourceServer());
                 return false;
@@ -2767,11 +2813,15 @@ public final class RpgNetworkService {
             if (!ticket.guildName().isBlank() && ticket.expectedGuildVersion() > 0L) {
                 long durableGuildVersion = readGuildDurableVersion(ticket.guildName());
                 if (durableGuildVersion < ticket.expectedGuildVersion()) {
+                    deterministicTransferService.refuseStaleLoad(ticket.transferId(), durableGuildVersion);
+                    deterministicTransferService.transition(ticket.transferId(), DeterministicTransferService.TransferState.FAILED, "stale_guild_load");
                     enterSafeMode("Travel version barrier guild mismatch");
                     rerouteUnauthorizedJoin(player, ticket.sourceServer());
                     return false;
                 }
             }
+            deterministicTransferService.transition(ticket.transferId(), DeterministicTransferService.TransferState.ACTIVE, "target_authorized");
+            sessionAuthorityService.confirmActivation(ticket.transferId(), ticket.sourceServer() + ":" + ticket.expectedProfileVersion(), System.currentTimeMillis());
             unfreezeMutationAuthority(player.getUniqueId());
             return true;
         }
@@ -3378,6 +3428,7 @@ public final class RpgNetworkService {
 
     private void cleanupExpiredInstances() {
         long now = System.currentTimeMillis();
+        sessionAuthorityService.sweep(now);
         authorityPlane.sweepExpiredState(now);
         instanceExperimentPlane.recoverOrphans(now);
         long holdMillis = instanceHoldMillis();
@@ -3837,7 +3888,35 @@ public final class RpgNetworkService {
         yaml.set("generated_at", System.currentTimeMillis());
         yaml.set("payload", payload == null ? Map.of() : new LinkedHashMap<>(payload));
         writeYaml(artifactDir.resolve(artifactId + ".yml"), yaml.saveToString());
+        gameplayArtifactRegistry.register(
+            resolveArtifactClass(artifactType),
+            parentArtifactId,
+            "generation:" + serverName,
+            "evaluation:pending",
+            "selection:active",
+            List.of(parentArtifactId == null ? "" : parentArtifactId),
+            artifactDir.resolve(artifactId + ".yml").toString()
+        );
         return artifactId;
+    }
+
+    private GameplayArtifactRegistry.ArtifactClass resolveArtifactClass(String artifactType) {
+        String key = normalize(artifactType);
+        return switch (key) {
+            case "loot_table_variant" -> GameplayArtifactRegistry.ArtifactClass.LOOT_TABLE_VARIANT;
+            case "dungeon_topology_variant" -> GameplayArtifactRegistry.ArtifactClass.DUNGEON_TOPOLOGY_VARIANT;
+            case "boss_mechanic_variant" -> GameplayArtifactRegistry.ArtifactClass.BOSS_MECHANIC_VARIANT;
+            case "encounter_pacing_variant" -> GameplayArtifactRegistry.ArtifactClass.ENCOUNTER_PACING_VARIANT;
+            case "gear_progression_variant" -> GameplayArtifactRegistry.ArtifactClass.GEAR_PROGRESSION_VARIANT;
+            case "quest_graph_variant" -> GameplayArtifactRegistry.ArtifactClass.QUEST_GRAPH_VARIANT;
+            case "economy_parameter_set" -> GameplayArtifactRegistry.ArtifactClass.ECONOMY_PARAMETER_SET;
+            case "spawn_distribution_variant" -> GameplayArtifactRegistry.ArtifactClass.SPAWN_DISTRIBUTION_VARIANT;
+            case "player_strategy_cluster" -> GameplayArtifactRegistry.ArtifactClass.PLAYER_STRATEGY_CLUSTER;
+            case "balancing_decision", "governance_decision" -> GameplayArtifactRegistry.ArtifactClass.BALANCING_DECISION;
+            case "exploit_signature" -> GameplayArtifactRegistry.ArtifactClass.EXPLOIT_SIGNATURE;
+            case "recovery_action" -> GameplayArtifactRegistry.ArtifactClass.RECOVERY_ACTION;
+            default -> GameplayArtifactRegistry.ArtifactClass.BALANCING_DECISION;
+        };
     }
 
     private String sanitizePathToken(String raw) {
@@ -5245,6 +5324,9 @@ public final class RpgNetworkService {
     private void initializeControlPlanes() {
         instanceExperimentPlane.activatePolicy("transfer_safety_policy", "v1", "artifact:policy:transfer_safety:v1");
         instanceExperimentPlane.activatePolicy("reward_idempotency_policy", "v1", "artifact:policy:reward_idempotency:v1");
+        governancePolicyRegistry.activate("spawn_regulation", "artifact:policy:spawn_regulation:v1", serverName, List.of("spawn_denials", "entity_pressure"));
+        governancePolicyRegistry.activate("transfer_safety", "artifact:policy:transfer_safety:v1", serverName, List.of("transfer_failures", "stale_load_rejections"));
+        governancePolicyRegistry.activate("reward_idempotency", "artifact:policy:reward_idempotency:v1", serverName, List.of("reward_duplicate_suppressed", "ledger_backlog"));
         instanceExperimentPlane.registerExperiment("drop_rate_canary", "drop_rates", serverRole, "artifact:exp:drop_rate_canary:v1", 0.30D);
         exportArtifact("loot_table_variant", "global", "", Map.of("mobs", mobs.getValues(true), "bosses", bosses.getValues(true)));
         exportArtifact("dungeon_topology_variant", "global", "", Map.of("dungeons", dungeons.getValues(true)));
@@ -5253,9 +5335,15 @@ public final class RpgNetworkService {
         exportArtifact("quest_graph_variant", "global", "", Map.of("quests", quests.getValues(true)));
         exportArtifact("economy_parameter_set", "global", "", Map.of("economy", economy.getValues(true)));
         exportArtifact("spawn_distribution_variant", "global", "", Map.of("mobs", mobs.getValues(true), "events", events.getValues(true)));
+        exportArtifact("encounter_pacing_variant", serverRole, "", Map.of("dungeons", dungeons.getValues(true), "bosses", bosses.getValues(true), "events", events.getValues(true)));
+        exportArtifact("player_strategy_cluster", serverRole, "", Map.of("skills", skills.getValues(true), "quests", quests.getValues(true)));
         exportArtifact("experiment_definition", serverRole, "", Map.of("experiments", instanceExperimentPlane.snapshot().getValues(true)));
         exportArtifact("governance_decision", "startup", "", Map.of("policies", instanceExperimentPlane.snapshot().getValues(true), "network", network.getValues(true)));
         writeYaml(policyDir.resolve("active-policies.yml"), instanceExperimentPlane.snapshot().saveToString());
+        writeYaml(experimentRegistryDir.resolve(serverName + "-experiments.yml"), instanceExperimentPlane.snapshot().saveToString());
+        writeYaml(coordinationDir.resolve(serverName + "-session-authority.yml"), sessionAuthorityService.snapshot().saveToString());
+        writeYaml(coordinationDir.resolve(serverName + "-transfers.yml"), deterministicTransferService.snapshot().saveToString());
+        writeYaml(incidentDir.resolve(serverName + "-incident-registry.yml"), exploitDetectorRegistry.snapshot().saveToString());
     }
 
     private void writeHealthSnapshot() {
@@ -5310,10 +5398,20 @@ public final class RpgNetworkService {
         YamlConfiguration economyAuthority = economyItemPlane.snapshot();
         YamlConfiguration instanceControl = instanceExperimentPlane.snapshot();
         YamlConfiguration exploitForensics = exploitForensicsPlane.snapshot();
+        YamlConfiguration sessionAuthority = sessionAuthorityService.snapshot();
+        YamlConfiguration transferAuthority = deterministicTransferService.snapshot();
+        YamlConfiguration artifactRegistry = gameplayArtifactRegistry.snapshot();
+        YamlConfiguration governanceRegistry = governancePolicyRegistry.snapshot();
+        YamlConfiguration detectorRegistry = exploitDetectorRegistry.snapshot();
         yaml.set("authority_plane", authority.getValues(true));
+        yaml.set("session_authority_service", sessionAuthority.getValues(true));
+        yaml.set("deterministic_transfer_service", transferAuthority.getValues(true));
         yaml.set("economy_item_authority_plane", economyAuthority.getValues(true));
         yaml.set("instance_experiment_control_plane", instanceControl.getValues(true));
         yaml.set("exploit_forensics_plane", exploitForensics.getValues(true));
+        yaml.set("gameplay_artifact_registry", artifactRegistry.getValues(true));
+        yaml.set("governance_policy_registry", governanceRegistry.getValues(true));
+        yaml.set("exploit_detector_registry", detectorRegistry.getValues(true));
         writeYaml(runtimeDir.resolve("status").resolve(serverName + ".yml"), yaml.saveToString());
     }
 
@@ -5334,7 +5432,7 @@ public final class RpgNetworkService {
     }
 
     public long policyRollbackCount() {
-        return instanceExperimentPlane.snapshot().getLong("policy_rollbacks", 0L);
+        return instanceExperimentPlane.snapshot().getLong("policy_rollbacks", 0L) + governancePolicyRegistry.snapshot().getLong("rollbacks", 0L);
     }
 
     public long experimentRollbackCount() {

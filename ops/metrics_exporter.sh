@@ -36,6 +36,8 @@ metrics.append(f"rpg_network_peak_players_target {scaling['targets']['peak_playe
 metrics.append(f"rpg_network_local_fallback_enabled {1 if persistence['local_fallback']['enabled'] else 0}")
 metrics.append(f"rpg_network_runtime_artifact_exports {len(list((root / 'runtime_data' / 'artifacts').glob('*.yml')))}")
 metrics.append(f"rpg_network_runtime_policy_exports {len(list((root / 'runtime_data' / 'policies').glob('*.yml')))}")
+metrics.append(f"rpg_network_runtime_experiment_exports {len(list((root / 'runtime_data' / 'experiments').glob('*.yml')))}")
+metrics.append(f"rpg_network_runtime_incident_exports {len(list((root / 'runtime_data' / 'incidents').glob('*.yml')))}")
 for server_name, plugins in matrix.items():
     metrics.append(f"rpg_network_plugins_per_server{{server=\"{server_name}\"}} {len(plugins)}")
 

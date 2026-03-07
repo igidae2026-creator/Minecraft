@@ -67,8 +67,8 @@ def main() -> int:
 
     if not persistence["mysql"]["enabled"] or not persistence["redis"]["enabled"]:
         errors.append("mysql and redis must both be enabled")
-    if not persistence["redis"].get("required_for_session_authority", False):
-        errors.append("redis.required_for_session_authority must remain true")
+    if persistence["redis"].get("required_for_session_authority", True):
+        errors.append("redis.required_for_session_authority must remain false because session authority is in-repo authoritative")
     if not persistence["local_fallback"]["enabled"]:
         errors.append("local_fallback must remain enabled")
     if not persistence["write_policy"]["save_on_server_transfer"]:
@@ -149,14 +149,22 @@ def main() -> int:
     if "mysql-connector-j" not in build_gradle:
         errors.append("rpg_core must bundle a deployable mysql connector")
 
-    for marker in ("mysqlDriverAvailable", "canAccessWorld", "canClaimReservedEntityKill", "isTravelAllowed", "trackHighValueItemMint", "exportArtifact", "reconcileItemAuthority"):
+    for marker in ("mysqlDriverAvailable", "canAccessWorld", "canClaimReservedEntityKill", "isTravelAllowed", "trackHighValueItemMint", "exportArtifact", "reconcileItemAuthority", "sessionAuthorityService", "deterministicTransferService", "gameplayArtifactRegistry", "governancePolicyRegistry"):
         if marker not in core_source:
             errors.append(f"rpg_core missing production patch marker: {marker}")
 
+    if network["data_flow"].get("live_session_state") != "local_authoritative_lease_registry":
+        errors.append("network.data_flow.live_session_state drift detected")
+    if network["data_flow"].get("live_session_coordination") != "in_repo_deterministic_session_authority":
+        errors.append("network.data_flow.live_session_coordination drift detected")
     if network["data_flow"].get("rare_item_authority") != "local_manifest_plus_ledger_lineage":
         errors.append("network.data_flow.rare_item_authority drift detected")
     if network["data_flow"].get("gameplay_artifacts") != "runtime_data/artifacts":
         errors.append("network.data_flow.gameplay_artifacts drift detected")
+    if network["data_flow"].get("experiment_registry") != "runtime_data/experiments":
+        errors.append("network.data_flow.experiment_registry drift detected")
+    if network["data_flow"].get("incident_artifacts") != "runtime_data/incidents":
+        errors.append("network.data_flow.incident_artifacts drift detected")
 
     expected_plugins = {
         "rpg_core", "economy_engine", "quest_system", "boss_ai",

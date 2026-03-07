@@ -9,10 +9,15 @@ def test_runtime_artifact_and_item_authority_surfaces_exist():
 
     assert network["data_flow"]["gameplay_artifacts"] == "runtime_data/artifacts"
     assert network["data_flow"]["rare_item_authority"] == "local_manifest_plus_ledger_lineage"
-    assert persistence["redis"]["required_for_session_authority"] is True
+    assert network["data_flow"]["experiment_registry"] == "runtime_data/experiments"
+    assert network["data_flow"]["incident_artifacts"] == "runtime_data/incidents"
+    assert persistence["redis"]["required_for_session_authority"] is False
 
     assert (ROOT / "runtime_data" / "artifacts").is_dir()
     assert (ROOT / "runtime_data" / "policies").is_dir()
+    assert (ROOT / "runtime_data" / "experiments").is_dir()
+    assert (ROOT / "runtime_data" / "incidents").is_dir()
+    assert (ROOT / "runtime_data" / "coordination").is_dir()
     assert (ROOT / "runtime_data" / "item_authority" / "owners").is_dir()
     assert (ROOT / "runtime_data" / "status").is_dir()
 
@@ -28,5 +33,8 @@ def test_metrics_and_health_surfaces_cover_new_failure_modes():
     assert "ALERT replay_divergence" in metrics_source
     assert "ALERT experiment_anomaly" in metrics_source
     assert 'yaml.set("instance_cleanup_latency_ms_avg"' in core_source
+    assert 'yaml.set("session_authority_service"' in core_source
+    assert 'yaml.set("deterministic_transfer_service"' in core_source
+    assert 'yaml.set("gameplay_artifact_registry"' in core_source
     assert 'yaml.set("item_ownership_conflicts"' in core_source
     assert 'yaml.set("artifact_exports"' in core_source

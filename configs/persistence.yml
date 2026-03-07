@@ -20,7 +20,8 @@ redis:
   password_env: RPG_REDIS_PASSWORD
   timeout_ms: 1500
   mirror_live_sessions: true
-  required_for_session_authority: true
+  required_for_session_authority: false
+  role: optional_coordination_mirror
 local_fallback:
   enabled: true
   path: runtime_data
@@ -28,6 +29,8 @@ local_fallback:
   mirror_snapshots: true
   item_authority_manifests: true
   artifact_exports: true
+  coordination_exports: true
+  incident_exports: true
 write_policy:
   profile_save_interval_seconds: 60
   ledger_flush_interval_seconds: 1
@@ -54,6 +57,8 @@ recovery:
   partial_write_quarantine: true
   read_only_mode_on_db_failure: true
   fail_closed_on_economy_ledger_loss: true
+  deterministic_transfer_recovery: true
+  replay_divergence_fail_closed: true
 health_checks:
   mysql_connect_timeout_ms: 1000
   redis_connect_timeout_ms: 500

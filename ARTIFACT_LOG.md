@@ -10,3 +10,6 @@ Append-only artifact log
 - 2026-03-08: Added runtime gameplay artifact exports, policy registry persistence, and integrity validation surfaces for Genesis-aligned exploration/governance outputs.
 - 2026-03-08: Added high-value item authority manifests with lineage-backed mint/transfer/consume tracking and exploit/quarantine escalation on impossible ownership.
 - 2026-03-08: Hardened value-moving paths with durability-boundary rollback on delayed commit for rewards, upgrades, guild deposits, and admin mutations.
+- 2026-03-08: Replaced Redis-authority config fiction with truthful in-repo session authority semantics plus optional Redis mirroring, and added explicit session/transfer substrate classes.
+- 2026-03-08: Added first-class gameplay artifact, governance policy, and exploit detector registries plus new runtime exports under `runtime_data/coordination`, `runtime_data/experiments`, and `runtime_data/incidents`.
+- 2026-03-08: Added runtime truth validation, reconciliation tooling, recovery/orchestration scripts, and runbook surfaces aligned to the implemented guarantees.
