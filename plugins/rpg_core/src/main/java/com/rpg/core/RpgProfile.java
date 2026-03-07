@@ -34,6 +34,7 @@ public final class RpgProfile {
     private final Map<String, String> bossDailyBonusDate = new LinkedHashMap<>();
     private String guildName = "";
     private final Map<String, Long> processedNonces = new LinkedHashMap<>();
+    private final Map<String, Long> claimedOperations = new LinkedHashMap<>();
     private final Map<String, Integer> killCounts = new LinkedHashMap<>();
     private double totalGoldEarned;
     private double totalGoldSpent;
@@ -80,6 +81,7 @@ public final class RpgProfile {
         loadLongMap(yaml.getConfigurationSection("bosses.lockouts"), profile.bossLockouts);
         loadStringMap(yaml.getConfigurationSection("bosses.daily_bonus_date"), profile.bossDailyBonusDate);
         loadLongMap(yaml.getConfigurationSection("nonces"), profile.processedNonces);
+        loadLongMap(yaml.getConfigurationSection("claims"), profile.claimedOperations);
         loadIntMap(yaml.getConfigurationSection("stats.kills"), profile.killCounts);
 
         if (profile.lastName == null || profile.lastName.isBlank()) {
@@ -115,6 +117,7 @@ public final class RpgProfile {
         yaml.set("bosses.daily_bonus_date", new LinkedHashMap<>(bossDailyBonusDate));
         yaml.set("guild.name", guildName);
         yaml.set("nonces", new LinkedHashMap<>(processedNonces));
+        yaml.set("claims", new LinkedHashMap<>(claimedOperations));
         yaml.set("stats.kills", new LinkedHashMap<>(killCounts));
         yaml.set("stats.total_gold_earned", totalGoldEarned);
         yaml.set("stats.total_gold_spent", totalGoldSpent);
@@ -518,6 +521,34 @@ public final class RpgProfile {
     public void pruneNonces(long windowMillis) {
         long cutoff = System.currentTimeMillis() - Math.max(windowMillis, 1L);
         processedNonces.entrySet().removeIf(entry -> entry.getValue() < cutoff);
+    }
+
+    public boolean hasClaimedOperation(String operationKey) {
+        return claimedOperations.containsKey(operationKey);
+    }
+
+    public void markClaimedOperation(String operationKey) {
+        if (operationKey == null || operationKey.isBlank()) {
+            return;
+        }
+        claimedOperations.put(operationKey, System.currentTimeMillis());
+        this.updatedAt = System.currentTimeMillis();
+    }
+
+    public void clearClaimedOperation(String operationKey) {
+        if (operationKey == null || operationKey.isBlank()) {
+            return;
+        }
+        if (claimedOperations.remove(operationKey) != null) {
+            this.updatedAt = System.currentTimeMillis();
+        }
+    }
+
+    public void pruneClaimedOperations(long retainMillis) {
+        long cutoff = System.currentTimeMillis() - Math.max(retainMillis, 1L);
+        if (claimedOperations.entrySet().removeIf(entry -> entry.getValue() < cutoff)) {
+            this.updatedAt = System.currentTimeMillis();
+        }
     }
 
     public double getTotalGoldEarned() {
