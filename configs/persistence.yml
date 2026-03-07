@@ -27,6 +27,9 @@ local_fallback:
   mirror_snapshots: true
 write_policy:
   profile_save_interval_seconds: 60
+  ledger_flush_interval_seconds: 1
+  ledger_max_entries_per_flush: 4000
+  ledger_immediate_flush_queue_threshold: 64
   save_on_server_transfer: true
   save_on_disconnect: true
   idempotent_transaction_window_seconds: 300
