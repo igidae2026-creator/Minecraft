@@ -35,6 +35,14 @@ public class Main extends JavaPlugin implements CommandExecutor {
         out.append("rpg_runtime_dirty_profiles ").append(service.dirtyProfileCount()).append('\n');
         out.append("rpg_runtime_cached_guilds ").append(service.guildCount()).append('\n');
         out.append("rpg_runtime_active_dungeons ").append(service.activeDungeonCount()).append('\n');
+        out.append("rpg_runtime_active_instances ").append(service.activeInstanceCount()).append('\n');
+        out.append("rpg_runtime_managed_entities ").append(service.managedEntityTotalCount()).append('\n');
+        out.append("rpg_runtime_ledger_queue_depth ").append(service.ledgerQueueDepth()).append('\n');
+        out.append("rpg_runtime_ledger_pending_files ").append(service.pendingLedgerFileCount()).append('\n');
+        out.append("rpg_runtime_db_operations_total ").append(service.dbOperationCount()).append('\n');
+        out.append("rpg_runtime_db_operation_errors_total ").append(service.dbOperationErrorCount()).append('\n');
+        out.append("rpg_runtime_db_latency_ms_avg ").append(String.format(Locale.US, "%.3f", service.dbLatencyMsAvg())).append('\n');
+        out.append("rpg_runtime_db_latency_ms_max ").append(String.format(Locale.US, "%.3f", service.dbLatencyMsMax())).append('\n');
         out.append("rpg_runtime_tps ").append(String.format(Locale.US, "%.2f", tps)).append('\n');
         out.append("rpg_runtime_role{role=\"").append(service.serverRole()).append("\"} 1\n");
         service.writeMetricSnapshot(out.toString());
@@ -59,7 +67,12 @@ public class Main extends JavaPlugin implements CommandExecutor {
             + " profiles=" + service.profileCount()
             + " dirty=" + service.dirtyProfileCount()
             + " guilds=" + service.guildCount()
-            + " activeDungeons=" + service.activeDungeonCount());
+            + " activeDungeons=" + service.activeDungeonCount()
+            + " activeInstances=" + service.activeInstanceCount()
+            + " managedEntities=" + service.managedEntityTotalCount()
+            + " ledgerQueue=" + service.ledgerQueueDepth()
+            + " pendingLedgerFiles=" + service.pendingLedgerFileCount()
+            + " dbAvgMs=" + String.format(Locale.US, "%.3f", service.dbLatencyMsAvg()));
         return true;
     }
 

@@ -56,6 +56,18 @@ public final class RpgGuild {
         return guild;
     }
 
+    public RpgGuild copy() {
+        RpgGuild copy = new RpgGuild(name, ownerUuid);
+        copy.members.clear();
+        copy.members.addAll(members);
+        copy.invites.putAll(invites);
+        copy.bankGold = bankGold;
+        copy.bankItems.putAll(bankItems);
+        copy.createdAt = createdAt;
+        copy.updatedAt = updatedAt;
+        return copy;
+    }
+
     public YamlConfiguration toYaml() {
         YamlConfiguration yaml = new YamlConfiguration();
         yaml.set("name", name);

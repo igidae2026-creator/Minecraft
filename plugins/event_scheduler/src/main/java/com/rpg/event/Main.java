@@ -204,8 +204,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor {
             yaml.set("active", activeEventId);
             yaml.set("active_until", activeUntilMillis);
             yaml.set("next_rotation_at", nextRotationAtMillis);
-            java.nio.file.Files.createDirectories(path.getParent());
-            java.nio.file.Files.writeString(path, yaml.saveToString());
+            service.writeAtomicFile(path, yaml.saveToString());
         } catch (Exception exception) {
             getLogger().warning("Unable to save event state: " + exception.getMessage());
         }

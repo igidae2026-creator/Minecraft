@@ -189,6 +189,11 @@ public final class RpgNetworkService {
     private final Map<UUID, String> dungeonOwnerInstances = new ConcurrentHashMap<>();
     private final Map<String, String> dungeonWorldToInstance = new ConcurrentHashMap<>();
     private final Map<String, Integer> managedEntityCounters = new ConcurrentHashMap<>();
+    private final Set<UUID> managedEntityIds = ConcurrentHashMap.newKeySet();
+    private final AtomicLong dbOperationCount = new AtomicLong();
+    private final AtomicLong dbOperationErrors = new AtomicLong();
+    private final AtomicLong dbLatencyTotalNanos = new AtomicLong();
+    private final AtomicLong dbLatencyMaxNanos = new AtomicLong();
     private volatile boolean mysqlSchemaReady;
     private volatile boolean mysqlDriverReady;
     private volatile boolean mysqlDriverUnavailableLogged;
@@ -246,6 +251,7 @@ public final class RpgNetworkService {
         validateBackendBaseline();
         loadPendingLedgerEntries();
         loadPersistedInstances();
+        rebuildManagedEntityCounters();
         plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, "BungeeCord");
         long flushIntervalTicks = Math.max(20L, persistence.getLong("write_policy.profile_save_interval_seconds", 60L) * 20L);
         long ledgerFlushTicks = Math.max(1L, persistence.getLong("write_policy.ledger_flush_interval_seconds", 1L) * 20L);
@@ -381,6 +387,49 @@ public final class RpgNetworkService {
         return total;
     }
 
+    public int activeInstanceCount() {
+        return dungeonInstances.size();
+    }
+
+    public int managedEntityTotalCount() {
+        return managedEntityCount(null);
+    }
+
+    public int ledgerQueueDepth() {
+        return ledgerQueue.size();
+    }
+
+    public int pendingLedgerFileCount() {
+        if (!Files.exists(ledgerPendingDir)) {
+            return 0;
+        }
+        try (var stream = Files.list(ledgerPendingDir)) {
+            return (int) stream.filter(path -> path.getFileName().toString().endsWith(".yml")).count();
+        } catch (IOException exception) {
+            return 0;
+        }
+    }
+
+    public double dbLatencyMsAvg() {
+        long ops = dbOperationCount.get();
+        if (ops <= 0) {
+            return 0.0D;
+        }
+        return (dbLatencyTotalNanos.get() / 1_000_000.0D) / ops;
+    }
+
+    public double dbLatencyMsMax() {
+        return dbLatencyMaxNanos.get() / 1_000_000.0D;
+    }
+
+    public long dbOperationCount() {
+        return dbOperationCount.get();
+    }
+
+    public long dbOperationErrorCount() {
+        return dbOperationErrors.get();
+    }
+
     public Set<String> blockedCommands() {
         Set<String> blocked = new LinkedHashSet<>();
         if (exploit.getBoolean("network.reload_commands_blocked", true)) {
@@ -417,7 +466,7 @@ public final class RpgNetworkService {
             autoAcceptStarterQuest(profile);
             syncCollectQuestProgress(profile);
             restoreDungeonInstance(player, profile);
-            return RpgProfile.fromYaml(profile.getUuid(), profile.getLastName(), profile.toYaml());
+            return profile.copy();
         });
         writeSession(sessionSnapshot, true);
         applyPassiveStats(player);
@@ -431,7 +480,7 @@ public final class RpgNetworkService {
         RpgProfile sessionSnapshot = withProfile(player, profile -> {
             profile.setLastQuitAt(System.currentTimeMillis());
             holdDungeonInstance(profile);
-            return RpgProfile.fromYaml(profile.getUuid(), profile.getLastName(), profile.toYaml());
+            return profile.copy();
         });
         writeSession(sessionSnapshot, false);
         flushPlayer(player.getUniqueId());
@@ -467,7 +516,7 @@ public final class RpgNetworkService {
         UUID uuid = player.getUniqueId();
         synchronized (profileLocks.computeIfAbsent(uuid, ignored -> new Object())) {
             RpgProfile profile = profiles.computeIfAbsent(uuid, ignored -> loadProfile(uuid, player.getName()));
-            return RpgProfile.fromYaml(profile.getUuid(), profile.getLastName(), profile.toYaml());
+            return profile.copy();
         }
     }
 
@@ -545,7 +594,7 @@ public final class RpgNetworkService {
                 dirtyProfiles.remove(uuid);
                 return;
             }
-            snapshot = RpgProfile.fromYaml(profile.getUuid(), profile.getLastName(), profile.toYaml());
+            snapshot = profile.copy();
         }
         if (!persistProfileSnapshot(uuid, snapshot)) {
             return;
@@ -575,7 +624,7 @@ public final class RpgNetworkService {
                 dirtyGuilds.remove(key);
                 return;
             }
-            snapshot = RpgGuild.fromYaml(guild.getName(), guild.toYaml());
+            snapshot = guild.copy();
         }
         if (!persistGuildSnapshot(key, snapshot)) {
             return;
@@ -634,6 +683,10 @@ public final class RpgNetworkService {
         ensurePath(metricsDir);
         Path path = metricsDir.resolve("runtime_" + serverName + ".prom");
         writeYaml(path, serverSpecificContent);
+    }
+
+    public void writeAtomicFile(Path path, String contents) {
+        writeYaml(path, contents);
     }
 
     public void writeAudit(String category, String message) {
@@ -797,6 +850,7 @@ public final class RpgNetworkService {
         if (safeMode) {
             return new KillReward(true, mobId, 0.0D, Collections.emptyMap(), color("&cBackend safe mode active. Rewards paused."));
         }
+        markManagedEntityRemoved(entity);
         String nonce = "mob-kill:" + entity.getUniqueId();
         return withProfile(killer, profile -> {
             if (profile.isNonceSeen(nonce, nonceWindowMillis())) {
@@ -835,6 +889,7 @@ public final class RpgNetworkService {
         if (safeMode) {
             return new BossReward(true, bossId, false, 0.0D, Collections.emptyMap(), color("&cBackend safe mode active. Rewards paused."));
         }
+        markManagedEntityRemoved(entity);
         String nonce = "boss-kill:" + entity.getUniqueId();
         return withProfile(killer, profile -> {
             if (profile.isNonceSeen(nonce, nonceWindowMillis())) {
@@ -1273,7 +1328,7 @@ public final class RpgNetworkService {
             profile.incrementTransfers();
             appendLedgerMutation(profile.getUuid(), "travel_fee", serverName + "->" + targetServer, -fee, Collections.emptyMap());
             feeHolder[0] = fee;
-            sessionSnapshot[0] = RpgProfile.fromYaml(profile.getUuid(), profile.getLastName(), profile.toYaml());
+            sessionSnapshot[0] = profile.copy();
             profileVersionHolder[0] = profile.getUpdatedAt();
             String guildName = normalizeGuild(profile.getGuildName());
             guildNameHolder[0] = guildName;
@@ -2553,6 +2608,7 @@ public final class RpgNetworkService {
 
     private void rebuildManagedEntityCounters() {
         Map<String, Integer> rebuilt = new LinkedHashMap<>();
+        Set<UUID> rebuiltIds = ConcurrentHashMap.newKeySet();
         int total = 0;
         for (World world : Bukkit.getWorlds()) {
             for (Entity entity : world.getEntities()) {
@@ -2560,48 +2616,55 @@ public final class RpgNetworkService {
                 if (category == null) {
                     continue;
                 }
+                rebuiltIds.add(entity.getUniqueId());
                 total += 1;
                 rebuilt.merge("category:" + category.toLowerCase(Locale.ROOT), 1, Integer::sum);
             }
         }
         rebuilt.put("total", total);
+        managedEntityIds.clear();
+        managedEntityIds.addAll(rebuiltIds);
         managedEntityCounters.clear();
         managedEntityCounters.putAll(rebuilt);
     }
 
     private void cleanupTaggedEntities() {
-        rebuildManagedEntityCounters();
         long now = System.currentTimeMillis();
         Map<String, List<Entity>> byCategory = new LinkedHashMap<>();
         Map<UUID, Entity> toRemove = new LinkedHashMap<>();
-        for (World world : Bukkit.getWorlds()) {
-            for (Entity entity : world.getEntities()) {
-                String category = tagValue(entity, "rpg_category:");
-                if (category == null) {
+        for (UUID entityId : new ArrayList<>(managedEntityIds)) {
+            Entity entity = Bukkit.getEntity(entityId);
+            if (entity == null || !entity.isValid()) {
+                managedEntityIds.remove(entityId);
+                continue;
+            }
+            String category = tagValue(entity, "rpg_category:");
+            if (category == null) {
+                managedEntityIds.remove(entityId);
+                continue;
+            }
+            String expiry = tagValue(entity, "rpg_expires_at:");
+            if (expiry != null) {
+                try {
+                    if (Long.parseLong(expiry) <= now) {
+                        toRemove.put(entity.getUniqueId(), entity);
+                        continue;
+                    }
+                } catch (NumberFormatException ignored) {
+                    toRemove.put(entity.getUniqueId(), entity);
                     continue;
                 }
-                String expiry = tagValue(entity, "rpg_expires_at:");
-                if (expiry != null) {
-                    try {
-                        if (Long.parseLong(expiry) <= now) {
-                            toRemove.put(entity.getUniqueId(), entity);
-                            continue;
-                        }
-                    } catch (NumberFormatException ignored) {
-                        toRemove.put(entity.getUniqueId(), entity);
-                        continue;
-                    }
-                }
-                String instanceId = tagValue(entity, "rpg_instance:");
-                if (instanceId != null) {
-                    DungeonInstanceState instance = loadDungeonInstance(instanceId);
-                    if (instance == null || instance.expired(now) || !world.getName().equals(instance.worldName)) {
-                        toRemove.put(entity.getUniqueId(), entity);
-                        continue;
-                    }
-                }
-                byCategory.computeIfAbsent(category, ignored -> new ArrayList<>()).add(entity);
             }
+            String instanceId = tagValue(entity, "rpg_instance:");
+            if (instanceId != null) {
+                DungeonInstanceState instance = loadDungeonInstance(instanceId);
+                World world = entity.getWorld();
+                if (instance == null || instance.expired(now) || world == null || !world.getName().equals(instance.worldName)) {
+                    toRemove.put(entity.getUniqueId(), entity);
+                    continue;
+                }
+            }
+            byCategory.computeIfAbsent(category, ignored -> new ArrayList<>()).add(entity);
         }
         for (Map.Entry<String, List<Entity>> entry : byCategory.entrySet()) {
             List<Entity> entities = entry.getValue();
@@ -2616,6 +2679,20 @@ public final class RpgNetworkService {
             }
         }
         toRemove.values().forEach(this::removeManagedEntity);
+        trimManagedEntityCounters(byCategory);
+    }
+
+    private void markManagedEntityRemoved(Entity entity) {
+        if (entity == null) {
+            return;
+        }
+        managedEntityIds.remove(entity.getUniqueId());
+        String category = tagValue(entity, "rpg_category:");
+        if (category == null) {
+            return;
+        }
+        managedEntityCounters.compute("total", (k, v) -> Math.max(0, (v == null ? 0 : v) - 1));
+        managedEntityCounters.compute("category:" + category.toLowerCase(Locale.ROOT), (k, v) -> Math.max(0, (v == null ? 0 : v) - 1));
     }
 
     private long entityExpiry(Entity entity) {
@@ -2638,11 +2715,7 @@ public final class RpgNetworkService {
         if (task != null) {
             task.cancel();
         }
-        String category = tagValue(entity, "rpg_category:");
-        if (category != null) {
-            managedEntityCounters.compute("total", (k, v) -> Math.max(0, (v == null ? 0 : v) - 1));
-            managedEntityCounters.compute("category:" + category.toLowerCase(Locale.ROOT), (k, v) -> Math.max(0, (v == null ? 0 : v) - 1));
-        }
+        markManagedEntityRemoved(entity);
         entity.remove();
     }
 
@@ -2690,6 +2763,16 @@ public final class RpgNetworkService {
         return managedEntityCounters.getOrDefault("category:" + category.toLowerCase(Locale.ROOT), 0);
     }
 
+    private void trimManagedEntityCounters(Map<String, List<Entity>> byCategory) {
+        int total = 0;
+        for (Map.Entry<String, List<Entity>> entry : byCategory.entrySet()) {
+            int count = entry.getValue().size();
+            total += count;
+            managedEntityCounters.put("category:" + entry.getKey().toLowerCase(Locale.ROOT), count);
+        }
+        managedEntityCounters.put("total", total);
+    }
+
     private void tagManagedEntity(LivingEntity living, String category, Player owner, String dungeonId, String eventId, String instanceId, long ttlMillis) {
         living.addScoreboardTag("rpg_category:" + category);
         living.addScoreboardTag("rpg_expires_at:" + (System.currentTimeMillis() + ttlMillis));
@@ -2705,6 +2788,7 @@ public final class RpgNetworkService {
         if (instanceId != null && !instanceId.isBlank()) {
             living.addScoreboardTag("rpg_instance:" + instanceId);
         }
+        managedEntityIds.add(living.getUniqueId());
         managedEntityCounters.merge("total", 1, Integer::sum);
         managedEntityCounters.merge("category:" + category.toLowerCase(Locale.ROOT), 1, Integer::sum);
     }
@@ -3128,7 +3212,11 @@ public final class RpgNetworkService {
             try (var channel = java.nio.channels.FileChannel.open(temp, StandardOpenOption.WRITE)) {
                 channel.force(true);
             }
-            Files.move(temp, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            try {
+                Files.move(temp, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException atomicFailure) {
+                Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING);
+            }
         } catch (IOException exception) {
             plugin.getLogger().warning("Unable to write file " + path + ": " + exception.getMessage());
         }
@@ -3749,6 +3837,15 @@ public final class RpgNetworkService {
         }
     }
 
+    private void recordDbLatency(long nanos, boolean success) {
+        dbOperationCount.incrementAndGet();
+        dbLatencyTotalNanos.addAndGet(Math.max(0L, nanos));
+        dbLatencyMaxNanos.accumulateAndGet(Math.max(0L, nanos), Math::max);
+        if (!success) {
+            dbOperationErrors.incrementAndGet();
+        }
+    }
+
     private boolean mysqlDriverAvailable() {
         if (mysqlDriverReady) {
             return true;
@@ -3769,11 +3866,16 @@ public final class RpgNetworkService {
     private Connection mysqlConnection() {
         HikariDataSource pool = mysqlPool();
         if (pool == null) {
+            recordDbLatency(0L, false);
             return null;
         }
+        long started = System.nanoTime();
         try {
-            return pool.getConnection();
+            Connection connection = pool.getConnection();
+            recordDbLatency(System.nanoTime() - started, true);
+            return connection;
         } catch (Exception exception) {
+            recordDbLatency(System.nanoTime() - started, false);
             plugin.getLogger().fine("MySQL connection unavailable: " + exception.getMessage());
             return null;
         }
@@ -3832,7 +3934,8 @@ public final class RpgNetworkService {
         yaml.set("profiles_dirty", dirtyProfiles.size());
         yaml.set("guilds_cached", guilds.size());
         yaml.set("active_dungeons", activeDungeonCount());
-        yaml.set("active_instances", dungeonInstances.size());
+        yaml.set("active_instances", activeInstanceCount());
+        yaml.set("managed_entities", managedEntityTotalCount());
         yaml.set("safe_mode", safeMode);
         yaml.set("safe_mode_reason", safeModeReason);
         yaml.set("mysql_enabled", persistence.getBoolean("mysql.enabled", true));
@@ -3843,6 +3946,12 @@ public final class RpgNetworkService {
         yaml.set("redis_authority_required", redisSessionRequired());
         yaml.set("redis_reachable", endpointReachable(persistence.getString("redis.host", "127.0.0.1"), persistence.getInt("redis.port", 6379), 500));
         yaml.set("online_players", Bukkit.getOnlinePlayers().size());
+        yaml.set("ledger_queue_pending", ledgerQueueDepth());
+        yaml.set("ledger_pending_files", pendingLedgerFileCount());
+        yaml.set("db_operations_total", dbOperationCount());
+        yaml.set("db_operation_errors_total", dbOperationErrorCount());
+        yaml.set("db_latency_ms_avg", dbLatencyMsAvg());
+        yaml.set("db_latency_ms_max", dbLatencyMsMax());
         yaml.set("ledger_queue_pending", ledgerQueue.size());
         yaml.set("ledger_last_flush_at", ledgerLastFlushAt.get());
         writeYaml(runtimeDir.resolve("status").resolve(serverName + ".yml"), yaml.saveToString());
