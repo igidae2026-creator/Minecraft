@@ -39,3 +39,11 @@ mitigations:
   chunk_preload_budget_per_tick: 8
   database_backpressure_mode: queue_and_degrade_noncritical_writes
   proxy_reuse_port: true
+
+operational:
+  alert_cooldown_seconds: 30
+  alert_tps_below: 17.0
+  alert_ledger_backlog: 64
+  alert_instance_leak: 50
+  alert_transfer_fence_rejects: 5
+  alert_cas_conflicts: 5

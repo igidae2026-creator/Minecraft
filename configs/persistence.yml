@@ -30,6 +30,16 @@ write_policy:
   ledger_flush_interval_seconds: 1
   ledger_max_entries_per_flush: 4000
   ledger_immediate_flush_queue_threshold: 64
+  ledger_immediate_flush_categories:
+    - travel_fee
+    - travel_refund
+    - boss_summon_personal
+    - boss_summon_personal_refund
+    - boss_summon_guild
+    - guild_bank_refund_failed_summon
+    - dungeon_complete
+    - event_bonus_reward
+    - admin_reward_grant
   save_on_server_transfer: true
   save_on_disconnect: true
   idempotent_transaction_window_seconds: 300
