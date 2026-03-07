@@ -55,6 +55,10 @@ public class Main extends JavaPlugin implements CommandExecutor {
         out.append("rpg_runtime_reconciliation_mismatches_total ").append(service.reconciliationMismatchCount()).append('\n');
         out.append("rpg_runtime_guild_value_drift_total ").append(service.guildValueDriftCount()).append('\n');
         out.append("rpg_runtime_replay_divergence_total ").append(service.replayDivergenceCount()).append('\n');
+        out.append("rpg_runtime_session_ownership_conflicts_total ").append(service.authoritySessionConflictCount()).append('\n');
+        out.append("rpg_runtime_split_brain_detections_total ").append(service.authoritySplitBrainDetectionCount()).append('\n');
+        out.append("rpg_runtime_item_quarantined_total ").append(service.economyItemQuarantineCount()).append('\n');
+        out.append("rpg_runtime_exploit_incidents_total ").append(service.exploitIncidentCount()).append('\n');
         out.append("rpg_runtime_tps ").append(String.format(Locale.US, "%.2f", tps)).append('\n');
         out.append("rpg_runtime_role{role=\"").append(service.serverRole()).append("\"} 1\n");
         service.writeMetricSnapshot(out.toString());
@@ -76,6 +80,8 @@ public class Main extends JavaPlugin implements CommandExecutor {
         int duplicateLoginWarn = Math.max(1, service.scaling().getInt("operational.alert_duplicate_login_rejects", 2));
         int transferLeaseWarn = Math.max(1, service.scaling().getInt("operational.alert_transfer_lease_expiry", 3));
         int startupQuarantineWarn = Math.max(1, service.scaling().getInt("operational.alert_startup_quarantine", 1));
+        int splitBrainWarn = Math.max(1, service.scaling().getInt("operational.alert_split_brain", 1));
+        int itemDupWarn = Math.max(1, service.scaling().getInt("operational.alert_item_duplication", 1));
 
         if (tps < tpsWarn) {
             getLogger().warning("ALERT tps_drop tps=" + String.format(Locale.US, "%.2f", tps) + " threshold=" + String.format(Locale.US, "%.2f", tpsWarn));
@@ -114,6 +120,16 @@ public class Main extends JavaPlugin implements CommandExecutor {
         }
         if (service.startupQuarantineCount() >= startupQuarantineWarn) {
             getLogger().warning("ALERT startup_quarantine count=" + service.startupQuarantineCount() + " threshold=" + startupQuarantineWarn);
+            lastAlertAt = now;
+            return;
+        }
+        if (service.authoritySplitBrainDetectionCount() >= splitBrainWarn) {
+            getLogger().warning("ALERT split_brain splitBrain=" + service.authoritySplitBrainDetectionCount() + " threshold=" + splitBrainWarn);
+            lastAlertAt = now;
+            return;
+        }
+        if (service.economyItemQuarantineCount() >= itemDupWarn) {
+            getLogger().warning("ALERT anti_duplication_alarm quarantined=" + service.economyItemQuarantineCount() + " threshold=" + itemDupWarn);
             lastAlertAt = now;
         }
     }
