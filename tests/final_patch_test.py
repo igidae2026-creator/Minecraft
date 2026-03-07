@@ -9,6 +9,9 @@ def test_final_targeted_production_patch_markers_present():
     assert "mysql-connector-j" in build_gradle
     assert "mysqlDriverAvailable" in source
     assert "persistProfileAuthoritatively" in source
+    assert "loadPendingLedgerEntries" in source
+    assert "persistPendingLedgerEntry" in source
+    assert "clearPendingLedgerEntry" in source
     assert "canAccessWorld" in source
     assert "canClaimReservedEntityKill" in source
     assert "isTravelAllowed" in source
