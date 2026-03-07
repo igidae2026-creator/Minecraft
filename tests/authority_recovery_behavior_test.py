@@ -46,3 +46,15 @@ def test_metrics_expose_new_authority_failure_modes():
     assert "ALERT duplicate_login_rejects" in source
     assert "ALERT transfer_lease_expiry" in source
     assert "ALERT startup_quarantine" in source
+
+
+def test_authority_plane_tracks_expired_ticket_state_and_counts():
+    source = (ROOT / "plugins" / "rpg_core" / "src" / "main" / "java" / "com" / "rpg" / "core" / "AuthorityCoordinationPlane.java").read_text(encoding="utf-8")
+    assert "EXPIRED" in source
+    assert "ticket_expired_transitions" in source
+    assert "transfer_tickets_expired" in source
+
+
+def test_runtime_sweeps_authority_expiry_with_instance_cleanup_loop():
+    source = _core()
+    assert "authorityPlane.sweepExpiredState(now);" in source

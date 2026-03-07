@@ -8,3 +8,4 @@
 - Metrics monitor expanded with split-brain, item-quarantine, exploit incident, and authority-conflict Prometheus counters plus alert paths.
 - Runtime truth alignment updated: `network.yml` now marks live sessions as `redis_authoritative`, and scaling config removed false promise of world reuse pooling.
 - Added focused config/runtime alignment test covering new control planes and observability wiring.
+- Authority coordination now tracks pending/consumed/failed/expired ticket counts and performs deterministic expiry sweeps during runtime cleanup cycles.
