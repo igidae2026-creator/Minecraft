@@ -404,6 +404,12 @@ public final class RpgNetworkService {
     private final AtomicLong transferBarrierRejects = new AtomicLong();
     private final AtomicLong casConflictCount = new AtomicLong();
     private final AtomicLong rewardDuplicateSuppressed = new AtomicLong();
+    private final AtomicLong duplicateLoginRejects = new AtomicLong();
+    private final AtomicLong transferLeaseExpiryCount = new AtomicLong();
+    private final AtomicLong startupQuarantineCount = new AtomicLong();
+    private final AtomicLong reconciliationMismatchCount = new AtomicLong();
+    private final AtomicLong guildValueDriftCount = new AtomicLong();
+    private final AtomicLong replayDivergenceCount = new AtomicLong();
     private volatile boolean mysqlSchemaReady;
     private volatile boolean mysqlDriverReady;
     private volatile boolean mysqlDriverUnavailableLogged;
@@ -465,6 +471,7 @@ public final class RpgNetworkService {
         loadPendingLedgerEntries();
         loadPersistedInstances();
         rebuildManagedEntityCounters();
+        runStartupConsistencyChecks();
         plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, "BungeeCord");
         long flushIntervalTicks = Math.max(20L, persistence.getLong("write_policy.profile_save_interval_seconds", 60L) * 20L);
         long ledgerFlushTicks = Math.max(1L, persistence.getLong("write_policy.ledger_flush_interval_seconds", 1L) * 20L);
@@ -652,6 +659,30 @@ public final class RpgNetworkService {
 
     public long rewardDuplicateSuppressionCount() {
         return rewardDuplicateSuppressed.get();
+    }
+
+    public long duplicateLoginRejectCount() {
+        return duplicateLoginRejects.get();
+    }
+
+    public long transferLeaseExpiryCount() {
+        return transferLeaseExpiryCount.get();
+    }
+
+    public long startupQuarantineCount() {
+        return startupQuarantineCount.get();
+    }
+
+    public long reconciliationMismatchCount() {
+        return reconciliationMismatchCount.get();
+    }
+
+    public long guildValueDriftCount() {
+        return guildValueDriftCount.get();
+    }
+
+    public long replayDivergenceCount() {
+        return replayDivergenceCount.get();
     }
 
     public int ledgerQueueDepth() {
@@ -2563,8 +2594,17 @@ public final class RpgNetworkService {
             return true;
         }
         if (previousSession != null && serverName.equalsIgnoreCase(previousSession.server())) {
+            if (previousSession.online()) {
+                duplicateLoginRejects.incrementAndGet();
+                transferBarrierRejects.incrementAndGet();
+                writeAudit("duplicate_login_reject", player.getUniqueId() + ":" + serverName);
+                player.sendMessage(color("&cDuplicate login rejected while existing authority session is live."));
+                rerouteUnauthorizedJoin(player, previousSession.server());
+                return false;
+            }
             return true;
         }
+        transferBarrierRejects.incrementAndGet();
         unfreezeMutationAuthority(player.getUniqueId());
         rerouteUnauthorizedJoin(player, previousSession == null ? "" : previousSession.server());
         return false;
@@ -2678,10 +2718,10 @@ public final class RpgNetworkService {
         yaml.set("expected_guild_version", ticket.expectedGuildVersion());
         yaml.set("version_claim", ticket.versionClaim());
         String serialized = yaml.saveToString();
-        if (redisSessionRequired()) {
+        if (redisSessionRequired() || redisSessionMirrorEnabled()) {
             int ttlSeconds = Math.max(15, (int) ((expiresAt - System.currentTimeMillis() + 999L) / 1000L));
             boolean mirrored = writeRedisYamlValue("rpg:travel:" + uuid, ttlSeconds, serialized);
-            if (!mirrored) {
+            if (!mirrored && redisSessionRequired()) {
                 enterSafeMode("Redis session backend unavailable");
                 return false;
             }
@@ -2697,6 +2737,8 @@ public final class RpgNetworkService {
         if (redisYaml != null && !redisYaml.getString("target", "").isBlank()) {
             long expiresAt = redisYaml.getLong("expires_at", 0L);
             if (expiresAt <= System.currentTimeMillis()) {
+                transferLeaseExpiryCount.incrementAndGet();
+                writeAudit("transfer_lease_expired", uuid + ":" + redisYaml.getString("source", "") + "->" + redisYaml.getString("target", ""));
                 clearTravelTicket(uuid);
                 return null;
             }
@@ -2725,6 +2767,8 @@ public final class RpgNetworkService {
         YamlConfiguration yaml = readYaml(path);
         long expiresAt = yaml.getLong("expires_at", 0L);
         if (expiresAt <= System.currentTimeMillis()) {
+            transferLeaseExpiryCount.incrementAndGet();
+            writeAudit("transfer_lease_expired", uuid + ":" + yaml.getString("source", "") + "->" + yaml.getString("target", ""));
             clearTravelTicket(uuid);
             return null;
         }
@@ -3600,6 +3644,111 @@ public final class RpgNetworkService {
         safeModeReason = reason;
     }
 
+    private void runStartupConsistencyChecks() {
+        if (!persistence.getBoolean("recovery.startup_consistency_check", true)) {
+            return;
+        }
+        int mismatches = reconcileSnapshotsAgainstLedger();
+        if (mismatches > 0) {
+            reconciliationMismatchCount.addAndGet(mismatches);
+            startupQuarantineCount.incrementAndGet();
+            enterSafeMode("Startup reconciliation mismatch detected");
+        }
+    }
+
+    private int reconcileSnapshotsAgainstLedger() {
+        int mismatches = 0;
+        for (RpgProfile profile : profiles.values()) {
+            double ledgerGold = replayLedgerGold(profile.getUuid());
+            if (Math.abs(profile.getGold() - ledgerGold) > 0.0001D) {
+                mismatches += 1;
+                replayDivergenceCount.incrementAndGet();
+                plugin.getLogger().warning("Replay divergence profile=" + profile.getUuid() + " snapshotGold=" + profile.getGold() + " ledgerGold=" + ledgerGold);
+            }
+        }
+        for (RpgGuild guild : guilds.values()) {
+            if (guild.getName().isBlank()) {
+                continue;
+            }
+            double drift = guildBankGoldDrift(guild.getName(), guild.getBankGold());
+            if (Math.abs(drift) > 0.0001D) {
+                mismatches += 1;
+                guildValueDriftCount.incrementAndGet();
+                plugin.getLogger().warning("Guild value drift guild=" + guild.getName() + " drift=" + drift);
+            }
+        }
+        return mismatches;
+    }
+
+    private double replayLedgerGold(UUID uuid) {
+        double total = 0.0D;
+        if (uuid == null) {
+            return total;
+        }
+        if (mysqlAuthorityRequired()) {
+            try (Connection connection = mysqlConnection()) {
+                if (connection != null) {
+                    ensureMysqlSchema(connection);
+                    try (PreparedStatement statement = connection.prepareStatement("SELECT gold_delta FROM rpg_ledger WHERE player_uuid = ?")) {
+                        statement.setString(1, uuid.toString());
+                        try (ResultSet rs = statement.executeQuery()) {
+                            while (rs.next()) {
+                                total += rs.getDouble("gold_delta");
+                            }
+                        }
+                    }
+                    return total;
+                }
+            } catch (Exception exception) {
+                plugin.getLogger().warning("Unable to replay ledger from MySQL: " + exception.getMessage());
+            }
+        }
+        if (!Files.isDirectory(ledgerPendingDir)) {
+            return total;
+        }
+        try (var paths = Files.list(ledgerPendingDir)) {
+            for (Path path : paths.filter(p -> p.getFileName().toString().endsWith(".yml")).toList()) {
+                YamlConfiguration yaml = readYaml(path);
+                String player = yaml.getString("player_uuid", "");
+                if (!uuid.toString().equals(player)) {
+                    continue;
+                }
+                total += yaml.getDouble("gold_delta", 0.0D);
+            }
+        } catch (IOException exception) {
+            plugin.getLogger().warning("Unable to replay local pending ledger: " + exception.getMessage());
+        }
+        return total;
+    }
+
+    private double guildBankGoldDrift(String guildName, double snapshotGold) {
+        String key = normalizeGuild(guildName);
+        if (key.isBlank()) {
+            return 0.0D;
+        }
+        double net = 0.0D;
+        if (mysqlAuthorityRequired()) {
+            try (Connection connection = mysqlConnection()) {
+                if (connection != null) {
+                    ensureMysqlSchema(connection);
+                    try (PreparedStatement statement = connection.prepareStatement("SELECT category, reference_id, gold_delta FROM rpg_ledger WHERE category LIKE 'guild_bank_%'")) {
+                        try (ResultSet rs = statement.executeQuery()) {
+                            while (rs.next()) {
+                                String reference = normalizeGuild(rs.getString("reference_id"));
+                                if (key.equals(reference)) {
+                                    net += rs.getDouble("gold_delta");
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception exception) {
+                plugin.getLogger().warning("Unable to reconcile guild ledger state: " + exception.getMessage());
+            }
+        }
+        return snapshotGold - Math.abs(net);
+    }
+
     private void deletePathRecursively(Path path) {
         if (path == null || !Files.exists(path)) {
             return;
@@ -3819,16 +3968,19 @@ public final class RpgNetworkService {
         yaml.set("active_dungeon_world", profile.getActiveDungeonWorld());
         yaml.set("updated_at", System.currentTimeMillis());
         String serialized = yaml.saveToString();
-        if (redisSessionRequired()) {
+        if (redisSessionRequired() || redisSessionMirrorEnabled()) {
             if (!persistence.getBoolean("redis.enabled", true)) {
-                enterSafeMode("Redis session authority disabled by configuration");
-                return false;
-            }
-            int holdSeconds = Math.max(15, exploit.getInt("progression.reconnect_state_hold_seconds", 30));
-            boolean mirrored = writeRedisYamlValue("rpg:session:" + profile.getUuid(), holdSeconds, serialized);
-            if (!mirrored) {
-                enterSafeMode("Redis session backend unavailable");
-                return false;
+                if (redisSessionRequired()) {
+                    enterSafeMode("Redis session authority disabled by configuration");
+                    return false;
+                }
+            } else {
+                int holdSeconds = Math.max(15, exploit.getInt("progression.reconnect_state_hold_seconds", 30));
+                boolean mirrored = writeRedisYamlValue("rpg:session:" + profile.getUuid(), holdSeconds, serialized);
+                if (!mirrored && redisSessionRequired()) {
+                    enterSafeMode("Redis session backend unavailable");
+                    return false;
+                }
             }
         }
         if (persistence.getBoolean("local_fallback.enabled", true)) {
@@ -4103,7 +4255,14 @@ public final class RpgNetworkService {
     }
 
     private boolean redisSessionRequired() {
-        return "redis".equalsIgnoreCase(network.getString("data_flow.live_session_state", ""));
+        String mode = normalize(network.getString("data_flow.live_session_state", ""));
+        return "redis".equalsIgnoreCase(mode) || "redis_authoritative".equalsIgnoreCase(mode);
+    }
+
+    private boolean redisSessionMirrorEnabled() {
+        String mirror = normalize(network.getString("data_flow.live_session_mirror", ""));
+        return persistence.getBoolean("redis.enabled", true)
+            && ("redis".equalsIgnoreCase(mirror) || persistence.getBoolean("redis.mirror_live_sessions", true));
     }
 
     private void ensureMysqlSchema(Connection connection) throws Exception {
@@ -4598,6 +4757,12 @@ public final class RpgNetworkService {
         yaml.set("transfer_fence_rejects", transferBarrierRejectCount());
         yaml.set("cas_conflicts", casConflictCount());
         yaml.set("reward_duplicate_suppressed", rewardDuplicateSuppressionCount());
+        yaml.set("duplicate_login_rejects", duplicateLoginRejectCount());
+        yaml.set("transfer_lease_expiry", transferLeaseExpiryCount());
+        yaml.set("startup_quarantine", startupQuarantineCount());
+        yaml.set("reconciliation_mismatches", reconciliationMismatchCount());
+        yaml.set("guild_value_drift", guildValueDriftCount());
+        yaml.set("replay_divergence", replayDivergenceCount());
         yaml.set("ledger_last_flush_at", ledgerLastFlushAt.get());
         writeYaml(runtimeDir.resolve("status").resolve(serverName + ".yml"), yaml.saveToString());
     }
