@@ -88,6 +88,38 @@ public final class RpgProfile {
         return profile;
     }
 
+    public RpgProfile copy() {
+        RpgProfile copy = new RpgProfile(uuid, lastName);
+        copy.gold = gold;
+        copy.inventory.putAll(inventory);
+        copy.gearTiers.putAll(gearTiers);
+        copy.skillXp.putAll(skillXp);
+        copy.acceptedQuests.addAll(acceptedQuests);
+        copy.questProgress.putAll(questProgress);
+        copy.completedQuests.addAll(completedQuests);
+        copy.questCooldowns.putAll(questCooldowns);
+        copy.activeDungeon = activeDungeon;
+        copy.activeDungeonInstanceId = activeDungeonInstanceId;
+        copy.activeDungeonWorld = activeDungeonWorld;
+        copy.activeDungeonKills = activeDungeonKills;
+        copy.activeDungeonBossSpawned = activeDungeonBossSpawned;
+        copy.activeDungeonStartedAt = activeDungeonStartedAt;
+        copy.dungeonCooldowns.putAll(dungeonCooldowns);
+        copy.bossLockouts.putAll(bossLockouts);
+        copy.bossDailyBonusDate.putAll(bossDailyBonusDate);
+        copy.guildName = guildName;
+        copy.processedNonces.putAll(processedNonces);
+        copy.killCounts.putAll(killCounts);
+        copy.totalGoldEarned = totalGoldEarned;
+        copy.totalGoldSpent = totalGoldSpent;
+        copy.transfers = transfers;
+        copy.createdAt = createdAt;
+        copy.updatedAt = updatedAt;
+        copy.lastJoinAt = lastJoinAt;
+        copy.lastQuitAt = lastQuitAt;
+        return copy;
+    }
+
     public YamlConfiguration toYaml() {
         YamlConfiguration yaml = new YamlConfiguration();
         yaml.set("uuid", uuid.toString());
