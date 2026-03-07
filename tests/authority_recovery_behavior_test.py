@@ -29,9 +29,9 @@ def test_startup_reconciliation_quarantines_on_mismatch():
     assert "startupQuarantineCount.incrementAndGet()" in source
 
 
-def test_config_declares_local_authority_with_redis_mirror_optional():
+def test_config_declares_redis_authoritative_live_session_coordination():
     network = load_yaml("network.yml")
-    assert network["data_flow"]["live_session_state"] == "local_fallback"
+    assert network["data_flow"]["live_session_state"] == "redis_authoritative"
     assert network["data_flow"]["live_session_mirror"] == "redis"
 
 

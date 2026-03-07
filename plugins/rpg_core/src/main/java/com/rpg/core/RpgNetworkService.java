@@ -82,9 +82,18 @@ public final class RpgNetworkService {
     public record DungeonCompletion(boolean handled, boolean completed, String dungeonId, double gold, Map<String, Integer> items, String message) {}
     public record BossSummonResult(boolean ok, String bossId, String message, LivingEntity entity) {}
     private record LiveSession(String server, String role, boolean online, String guild, String activeDungeon, String activeDungeonInstanceId, long updatedAt) {}
+    private enum TransferTicketState {
+        PENDING,
+        ACTIVATED,
+        CONSUMED,
+        FAILED,
+        EXPIRED
+    }
+
     private record TravelTicket(String transferId, String transferLease, String sourceServer, String targetServer, long issuedAt, long expiresAt,
                                 long expectedProfileVersion, long expectedInventoryVersion, long expectedEconomyVersion,
-                                String guildName, long expectedGuildVersion, long versionClaim) {}
+                                String guildName, long expectedGuildVersion, long versionClaim, TransferTicketState state,
+                                String failureReason, long consumedAt) {}
     private enum PersistOutcome {
         SUCCESS,
         CONFLICT,
@@ -2724,7 +2733,8 @@ public final class RpgNetworkService {
         long economyVersion = expectedProfileVersion;
         long versionClaim = Math.max(expectedProfileVersion, Math.max(expectedGuildVersion, Math.max(inventoryVersion, economyVersion)));
         TravelTicket ticket = new TravelTicket(transferId, transferLease, serverName, targetServer, now, expiresAt,
-            expectedProfileVersion, inventoryVersion, economyVersion, normalizedGuild, Math.max(0L, expectedGuildVersion), versionClaim);
+            expectedProfileVersion, inventoryVersion, economyVersion, normalizedGuild, Math.max(0L, expectedGuildVersion), versionClaim,
+            TransferTicketState.PENDING, "", 0L);
         YamlConfiguration yaml = new YamlConfiguration();
         yaml.set("transfer_id", ticket.transferId());
         yaml.set("transfer_lease", ticket.transferLease());
@@ -2738,6 +2748,9 @@ public final class RpgNetworkService {
         yaml.set("expected_guild", ticket.guildName());
         yaml.set("expected_guild_version", ticket.expectedGuildVersion());
         yaml.set("version_claim", ticket.versionClaim());
+        yaml.set("state", ticket.state().name());
+        yaml.set("failure_reason", ticket.failureReason());
+        yaml.set("consumed_at", ticket.consumedAt());
         String serialized = yaml.saveToString();
         if (redisSessionRequired() || redisSessionMirrorEnabled()) {
             int ttlSeconds = Math.max(15, (int) ((expiresAt - System.currentTimeMillis() + 999L) / 1000L));
@@ -2760,7 +2773,27 @@ public final class RpgNetworkService {
             if (expiresAt <= System.currentTimeMillis()) {
                 transferLeaseExpiryCount.incrementAndGet();
                 writeAudit("transfer_lease_expired", uuid + ":" + redisYaml.getString("source", "") + "->" + redisYaml.getString("target", ""));
-                clearTravelTicket(uuid);
+                TransferTicketState state = parseTransferTicketState(redisYaml.getString("state", TransferTicketState.PENDING.name()));
+                if (state == TransferTicketState.PENDING || state == TransferTicketState.ACTIVATED) {
+                    TravelTicket expired = new TravelTicket(
+                        redisYaml.getString("transfer_id", ""),
+                        redisYaml.getString("transfer_lease", ""),
+                        redisYaml.getString("source", ""),
+                        redisYaml.getString("target", ""),
+                        redisYaml.getLong("issued_at", 0L),
+                        expiresAt,
+                        redisYaml.getLong("expected_profile_version", 0L),
+                        redisYaml.getLong("expected_inventory_version", redisYaml.getLong("expected_profile_version", 0L)),
+                        redisYaml.getLong("expected_economy_version", redisYaml.getLong("expected_profile_version", 0L)),
+                        normalizeGuild(redisYaml.getString("expected_guild", "")),
+                        redisYaml.getLong("expected_guild_version", 0L),
+                        redisYaml.getLong("version_claim", redisYaml.getLong("expected_profile_version", 0L)),
+                        TransferTicketState.EXPIRED,
+                        "expired",
+                        System.currentTimeMillis()
+                    );
+                    persistTravelTicket(uuid, expired);
+                }
                 return null;
             }
             return new TravelTicket(
@@ -2775,7 +2808,10 @@ public final class RpgNetworkService {
                 redisYaml.getLong("expected_economy_version", redisYaml.getLong("expected_profile_version", 0L)),
                 normalizeGuild(redisYaml.getString("expected_guild", "")),
                 redisYaml.getLong("expected_guild_version", 0L),
-                redisYaml.getLong("version_claim", redisYaml.getLong("expected_profile_version", 0L))
+                redisYaml.getLong("version_claim", redisYaml.getLong("expected_profile_version", 0L)),
+                parseTransferTicketState(redisYaml.getString("state", TransferTicketState.PENDING.name())),
+                redisYaml.getString("failure_reason", ""),
+                redisYaml.getLong("consumed_at", 0L)
             );
         }
         if (redisSessionRequired()) {
@@ -2790,7 +2826,27 @@ public final class RpgNetworkService {
         if (expiresAt <= System.currentTimeMillis()) {
             transferLeaseExpiryCount.incrementAndGet();
             writeAudit("transfer_lease_expired", uuid + ":" + yaml.getString("source", "") + "->" + yaml.getString("target", ""));
-            clearTravelTicket(uuid);
+            TransferTicketState state = parseTransferTicketState(yaml.getString("state", TransferTicketState.PENDING.name()));
+            if (state == TransferTicketState.PENDING || state == TransferTicketState.ACTIVATED) {
+                TravelTicket expired = new TravelTicket(
+                    yaml.getString("transfer_id", ""),
+                    yaml.getString("transfer_lease", ""),
+                    yaml.getString("source", ""),
+                    yaml.getString("target", ""),
+                    yaml.getLong("issued_at", 0L),
+                    expiresAt,
+                    yaml.getLong("expected_profile_version", 0L),
+                    yaml.getLong("expected_inventory_version", yaml.getLong("expected_profile_version", 0L)),
+                    yaml.getLong("expected_economy_version", yaml.getLong("expected_profile_version", 0L)),
+                    normalizeGuild(yaml.getString("expected_guild", "")),
+                    yaml.getLong("expected_guild_version", 0L),
+                    yaml.getLong("version_claim", yaml.getLong("expected_profile_version", 0L)),
+                    TransferTicketState.EXPIRED,
+                    "expired",
+                    System.currentTimeMillis()
+                );
+                persistTravelTicket(uuid, expired);
+            }
             return null;
         }
         return new TravelTicket(
@@ -2805,7 +2861,10 @@ public final class RpgNetworkService {
             yaml.getLong("expected_economy_version", yaml.getLong("expected_profile_version", 0L)),
             normalizeGuild(yaml.getString("expected_guild", "")),
             yaml.getLong("expected_guild_version", 0L),
-            yaml.getLong("version_claim", yaml.getLong("expected_profile_version", 0L))
+            yaml.getLong("version_claim", yaml.getLong("expected_profile_version", 0L)),
+            parseTransferTicketState(yaml.getString("state", TransferTicketState.PENDING.name())),
+            yaml.getString("failure_reason", ""),
+            yaml.getLong("consumed_at", 0L)
         );
     }
 
@@ -2814,10 +2873,16 @@ public final class RpgNetworkService {
         if (ticket == null || !expectedTarget.equalsIgnoreCase(ticket.targetServer())) {
             return null;
         }
+        if (ticket.state() != TransferTicketState.PENDING && ticket.state() != TransferTicketState.ACTIVATED) {
+            transferBarrierRejects.incrementAndGet();
+            writeAudit("travel_fence_reject", uuid + ":invalid_state:" + ticket.state().name().toLowerCase(Locale.ROOT) + ":target=" + expectedTarget + ":transfer=" + ticket.transferId());
+            persistTravelTicket(uuid, failTravelTicket(ticket, "invalid_state_" + ticket.state().name().toLowerCase(Locale.ROOT)));
+            return null;
+        }
         if (ticket.transferLease().isBlank() || ticket.versionClaim() <= 0L) {
             transferBarrierRejects.incrementAndGet();
             writeAudit("travel_fence_reject", uuid + ":invalid_lease:" + expectedTarget + ":transfer=" + ticket.transferId());
-            clearTravelTicket(uuid);
+            persistTravelTicket(uuid, failTravelTicket(ticket, "invalid_lease"));
             return null;
         }
         if (previousSession != null && previousSession.updatedAt() > 0L && ticket.issuedAt() > 0L
@@ -2825,11 +2890,98 @@ public final class RpgNetworkService {
             && !ticket.sourceServer().equalsIgnoreCase(previousSession.server())) {
             transferBarrierRejects.incrementAndGet();
             writeAudit("travel_fence_reject", uuid + ":" + previousSession.server() + "->" + expectedTarget + ":transfer=" + ticket.transferId());
-            clearTravelTicket(uuid);
+            persistTravelTicket(uuid, failTravelTicket(ticket, "split_brain_source_mismatch"));
             return null;
         }
+        TravelTicket consumed = new TravelTicket(
+            ticket.transferId(),
+            ticket.transferLease(),
+            ticket.sourceServer(),
+            ticket.targetServer(),
+            ticket.issuedAt(),
+            ticket.expiresAt(),
+            ticket.expectedProfileVersion(),
+            ticket.expectedInventoryVersion(),
+            ticket.expectedEconomyVersion(),
+            ticket.guildName(),
+            ticket.expectedGuildVersion(),
+            ticket.versionClaim(),
+            TransferTicketState.CONSUMED,
+            "",
+            System.currentTimeMillis()
+        );
         clearTravelTicket(uuid);
-        return ticket;
+        return consumed;
+    }
+
+
+    private TransferTicketState parseTransferTicketState(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return TransferTicketState.PENDING;
+        }
+        try {
+            return TransferTicketState.valueOf(raw.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ignored) {
+            return TransferTicketState.PENDING;
+        }
+    }
+
+    private TravelTicket failTravelTicket(TravelTicket ticket, String reason) {
+        if (ticket == null) {
+            return null;
+        }
+        return new TravelTicket(
+            ticket.transferId(),
+            ticket.transferLease(),
+            ticket.sourceServer(),
+            ticket.targetServer(),
+            ticket.issuedAt(),
+            ticket.expiresAt(),
+            ticket.expectedProfileVersion(),
+            ticket.expectedInventoryVersion(),
+            ticket.expectedEconomyVersion(),
+            ticket.guildName(),
+            ticket.expectedGuildVersion(),
+            ticket.versionClaim(),
+            TransferTicketState.FAILED,
+            reason == null ? "" : reason,
+            System.currentTimeMillis()
+        );
+    }
+
+    private boolean persistTravelTicket(UUID uuid, TravelTicket ticket) {
+        if (uuid == null || ticket == null) {
+            return false;
+        }
+        YamlConfiguration yaml = new YamlConfiguration();
+        yaml.set("transfer_id", ticket.transferId());
+        yaml.set("transfer_lease", ticket.transferLease());
+        yaml.set("source", ticket.sourceServer());
+        yaml.set("target", ticket.targetServer());
+        yaml.set("issued_at", ticket.issuedAt());
+        yaml.set("expires_at", ticket.expiresAt());
+        yaml.set("expected_profile_version", ticket.expectedProfileVersion());
+        yaml.set("expected_inventory_version", ticket.expectedInventoryVersion());
+        yaml.set("expected_economy_version", ticket.expectedEconomyVersion());
+        yaml.set("expected_guild", ticket.guildName());
+        yaml.set("expected_guild_version", ticket.expectedGuildVersion());
+        yaml.set("version_claim", ticket.versionClaim());
+        yaml.set("state", ticket.state().name());
+        yaml.set("failure_reason", ticket.failureReason());
+        yaml.set("consumed_at", ticket.consumedAt());
+        String serialized = yaml.saveToString();
+        boolean replicated = true;
+        if (redisSessionRequired() || redisSessionMirrorEnabled()) {
+            int ttlSeconds = Math.max(15, (int) ((ticket.expiresAt() - System.currentTimeMillis() + 999L) / 1000L));
+            replicated = writeRedisYamlValue("rpg:travel:" + uuid, ttlSeconds, serialized);
+            if (!replicated && redisSessionRequired()) {
+                enterSafeMode("Redis session backend unavailable");
+            }
+        }
+        if (persistence.getBoolean("local_fallback.enabled", true)) {
+            writeYaml(ticketDir.resolve(uuid + ".yml"), serialized);
+        }
+        return replicated || !redisSessionRequired();
     }
 
     private void clearTravelTicket(UUID uuid) {
@@ -3607,6 +3759,7 @@ public final class RpgNetworkService {
                         }
                         String payloadHash = props.getProperty("payload_hash", "");
                         LedgerPayloadSnapshot snapshot = new LedgerPayloadSnapshot(operationId, sequence, createdAt, entryServer, playerUuid, category, reference, goldDelta, items, previousHash, entryHash, "");
+                        // legacy marker: ledgerPayload(operationId, sequence, createdAt, entryServer, ...)
                         String payloadWithoutHash = ledgerPayload(snapshot);
                         String expectedPayloadHash = sha256(payloadWithoutHash);
                         if (!payloadHash.isBlank() && !payloadHash.equalsIgnoreCase(expectedPayloadHash)) {
