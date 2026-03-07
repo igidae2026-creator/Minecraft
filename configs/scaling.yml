@@ -45,6 +45,7 @@ operational:
   alert_tps_below: 17.0
   alert_ledger_backlog: 64
   alert_instance_leak: 50
+  alert_instance_cleanup_failure: 1
   alert_transfer_fence_rejects: 5
   alert_cas_conflicts: 5
   alert_duplicate_login_rejects: 2
@@ -52,3 +53,7 @@ operational:
   alert_startup_quarantine: 1
   alert_split_brain: 1
   alert_item_duplication: 1
+  alert_guild_drift: 1
+  alert_replay_divergence: 1
+  alert_experiment_anomaly: 1
+  alert_db_saturation: 5

@@ -94,6 +94,10 @@ data_flow:
   inventory_authority: mysql
   live_session_state: redis_authoritative
   live_session_mirror: redis
+  live_session_coordination: redis_fenced_ticket_authority
   guild_state: mysql
   economy_ledger: mysql
+  rare_item_authority: local_manifest_plus_ledger_lineage
   metrics_sink: prometheus_textfile
+  gameplay_artifacts: runtime_data/artifacts
+  governance_registry: runtime_data/policies

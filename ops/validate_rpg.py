@@ -67,6 +67,8 @@ def main() -> int:
 
     if not persistence["mysql"]["enabled"] or not persistence["redis"]["enabled"]:
         errors.append("mysql and redis must both be enabled")
+    if not persistence["redis"].get("required_for_session_authority", False):
+        errors.append("redis.required_for_session_authority must remain true")
     if not persistence["local_fallback"]["enabled"]:
         errors.append("local_fallback must remain enabled")
     if not persistence["write_policy"]["save_on_server_transfer"]:
@@ -147,9 +149,14 @@ def main() -> int:
     if "mysql-connector-j" not in build_gradle:
         errors.append("rpg_core must bundle a deployable mysql connector")
 
-    for marker in ("mysqlDriverAvailable", "canAccessWorld", "canClaimReservedEntityKill", "isTravelAllowed"):
+    for marker in ("mysqlDriverAvailable", "canAccessWorld", "canClaimReservedEntityKill", "isTravelAllowed", "trackHighValueItemMint", "exportArtifact", "reconcileItemAuthority"):
         if marker not in core_source:
             errors.append(f"rpg_core missing production patch marker: {marker}")
+
+    if network["data_flow"].get("rare_item_authority") != "local_manifest_plus_ledger_lineage":
+        errors.append("network.data_flow.rare_item_authority drift detected")
+    if network["data_flow"].get("gameplay_artifacts") != "runtime_data/artifacts":
+        errors.append("network.data_flow.gameplay_artifacts drift detected")
 
     expected_plugins = {
         "rpg_core", "economy_engine", "quest_system", "boss_ai",

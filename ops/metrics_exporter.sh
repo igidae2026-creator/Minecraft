@@ -34,6 +34,8 @@ metrics.append(f"rpg_network_average_view_distance {sum(server['view_distance'] 
 metrics.append(f"rpg_network_market_tax {economy['market_tax']}")
 metrics.append(f"rpg_network_peak_players_target {scaling['targets']['peak_players']}")
 metrics.append(f"rpg_network_local_fallback_enabled {1 if persistence['local_fallback']['enabled'] else 0}")
+metrics.append(f"rpg_network_runtime_artifact_exports {len(list((root / 'runtime_data' / 'artifacts').glob('*.yml')))}")
+metrics.append(f"rpg_network_runtime_policy_exports {len(list((root / 'runtime_data' / 'policies').glob('*.yml')))}")
 for server_name, plugins in matrix.items():
     metrics.append(f"rpg_network_plugins_per_server{{server=\"{server_name}\"}} {len(plugins)}")
 

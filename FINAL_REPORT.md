@@ -9,3 +9,11 @@
 - Runtime truth alignment updated: `network.yml` now marks live sessions as `redis_authoritative`, and scaling config removed false promise of world reuse pooling.
 - Added focused config/runtime alignment test covering new control planes and observability wiring.
 - Authority coordination now tracks pending/consumed/failed/expired ticket counts and performs deterministic expiry sweeps during runtime cleanup cycles.
+- Session authority is now explicitly fenced around Redis-backed session/ticket coordination, duplicate-login fail-close behavior, transfer lease expiry accounting, and authority conflict telemetry.
+- Transfer activation now depends on durable source versions, explicit ticket lifecycle states, mutation freeze, and fail-closed rollback/refund handling.
+- Ledger truth now remains append-only and payload-verifiable, with repaired pending-entry recovery, startup preload/reconciliation, and fail-closed divergence/quarantine behavior.
+- High-value item authority now has first-class owner manifests plus item-lineage mint/transfer/consume tracking tied to exploit forensics and quarantine counters.
+- Instance runtime now fixes recursive world boot failure, exports cleanup latency/failure telemetry, and preserves explicit deterministic lifecycle states through cleanup.
+- Gameplay artifacts are now exported to `runtime_data/artifacts`, active governance state is exported to `runtime_data/policies`, and runtime integrity tooling validates these surfaces.
+- Metrics and alerts now cover guild drift, replay divergence, item ownership conflicts, cleanup failures, and experiment/policy rollback anomalies in addition to prior authority and ledger signals.
+- Ops now include `runtime_integrity.py`, stronger health validation, and repo-truth config updates for artifact exports, rare-item authority, and session authority requirements.

@@ -22,9 +22,11 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -292,6 +294,8 @@ public final class RpgNetworkService {
             persistDungeonInstance(instance);
             World world = ensureDungeonWorld(instance);
             if (world == null) {
+                instance.setLifecycleState(InstanceLifecycleState.FAILED);
+                persistDungeonInstance(instance);
                 return null;
             }
             instance.setLifecycleState(InstanceLifecycleState.READY);
@@ -367,6 +371,9 @@ public final class RpgNetworkService {
     private final Path ledgerPendingDir;
     private final Path metricsDir;
     private final Path eventDir;
+    private final Path artifactDir;
+    private final Path policyDir;
+    private final Path itemAuthorityDir;
     private final String serverName;
     private final String serverRole;
     private final YamlConfiguration network;
@@ -427,6 +434,10 @@ public final class RpgNetworkService {
     private final AtomicLong reconciliationMismatchCount = new AtomicLong();
     private final AtomicLong guildValueDriftCount = new AtomicLong();
     private final AtomicLong replayDivergenceCount = new AtomicLong();
+    private final AtomicLong itemOwnershipConflictCount = new AtomicLong();
+    private final AtomicLong cleanupFailureCount = new AtomicLong();
+    private final AtomicLong cleanupLatencyTotalMillis = new AtomicLong();
+    private final AtomicLong cleanupLatencyMaxMillis = new AtomicLong();
     private volatile boolean mysqlSchemaReady;
     private volatile boolean mysqlDriverReady;
     private volatile boolean mysqlDriverUnavailableLogged;
@@ -471,6 +482,9 @@ public final class RpgNetworkService {
         this.ledgerPendingDir = ledgerDir.resolve("pending");
         this.metricsDir = root.resolve("metrics");
         this.eventDir = runtimeDir.resolve("events");
+        this.artifactDir = runtimeDir.resolve("artifacts");
+        this.policyDir = runtimeDir.resolve("policies");
+        this.itemAuthorityDir = runtimeDir.resolve("item_authority");
     }
 
     public void enable() {
@@ -484,11 +498,15 @@ public final class RpgNetworkService {
         ensurePath(ledgerPendingDir);
         ensurePath(metricsDir);
         ensurePath(eventDir);
+        ensurePath(artifactDir);
+        ensurePath(policyDir);
+        ensurePath(itemAuthorityDir);
         validateBackendBaseline();
         loadPendingLedgerEntries();
         loadPersistedInstances();
         rebuildManagedEntityCounters();
         runStartupConsistencyChecks();
+        reconcileItemAuthority();
         initializeControlPlanes();
         plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, "BungeeCord");
         long flushIntervalTicks = Math.max(20L, persistence.getLong("write_policy.profile_save_interval_seconds", 60L) * 20L);
@@ -651,6 +669,18 @@ public final class RpgNetworkService {
         return allocationLatencyMaxMillis.get();
     }
 
+    public double cleanupLatencyMsAvg() {
+        long cleaned = orphanInstancesCleaned.get();
+        if (cleaned <= 0L) {
+            return 0.0D;
+        }
+        return cleanupLatencyTotalMillis.get() / (double) cleaned;
+    }
+
+    public double cleanupLatencyMsMax() {
+        return cleanupLatencyMaxMillis.get();
+    }
+
     public int managedEntityTotalCount() {
         return managedEntityCount(null);
     }
@@ -701,6 +731,14 @@ public final class RpgNetworkService {
 
     public long replayDivergenceCount() {
         return replayDivergenceCount.get();
+    }
+
+    public long itemOwnershipConflictCount() {
+        return itemOwnershipConflictCount.get();
+    }
+
+    public long cleanupFailureCount() {
+        return cleanupFailureCount.get();
     }
 
     public int ledgerQueueDepth() {
@@ -836,6 +874,27 @@ public final class RpgNetworkService {
         synchronized (profileLocks.computeIfAbsent(uuid, ignored -> new Object())) {
             RpgProfile profile = profiles.computeIfAbsent(uuid, ignored -> loadProfile(uuid, player.getName()));
             return profile.copy();
+        }
+    }
+
+    private void restoreProfileSnapshot(RpgProfile snapshot) {
+        if (snapshot == null) {
+            return;
+        }
+        synchronized (profileLocks.computeIfAbsent(snapshot.getUuid(), ignored -> new Object())) {
+            profiles.put(snapshot.getUuid(), snapshot.copy());
+            dirtyProfiles.add(snapshot.getUuid());
+        }
+    }
+
+    private void restoreGuildSnapshot(String guildName, RpgGuild snapshot) {
+        if (snapshot == null || guildName == null || guildName.isBlank()) {
+            return;
+        }
+        String key = normalizeGuild(guildName);
+        synchronized (guildLocks.computeIfAbsent(key, ignored -> new Object())) {
+            guilds.put(key, snapshot.copy());
+            dirtyGuilds.add(key);
         }
     }
 
@@ -1121,6 +1180,7 @@ public final class RpgNetworkService {
             return new OperationResult(false, color("&cBackend safe mode active. Quest turn-in paused."));
         }
         return withProfile(player, profile -> {
+            RpgProfile before = profile.copy();
             if (!profile.isQuestAccepted(questId)) {
                 return new OperationResult(false, color("&eQuest not accepted."));
             }
@@ -1145,8 +1205,10 @@ public final class RpgNetworkService {
             applyQuestRewardXp(profile, objective, rewardXp);
             appendLedgerMutation(profile.getUuid(), "quest_turnin", questId, rewardGold, intMap(quests.getConfigurationSection(questId + ".reward.items")));
             if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
+                restoreProfileSnapshot(before);
                 return new OperationResult(false, color("&cQuest reward commit delayed. Try again."));
             }
+            trackHighValueItemMint(profile.getUuid(), "player:" + profile.getUuid(), "quest_turnin:" + questId, intMap(quests.getConfigurationSection(questId + ".reward.items")));
             if (quests.getBoolean(questId + ".repeatable", false)) {
                 int cooldownHours = quests.getInt(questId + ".cooldown_hours", 0);
                 if (cooldownHours > 0) {
@@ -1176,6 +1238,7 @@ public final class RpgNetworkService {
         markManagedEntityRemoved(entity);
         String nonce = "mob-kill:" + entity.getUniqueId();
         return withProfile(killer, profile -> {
+            RpgProfile before = profile.copy();
             if (profile.isNonceSeen(nonce, nonceWindowMillis())) {
                 return new KillReward(false, mobId, 0.0D, Collections.emptyMap(), "");
             }
@@ -1189,8 +1252,10 @@ public final class RpgNetworkService {
             }
             appendLedgerMutation(profile.getUuid(), "mob_kill", mobId, goldReward, rolled);
             if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
+                restoreProfileSnapshot(before);
                 return new KillReward(true, mobId, 0.0D, Collections.emptyMap(), color("&cReward commit delayed. Try again."));
             }
+            trackHighValueItemMint(profile.getUuid(), "player:" + profile.getUuid(), "mob_kill:" + mobId, rolled);
             awardSkillXp(profile, "combat", "mob_kill");
             updateQuestProgressForKill(profile, mobId, false, "");
             syncCollectQuestProgress(profile);
@@ -1216,6 +1281,7 @@ public final class RpgNetworkService {
         markManagedEntityRemoved(entity);
         String nonce = "boss-kill:" + entity.getUniqueId();
         return withProfile(killer, profile -> {
+            RpgProfile before = profile.copy();
             if (profile.isNonceSeen(nonce, nonceWindowMillis())) {
                 return new BossReward(false, bossId, false, 0.0D, Collections.emptyMap(), "");
             }
@@ -1250,8 +1316,10 @@ public final class RpgNetworkService {
             profile.setBossLockout(bossId, System.currentTimeMillis() + lockoutHours * 3_600_000L);
             appendLedgerMutation(profile.getUuid(), "boss_kill", bossId, bonusGold, itemsGranted);
             if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
+                restoreProfileSnapshot(before);
                 return new BossReward(true, bossId, false, 0.0D, Collections.emptyMap(), color("&cReward commit delayed. Try again."));
             }
+            trackHighValueItemMint(profile.getUuid(), "player:" + profile.getUuid(), "boss_kill:" + bossId, itemsGranted);
             awardSkillXp(profile, "combat", "boss_kill");
             updateQuestProgressForKill(profile, "", true, bossId);
             syncCollectQuestProgress(profile);
@@ -1277,6 +1345,7 @@ public final class RpgNetworkService {
             return new DungeonStart(false, dungeonId, 0, color("&cUnknown dungeon: " + dungeonId));
         }
         return withProfile(player, profile -> {
+            RpgProfile before = profile.copy();
             if (!profile.getActiveDungeon().isBlank()) {
                 return new DungeonStart(false, dungeonId, 0, color("&eAlready inside dungeon &6" + profile.getActiveDungeon()));
             }
@@ -1304,9 +1373,15 @@ public final class RpgNetworkService {
             }
             removeItems(profile, requirements);
             appendLedgerMutation(profile.getUuid(), "dungeon_entry_cost", dungeonId, -fee, negativeItemMap(requirements));
+            for (Map.Entry<String, Integer> entry : requirements.entrySet()) {
+                if (!reconcileHighValueItemConsumption("player:" + profile.getUuid(), entry.getKey(), entry.getValue(), "dungeon_entry:" + dungeonId)) {
+                    restoreProfileSnapshot(before);
+                    cleanupDungeonInstance(instance, "entry_item_authority");
+                    return new DungeonStart(false, dungeonId, 0, color("&cEntry material authority mismatch. Dungeon entry quarantined."));
+                }
+            }
             if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
-                profile.addGold(fee);
-                addItems(profile, requirements);
+                restoreProfileSnapshot(before);
                 cleanupDungeonInstance(instance, "durability_boundary");
                 return new DungeonStart(false, dungeonId, 0, color("&cDungeon entry commit delayed. Try again."));
             }
@@ -1406,6 +1481,7 @@ public final class RpgNetworkService {
         }
         String bossId = resolveBossId(entity);
         return withProfile(player, profile -> {
+            RpgProfile before = profile.copy();
             if (!dungeonId.equals(profile.getActiveDungeon())) {
                 return new DungeonCompletion(false, false, dungeonId, 0.0D, Collections.emptyMap(), "");
             }
@@ -1434,9 +1510,11 @@ public final class RpgNetworkService {
             profile.addGold(goldReward);
             appendLedgerMutation(profile.getUuid(), "dungeon_complete", dungeonId, goldReward, rewards);
             if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
+                restoreProfileSnapshot(before);
                 profile.clearClaimedOperation(completionClaimKey);
                 return new DungeonCompletion(true, false, dungeonId, 0.0D, Collections.emptyMap(), color("&cReward commit delayed. Try again."));
             }
+            trackHighValueItemMint(profile.getUuid(), "player:" + profile.getUuid(), "dungeon_complete:" + dungeonId, rewards);
             instanceOrchestrator.rewardCommit(activeInstance);
             profile.setDungeonCooldown(dungeonId, System.currentTimeMillis() + dungeons.getLong(dungeonId + ".repeat_cooldown_seconds", 30L) * 1000L);
             teleportToPrimaryWorldSpawn(player);
@@ -1454,6 +1532,7 @@ public final class RpgNetworkService {
 
     public OperationResult grantEventBonusReward(Player player, String eventId, String nonce, double gold, String itemId, int amount, boolean grantItem) {
         return withProfile(player, profile -> {
+            RpgProfile before = profile.copy();
             if (nonce == null || nonce.isBlank()) {
                 return new OperationResult(false, color("&cMissing reward nonce."));
             }
@@ -1473,9 +1552,11 @@ public final class RpgNetworkService {
             }
             appendLedgerMutation(profile.getUuid(), "event_bonus_reward", eventId + ":" + nonce, gold, grantedItems);
             if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
+                restoreProfileSnapshot(before);
                 profile.clearClaimedOperation(opKey);
                 return new OperationResult(false, color("&cEvent bonus commit delayed. Try again."));
             }
+            trackHighValueItemMint(profile.getUuid(), "player:" + profile.getUuid(), "event_bonus:" + eventId, grantedItems);
             awardSkillXp(profile, "combat", "mob_kill");
             syncCollectQuestProgress(profile);
             writeAudit("event_bonus_reward", player.getUniqueId() + ":" + eventId + ":" + nonce + ":gold=" + gold + ":items=" + grantedItems);
@@ -1507,6 +1588,7 @@ public final class RpgNetworkService {
 
         if (!useGuildBank) {
             return withProfile(player, profile -> {
+                RpgProfile before = profile.copy();
                 String operationKey = buildSummonOperationKey(profile.getUuid(), bossId, dungeonIdForBoss);
                 String refundReference = bossId + ":refund:" + operationKey;
                 Map<String, Integer> req = intMap(bosses.getConfigurationSection(bossId + ".summon.required_items"));
@@ -1519,9 +1601,14 @@ public final class RpgNetworkService {
                 }
                 removeItems(profile, req);
                 appendLedgerMutation(profile.getUuid(), "boss_summon_personal", bossId + ":" + operationKey, -goldCost, negativeItemMap(req));
+                for (Map.Entry<String, Integer> entry : req.entrySet()) {
+                    if (!reconcileHighValueItemConsumption("player:" + profile.getUuid(), entry.getKey(), entry.getValue(), "boss_summon:" + bossId)) {
+                        restoreProfileSnapshot(before);
+                        return new BossSummonResult(false, bossId, color("&cHigh-value summon material mismatch. Summon quarantined."), null);
+                    }
+                }
                 if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
-                    profile.addGold(goldCost);
-                    addItems(profile, req);
+                    restoreProfileSnapshot(before);
                     return new BossSummonResult(false, bossId, color("&cSummon commit delayed. Try again."), null);
                 }
 
@@ -1574,6 +1661,8 @@ public final class RpgNetworkService {
             }
             RpgGuild guild = guildOptional.get();
             synchronized (guildLocks.computeIfAbsent(normalizeGuild(guild.getName()), ignored -> new Object())) {
+                RpgProfile profileBefore = profile.copy();
+                RpgGuild guildBefore = guild.copy();
                 String operationKey = buildSummonOperationKey(profile.getUuid(), bossId, dungeonIdForBoss);
                 String refundReference = bossId + ":refund:" + operationKey;
                 Map<String, Integer> req = intMap(bosses.getConfigurationSection(bossId + ".summon.required_items"));
@@ -1594,12 +1683,16 @@ public final class RpgNetworkService {
                 }
                 dirtyGuilds.add(normalizeGuild(guild.getName()));
                 appendLedgerMutation(profile.getUuid(), "boss_summon_guild", bossId + ":" + operationKey, -goldCost, negativeItemMap(req));
-                if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), guild.getName(), guild.getUpdatedAt())) {
-                    guild.addBankGold(goldCost);
-                    for (Map.Entry<String, Integer> entry : req.entrySet()) {
-                        guild.addBankItem(entry.getKey(), entry.getValue());
+                for (Map.Entry<String, Integer> entry : req.entrySet()) {
+                    if (!reconcileHighValueItemConsumption("guild:" + guild.getName(), entry.getKey(), entry.getValue(), "boss_summon_guild:" + bossId)) {
+                        restoreProfileSnapshot(profileBefore);
+                        restoreGuildSnapshot(guild.getName(), guildBefore);
+                        return new BossSummonResult(false, bossId, color("&cGuild high-value material mismatch. Summon quarantined."), null);
                     }
-                    dirtyGuilds.add(normalizeGuild(guild.getName()));
+                }
+                if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), guild.getName(), guild.getUpdatedAt())) {
+                    restoreProfileSnapshot(profileBefore);
+                    restoreGuildSnapshot(guild.getName(), guildBefore);
                     return new BossSummonResult(false, bossId, color("&cSummon commit delayed. Try again."), null);
                 }
 
@@ -1661,6 +1754,7 @@ public final class RpgNetworkService {
             return new OperationResult(false, color("&cAmount must be positive."));
         }
         return withProfile(player, profile -> {
+            RpgProfile before = profile.copy();
             if (profile.getItemCount(key) < amount) {
                 return new OperationResult(false, color("&cYou only have " + profile.getItemCount(key) + " of " + key));
             }
@@ -1672,6 +1766,14 @@ public final class RpgNetworkService {
             double payout = vendorValue * amount;
             profile.addGold(payout);
             appendLedgerMutation(profile.getUuid(), "vendor_sell", key, payout, Map.of(key, -amount));
+            if (!reconcileHighValueItemConsumption("player:" + profile.getUuid(), key, amount, "vendor_sell:" + key)) {
+                restoreProfileSnapshot(before);
+                return new OperationResult(false, color("&cHigh-value item authority mismatch. Inventory quarantined."));
+            }
+            if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
+                restoreProfileSnapshot(before);
+                return new OperationResult(false, color("&cVendor sale commit delayed. Try again."));
+            }
             syncCollectQuestProgress(profile);
             writeAudit("vendor_sell", player.getUniqueId() + ":" + key + ":" + amount + ":gold=" + payout);
             return new OperationResult(true, color("&aSold &e" + key + " x" + amount + " &7for &e" + money(payout)));
@@ -1686,6 +1788,7 @@ public final class RpgNetworkService {
             return new OperationResult(false, color("&cUnknown gear path: " + gearPath));
         }
         return withProfile(player, profile -> {
+            RpgProfile before = profile.copy();
             List<String> upgradePath = items.getStringList("gear_paths." + gearPath + ".upgrade_path");
             if (upgradePath.isEmpty()) {
                 return new OperationResult(false, color("&cNo upgrade path configured."));
@@ -1710,6 +1813,16 @@ public final class RpgNetworkService {
             removeItems(profile, req);
             profile.setGearTier(gearPath, nextTier);
             appendLedgerMutation(profile.getUuid(), "gear_upgrade", gearPath + ":" + currentTier + "->" + nextTier, -goldCost, negativeItemMap(req));
+            for (Map.Entry<String, Integer> entry : req.entrySet()) {
+                if (!reconcileHighValueItemConsumption("player:" + profile.getUuid(), entry.getKey(), entry.getValue(), "gear_upgrade:" + gearPath)) {
+                    restoreProfileSnapshot(before);
+                    return new OperationResult(false, color("&cHigh-value material authority mismatch. Upgrade quarantined."));
+                }
+            }
+            if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
+                restoreProfileSnapshot(before);
+                return new OperationResult(false, color("&cUpgrade commit delayed. Try again."));
+            }
             awardSkillXp(profile, "crafting", "gear_upgrade");
             syncCollectQuestProgress(profile);
             writeAudit("gear_upgrade", player.getUniqueId() + ":" + gearPath + ":" + currentTier + "->" + nextTier);
@@ -1841,12 +1954,23 @@ public final class RpgNetworkService {
         if (amount <= 0 || !items.contains("materials." + itemId.toLowerCase(Locale.ROOT))) {
             return new OperationResult(false, color("&cInvalid admin item grant."));
         }
+        final boolean[] committed = {true};
         withProfile(target, profile -> {
+            RpgProfile before = profile.copy();
             profile.addItem(itemId, amount);
             appendLedgerMutation(profile.getUuid(), "admin_reward_grant", "item:" + itemId, 0.0D, Map.of(itemId.toLowerCase(Locale.ROOT), amount));
+            if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
+                committed[0] = false;
+                restoreProfileSnapshot(before);
+                return null;
+            }
+            trackHighValueItemMint(profile.getUuid(), "player:" + profile.getUuid(), "admin_item:" + itemId, Map.of(itemId.toLowerCase(Locale.ROOT), amount));
             syncCollectQuestProgress(profile);
             return null;
         });
+        if (!committed[0]) {
+            return new OperationResult(false, color("&cAdmin item grant failed durability boundary."));
+        }
         writeAudit("admin_item", sender.getName() + ":" + target.getUniqueId() + ":" + itemId + ":" + amount);
         return new OperationResult(true, color("&aGranted &e" + itemId + " x" + amount + " &7to &e" + target.getName()));
     }
@@ -1855,15 +1979,24 @@ public final class RpgNetworkService {
         if (safeMode) {
             return new OperationResult(false, color("&cBackend safe mode active. Admin gold changes paused."));
         }
+        final boolean[] committed = {true};
         withProfile(target, profile -> {
+            RpgProfile before = profile.copy();
             if (delta >= 0.0D) {
                 profile.addGold(delta);
             } else {
                 profile.spendGold(-delta);
             }
             appendLedgerMutation(profile.getUuid(), "admin_reward_grant", "gold", delta, Collections.emptyMap());
+            if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
+                committed[0] = false;
+                restoreProfileSnapshot(before);
+            }
             return null;
         });
+        if (!committed[0]) {
+            return new OperationResult(false, color("&cAdmin gold adjustment failed durability boundary."));
+        }
         writeAudit("admin_gold", sender.getName() + ":" + target.getUniqueId() + ":" + delta);
         return new OperationResult(true, color("&aAdjusted gold for &e" + target.getName() + " &7delta=&e" + money(delta)));
     }
@@ -2001,11 +2134,13 @@ public final class RpgNetworkService {
             return new OperationResult(false, color("&cAmount must be positive."));
         }
         return withProfile(player, profile -> {
+            RpgProfile before = profile.copy();
             if (profile.getGuildName().isBlank()) {
                 return new OperationResult(false, color("&cYou are not in a guild."));
             }
             String guildKey = normalizeGuild(profile.getGuildName());
             synchronized (guildLocks.computeIfAbsent(guildKey, ignored -> new Object())) {
+                RpgGuild guildBefore = guilds.get(guildKey) == null ? null : guilds.get(guildKey).copy();
                 Optional<RpgGuild> guildOptional = getGuild(profile.getGuildName());
                 if (guildOptional.isEmpty()) {
                     return new OperationResult(false, color("&cGuild data missing."));
@@ -2017,6 +2152,11 @@ public final class RpgNetworkService {
                 guild.addBankGold(amount);
                 dirtyGuilds.add(guildKey);
                 appendLedgerMutation(profile.getUuid(), "guild_bank_deposit_gold", guild.getName(), -amount, Collections.emptyMap());
+                if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), guild.getName(), guild.getUpdatedAt())) {
+                    restoreProfileSnapshot(before);
+                    restoreGuildSnapshot(guildKey, guildBefore);
+                    return new OperationResult(false, color("&cGuild treasury commit delayed. Try again."));
+                }
                 writeAudit("guild_gold", player.getUniqueId() + ":" + guild.getName() + ":" + amount);
                 return new OperationResult(true, color("&aDeposited &e" + money(amount) + " &7to guild bank."));
             }
@@ -2031,6 +2171,7 @@ public final class RpgNetworkService {
             return new OperationResult(false, color("&cAmount must be positive."));
         }
         return withProfile(player, profile -> {
+            RpgProfile before = profile.copy();
             if (profile.getGuildName().isBlank()) {
                 return new OperationResult(false, color("&cYou are not in a guild."));
             }
@@ -2039,6 +2180,7 @@ public final class RpgNetworkService {
             }
             String guildKey = normalizeGuild(profile.getGuildName());
             synchronized (guildLocks.computeIfAbsent(guildKey, ignored -> new Object())) {
+                RpgGuild guildBefore = guilds.get(guildKey) == null ? null : guilds.get(guildKey).copy();
                 Optional<RpgGuild> guildOptional = getGuild(profile.getGuildName());
                 if (guildOptional.isEmpty()) {
                     return new OperationResult(false, color("&cGuild data missing."));
@@ -2050,6 +2192,16 @@ public final class RpgNetworkService {
                 guild.addBankItem(itemId, amount);
                 dirtyGuilds.add(guildKey);
                 appendLedgerMutation(profile.getUuid(), "guild_bank_deposit_item", guild.getName(), 0.0D, Map.of(itemId.toLowerCase(Locale.ROOT), -amount));
+                if (!transferHighValueItems("player:" + profile.getUuid(), "guild:" + guild.getName(), itemId, amount, "guild_deposit:" + guild.getName())) {
+                    restoreProfileSnapshot(before);
+                    restoreGuildSnapshot(guildKey, guildBefore);
+                    return new OperationResult(false, color("&cGuild item authority mismatch. Transfer quarantined."));
+                }
+                if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), guild.getName(), guild.getUpdatedAt())) {
+                    restoreProfileSnapshot(before);
+                    restoreGuildSnapshot(guildKey, guildBefore);
+                    return new OperationResult(false, color("&cGuild item commit delayed. Try again."));
+                }
                 syncCollectQuestProgress(profile);
                 writeAudit("guild_item", player.getUniqueId() + ":" + guild.getName() + ":" + itemId + ":" + amount);
                 return new OperationResult(true, color("&aDeposited &e" + itemId + " x" + amount + " &7to guild bank."));
@@ -3197,6 +3349,7 @@ public final class RpgNetworkService {
         if (instance == null) {
             return;
         }
+        long started = System.currentTimeMillis();
         instanceOrchestrator.markCleanup(instance);
         dungeonInstances.remove(instance.instanceId);
         dungeonOwnerInstances.remove(instance.ownerUuid);
@@ -3213,9 +3366,13 @@ public final class RpgNetworkService {
         try {
             Files.deleteIfExists(instanceDir.resolve(instance.instanceId + ".yml"));
         } catch (IOException exception) {
+            cleanupFailureCount.incrementAndGet();
             plugin.getLogger().warning("Unable to clear dungeon instance file: " + exception.getMessage());
         }
         instanceOrchestrator.markTerminated(instance);
+        long latency = Math.max(0L, System.currentTimeMillis() - started);
+        cleanupLatencyTotalMillis.addAndGet(latency);
+        cleanupLatencyMaxMillis.accumulateAndGet(latency, Math::max);
         writeAudit("dungeon_instance_cleanup", instance.instanceId + ":" + reason);
     }
 
@@ -3537,6 +3694,156 @@ public final class RpgNetworkService {
         return items.getBoolean("materials." + key + ".bound", false);
     }
 
+    private boolean isHighValueItem(String itemId) {
+        String key = itemId == null ? "" : itemId.toLowerCase(Locale.ROOT);
+        if (key.isBlank() || !items.contains("materials." + key)) {
+            return false;
+        }
+        return items.getBoolean("materials." + key + ".bound", false)
+            || !items.getBoolean("materials." + key + ".tradable", true)
+            || items.getInt("materials." + key + ".vendor_value", 1) <= 0;
+    }
+
+    private Path ownerManifestPath(String ownerRef) {
+        return itemAuthorityDir.resolve("owners").resolve(sanitizePathToken(ownerRef) + ".yml");
+    }
+
+    private Map<String, String> loadItemManifest(String ownerRef) {
+        Map<String, String> manifest = new LinkedHashMap<>();
+        if (ownerRef == null || ownerRef.isBlank()) {
+            return manifest;
+        }
+        Path path = ownerManifestPath(ownerRef);
+        if (!Files.exists(path)) {
+            return manifest;
+        }
+        YamlConfiguration yaml = readYaml(path);
+        ConfigurationSection section = yaml.getConfigurationSection("items");
+        if (section == null) {
+            return manifest;
+        }
+        for (String itemInstanceId : section.getKeys(false)) {
+            String archetype = section.getString(itemInstanceId, "");
+            if (!archetype.isBlank()) {
+                manifest.put(itemInstanceId, archetype.toLowerCase(Locale.ROOT));
+            }
+        }
+        return manifest;
+    }
+
+    private void saveItemManifest(String ownerRef, Map<String, String> manifest) {
+        YamlConfiguration yaml = new YamlConfiguration();
+        yaml.set("owner_ref", ownerRef);
+        yaml.set("items", manifest == null ? Map.of() : new LinkedHashMap<>(manifest));
+        writeYaml(ownerManifestPath(ownerRef), yaml.saveToString());
+    }
+
+    private boolean trackHighValueItemMint(UUID playerUuid, String ownerRef, String source, Map<String, Integer> itemsGranted) {
+        if (itemsGranted == null || itemsGranted.isEmpty() || ownerRef == null || ownerRef.isBlank()) {
+            return true;
+        }
+        Map<String, String> manifest = loadItemManifest(ownerRef);
+        for (Map.Entry<String, Integer> entry : itemsGranted.entrySet()) {
+            String itemId = normalize(entry.getKey());
+            int amount = Math.max(0, entry.getValue());
+            if (!isHighValueItem(itemId) || amount <= 0) {
+                continue;
+            }
+            for (int index = 0; index < amount; index++) {
+                EconomyItemAuthorityPlane.ItemLineage lineage = economyItemPlane.mintItem(itemId, playerUuid, source, ownerRef);
+                manifest.put(lineage.itemInstanceId(), itemId);
+            }
+        }
+        saveItemManifest(ownerRef, manifest);
+        return true;
+    }
+
+    private boolean reconcileHighValueItemConsumption(String ownerRef, String itemId, int amount, String source) {
+        return transferHighValueItems(ownerRef, "consumed:" + source, itemId, amount, source);
+    }
+
+    private boolean transferHighValueItems(String fromOwnerRef, String toOwnerRef, String itemId, int amount, String source) {
+        String normalizedItemId = normalize(itemId);
+        if (!isHighValueItem(normalizedItemId) || amount <= 0) {
+            return true;
+        }
+        Map<String, String> sourceManifest = loadItemManifest(fromOwnerRef);
+        Map<String, String> targetManifest = loadItemManifest(toOwnerRef);
+        Deque<String> selected = new ArrayDeque<>();
+        for (Map.Entry<String, String> entry : sourceManifest.entrySet()) {
+            if (normalizedItemId.equals(entry.getValue())) {
+                selected.add(entry.getKey());
+                if (selected.size() >= amount) {
+                    break;
+                }
+            }
+        }
+        if (selected.size() < amount) {
+            itemOwnershipConflictCount.incrementAndGet();
+            exploitForensicsPlane.record("impossible_ownership", null, normalizedItemId + ":" + fromOwnerRef, sha256(fromOwnerRef + "|" + normalizedItemId + "|" + source),
+                ExploitForensicsPlane.Action.ITEM_QUARANTINE,
+                Map.of("owner_ref", fromOwnerRef, "item_id", normalizedItemId, "requested_amount", amount, "resolved_amount", selected.size(), "source", source));
+            return false;
+        }
+        while (!selected.isEmpty()) {
+            String itemInstanceId = selected.removeFirst();
+            sourceManifest.remove(itemInstanceId);
+            targetManifest.put(itemInstanceId, normalizedItemId);
+            economyItemPlane.transferItem(itemInstanceId, toOwnerRef, source);
+        }
+        saveItemManifest(fromOwnerRef, sourceManifest);
+        saveItemManifest(toOwnerRef, targetManifest);
+        return true;
+    }
+
+    private void reconcileItemAuthority() {
+        Path ownersDir = itemAuthorityDir.resolve("owners");
+        ensurePath(ownersDir);
+        Map<String, String> seenOwners = new LinkedHashMap<>();
+        try (var paths = Files.list(ownersDir)) {
+            for (Path path : paths.filter(file -> file.getFileName().toString().endsWith(".yml")).toList()) {
+                YamlConfiguration yaml = readYaml(path);
+                String ownerRef = yaml.getString("owner_ref", "");
+                ConfigurationSection section = yaml.getConfigurationSection("items");
+                if (ownerRef.isBlank() || section == null) {
+                    continue;
+                }
+                for (String itemInstanceId : section.getKeys(false)) {
+                    String previousOwner = seenOwners.putIfAbsent(itemInstanceId, ownerRef);
+                    if (previousOwner != null && !previousOwner.equals(ownerRef)) {
+                        itemOwnershipConflictCount.incrementAndGet();
+                        economyItemPlane.quarantineItem(itemInstanceId, "duplicate_manifest_owner");
+                        exploitForensicsPlane.record("impossible_ownership", null, itemInstanceId, sha256(previousOwner + "|" + ownerRef + "|" + itemInstanceId),
+                            ExploitForensicsPlane.Action.ITEM_QUARANTINE,
+                            Map.of("previous_owner", previousOwner, "owner_ref", ownerRef));
+                        enterSafeMode("Item authority manifest conflict detected");
+                    }
+                }
+            }
+        } catch (IOException exception) {
+            plugin.getLogger().warning("Unable to reconcile item authority manifests: " + exception.getMessage());
+        }
+    }
+
+    private String exportArtifact(String artifactType, String scope, String parentArtifactId, Map<String, Object> payload) {
+        String artifactId = artifactType + "-" + UUID.randomUUID().toString().replace("-", "");
+        YamlConfiguration yaml = new YamlConfiguration();
+        yaml.set("artifact_id", artifactId);
+        yaml.set("artifact_type", normalize(artifactType));
+        yaml.set("scope", normalize(scope));
+        yaml.set("parent_artifact_id", parentArtifactId == null ? "" : parentArtifactId);
+        yaml.set("server", serverName);
+        yaml.set("role", serverRole);
+        yaml.set("generated_at", System.currentTimeMillis());
+        yaml.set("payload", payload == null ? Map.of() : new LinkedHashMap<>(payload));
+        writeYaml(artifactDir.resolve(artifactId + ".yml"), yaml.saveToString());
+        return artifactId;
+    }
+
+    private String sanitizePathToken(String raw) {
+        return normalize(raw).replace(':', '_').replace('/', '_');
+    }
+
     private long resolveGuildVersion(String guildName) {
         String key = normalizeGuild(guildName);
         if (key.isBlank()) {
@@ -3667,6 +3974,7 @@ public final class RpgNetworkService {
             }
         }
         return items;
+    }
 
     private int resolveLedgerServerId(String name) {
         int hash = Math.abs((name == null ? "unknown" : name.toLowerCase(Locale.ROOT)).hashCode());
@@ -3723,13 +4031,6 @@ public final class RpgNetworkService {
                 .sorted(Comparator.comparing(path -> path.getFileName().toString()))
                 .forEach(path -> {
                     try {
-                        Properties props = readProperties(path);
-                        String operationId = props.getProperty("operation_id", "");
-                        long sequence = parseLong(props.getProperty("sequence"), 0L);
-                        String playerRaw = props.getProperty("player", "");
-                        String entryServer = props.getProperty("server", serverName);
-                        String category = props.getProperty("category", "");
-                        if (sequence <= 0L || playerRaw.isBlank() || category.isBlank()) {
                         YamlConfiguration yaml = readYaml(path);
                         String operationId = yaml.getString("operation_id", "");
                         long sequence = yaml.getLong("sequence", 0L);
@@ -3740,12 +4041,12 @@ public final class RpgNetworkService {
                             return;
                         }
                         UUID playerUuid = UUID.fromString(playerRaw);
-                        long createdAt = parseLong(props.getProperty("created_at"), System.currentTimeMillis());
-                        String reference = props.getProperty("reference", "");
-                        double goldDelta = parseDouble(props.getProperty("gold_delta"), 0.0D);
-                        Map<String, Integer> items = parseLedgerItems(props.getProperty("items", ""));
-                        long previousHash = parseLong(props.getProperty("previous_hash"), 0L);
-                        long entryHash = parseLong(props.getProperty("entry_hash"), 0L);
+                        long createdAt = yaml.getLong("created_at", System.currentTimeMillis());
+                        String reference = yaml.getString("reference", "");
+                        double goldDelta = yaml.getDouble("gold_delta", 0.0D);
+                        Map<String, Integer> items = intMap(yaml.getConfigurationSection("items"));
+                        long previousHash = yaml.getLong("previous_hash", 0L);
+                        long entryHash = yaml.getLong("entry_hash", 0L);
                         long expectedHash = Objects.hash(sequence, createdAt, entryServer, playerUuid.toString(), category, reference, goldDelta, items, previousHash);
                         if (entryHash != 0L && entryHash != expectedHash) {
                             enterSafeMode("Pending ledger hash mismatch");
@@ -3758,7 +4059,7 @@ public final class RpgNetworkService {
                             enterSafeMode("Pending ledger operation id missing");
                             return;
                         }
-                        String payloadHash = props.getProperty("payload_hash", "");
+                        String payloadHash = yaml.getString("payload_hash", "");
                         LedgerPayloadSnapshot snapshot = new LedgerPayloadSnapshot(operationId, sequence, createdAt, entryServer, playerUuid, category, reference, goldDelta, items, previousHash, entryHash, "");
                         // legacy marker: ledgerPayload(operationId, sequence, createdAt, entryServer, ...)
                         String payloadWithoutHash = ledgerPayload(snapshot);
@@ -3837,11 +4138,41 @@ public final class RpgNetworkService {
         if (!persistence.getBoolean("recovery.startup_consistency_check", true)) {
             return;
         }
+        preloadSnapshotsForReconciliation();
         int mismatches = reconcileSnapshotsAgainstLedger();
         if (mismatches > 0) {
             reconciliationMismatchCount.addAndGet(mismatches);
             startupQuarantineCount.incrementAndGet();
             enterSafeMode("Startup reconciliation mismatch detected");
+        }
+    }
+
+    private void preloadSnapshotsForReconciliation() {
+        if (Files.isDirectory(profileDir)) {
+            try (var paths = Files.list(profileDir)) {
+                for (Path path : paths.filter(file -> file.getFileName().toString().endsWith(".yml")).toList()) {
+                    String fileName = path.getFileName().toString();
+                    String uuidPart = fileName.substring(0, fileName.length() - 4);
+                    try {
+                        UUID uuid = UUID.fromString(uuidPart);
+                        profiles.computeIfAbsent(uuid, ignored -> loadProfile(uuid, uuidPart));
+                    } catch (IllegalArgumentException ignored) {
+                    }
+                }
+            } catch (IOException exception) {
+                plugin.getLogger().warning("Unable to preload profiles for reconciliation: " + exception.getMessage());
+            }
+        }
+        if (Files.isDirectory(guildDir)) {
+            try (var paths = Files.list(guildDir)) {
+                for (Path path : paths.filter(file -> file.getFileName().toString().endsWith(".yml")).toList()) {
+                    String fileName = path.getFileName().toString();
+                    String guildName = fileName.substring(0, fileName.length() - 4);
+                    guilds.computeIfAbsent(guildName, ignored -> loadGuild(guildName));
+                }
+            } catch (IOException exception) {
+                plugin.getLogger().warning("Unable to preload guilds for reconciliation: " + exception.getMessage());
+            }
         }
     }
 
@@ -3898,7 +4229,7 @@ public final class RpgNetworkService {
         try (var paths = Files.list(ledgerPendingDir)) {
             for (Path path : paths.filter(p -> p.getFileName().toString().endsWith(".yml")).toList()) {
                 YamlConfiguration yaml = readYaml(path);
-                String player = yaml.getString("player_uuid", "");
+                String player = yaml.getString("player", "");
                 if (!uuid.toString().equals(player)) {
                     continue;
                 }
@@ -4915,6 +5246,16 @@ public final class RpgNetworkService {
         instanceExperimentPlane.activatePolicy("transfer_safety_policy", "v1", "artifact:policy:transfer_safety:v1");
         instanceExperimentPlane.activatePolicy("reward_idempotency_policy", "v1", "artifact:policy:reward_idempotency:v1");
         instanceExperimentPlane.registerExperiment("drop_rate_canary", "drop_rates", serverRole, "artifact:exp:drop_rate_canary:v1", 0.30D);
+        exportArtifact("loot_table_variant", "global", "", Map.of("mobs", mobs.getValues(true), "bosses", bosses.getValues(true)));
+        exportArtifact("dungeon_topology_variant", "global", "", Map.of("dungeons", dungeons.getValues(true)));
+        exportArtifact("boss_mechanic_variant", "global", "", Map.of("bosses", bosses.getValues(true)));
+        exportArtifact("gear_progression_variant", "global", "", Map.of("items", items.getValues(true), "skills", skills.getValues(true)));
+        exportArtifact("quest_graph_variant", "global", "", Map.of("quests", quests.getValues(true)));
+        exportArtifact("economy_parameter_set", "global", "", Map.of("economy", economy.getValues(true)));
+        exportArtifact("spawn_distribution_variant", "global", "", Map.of("mobs", mobs.getValues(true), "events", events.getValues(true)));
+        exportArtifact("experiment_definition", serverRole, "", Map.of("experiments", instanceExperimentPlane.snapshot().getValues(true)));
+        exportArtifact("governance_decision", "startup", "", Map.of("policies", instanceExperimentPlane.snapshot().getValues(true), "network", network.getValues(true)));
+        writeYaml(policyDir.resolve("active-policies.yml"), instanceExperimentPlane.snapshot().saveToString());
     }
 
     private void writeHealthSnapshot() {
@@ -4930,6 +5271,9 @@ public final class RpgNetworkService {
         yaml.set("orphan_instances_cleaned_total", orphanInstancesCleaned.get());
         yaml.set("instance_allocation_latency_ms_avg", allocationLatencyMsAvg());
         yaml.set("instance_allocation_latency_ms_max", allocationLatencyMsMax());
+        yaml.set("instance_cleanup_latency_ms_avg", cleanupLatencyMsAvg());
+        yaml.set("instance_cleanup_latency_ms_max", cleanupLatencyMsMax());
+        yaml.set("instance_cleanup_failures", cleanupFailureCount());
         yaml.set("managed_entities", managedEntityTotalCount());
         yaml.set("entity_pressure", entityPressure());
         yaml.set("entity_spawn_denied", managedEntitySpawnDeniedCount());
@@ -4958,7 +5302,10 @@ public final class RpgNetworkService {
         yaml.set("reconciliation_mismatches", reconciliationMismatchCount());
         yaml.set("guild_value_drift", guildValueDriftCount());
         yaml.set("replay_divergence", replayDivergenceCount());
+        yaml.set("item_ownership_conflicts", itemOwnershipConflictCount());
         yaml.set("ledger_last_flush_at", ledgerLastFlushAt.get());
+        String[] exportedArtifacts = Files.exists(artifactDir) ? artifactDir.toFile().list() : null;
+        yaml.set("artifact_exports", exportedArtifacts == null ? 0 : exportedArtifacts.length);
         YamlConfiguration authority = authorityPlane.metricsSnapshot();
         YamlConfiguration economyAuthority = economyItemPlane.snapshot();
         YamlConfiguration instanceControl = instanceExperimentPlane.snapshot();
@@ -4984,6 +5331,14 @@ public final class RpgNetworkService {
 
     public long exploitIncidentCount() {
         return exploitForensicsPlane.snapshot().getLong("incident_total", 0L);
+    }
+
+    public long policyRollbackCount() {
+        return instanceExperimentPlane.snapshot().getLong("policy_rollbacks", 0L);
+    }
+
+    public long experimentRollbackCount() {
+        return instanceExperimentPlane.snapshot().getLong("experiment_rollbacks", 0L);
     }
 
     private boolean endpointReachable(String host, int port, int timeoutMs) {

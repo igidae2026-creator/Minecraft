@@ -58,7 +58,13 @@ public class Main extends JavaPlugin implements CommandExecutor {
         out.append("rpg_runtime_session_ownership_conflicts_total ").append(service.authoritySessionConflictCount()).append('\n');
         out.append("rpg_runtime_split_brain_detections_total ").append(service.authoritySplitBrainDetectionCount()).append('\n');
         out.append("rpg_runtime_item_quarantined_total ").append(service.economyItemQuarantineCount()).append('\n');
+        out.append("rpg_runtime_item_ownership_conflicts_total ").append(service.itemOwnershipConflictCount()).append('\n');
         out.append("rpg_runtime_exploit_incidents_total ").append(service.exploitIncidentCount()).append('\n');
+        out.append("rpg_runtime_policy_rollbacks_total ").append(service.policyRollbackCount()).append('\n');
+        out.append("rpg_runtime_experiment_rollbacks_total ").append(service.experimentRollbackCount()).append('\n');
+        out.append("rpg_runtime_instance_cleanup_failures_total ").append(service.cleanupFailureCount()).append('\n');
+        out.append("rpg_runtime_instance_cleanup_latency_ms_avg ").append(String.format(Locale.US, "%.3f", service.cleanupLatencyMsAvg())).append('\n');
+        out.append("rpg_runtime_instance_cleanup_latency_ms_max ").append(String.format(Locale.US, "%.3f", service.cleanupLatencyMsMax())).append('\n');
         out.append("rpg_runtime_tps ").append(String.format(Locale.US, "%.2f", tps)).append('\n');
         out.append("rpg_runtime_role{role=\"").append(service.serverRole()).append("\"} 1\n");
         service.writeMetricSnapshot(out.toString());
@@ -82,6 +88,11 @@ public class Main extends JavaPlugin implements CommandExecutor {
         int startupQuarantineWarn = Math.max(1, service.scaling().getInt("operational.alert_startup_quarantine", 1));
         int splitBrainWarn = Math.max(1, service.scaling().getInt("operational.alert_split_brain", 1));
         int itemDupWarn = Math.max(1, service.scaling().getInt("operational.alert_item_duplication", 1));
+        int guildDriftWarn = Math.max(1, service.scaling().getInt("operational.alert_guild_drift", 1));
+        int replayWarn = Math.max(1, service.scaling().getInt("operational.alert_replay_divergence", 1));
+        int cleanupWarn = Math.max(1, service.scaling().getInt("operational.alert_instance_cleanup_failure", 1));
+        int experimentWarn = Math.max(1, service.scaling().getInt("operational.alert_experiment_anomaly", 1));
+        int dbErrorWarn = Math.max(1, service.scaling().getInt("operational.alert_db_saturation", 5));
 
         if (tps < tpsWarn) {
             getLogger().warning("ALERT tps_drop tps=" + String.format(Locale.US, "%.2f", tps) + " threshold=" + String.format(Locale.US, "%.2f", tpsWarn));
@@ -130,6 +141,31 @@ public class Main extends JavaPlugin implements CommandExecutor {
         }
         if (service.economyItemQuarantineCount() >= itemDupWarn) {
             getLogger().warning("ALERT anti_duplication_alarm quarantined=" + service.economyItemQuarantineCount() + " threshold=" + itemDupWarn);
+            lastAlertAt = now;
+            return;
+        }
+        if (service.guildValueDriftCount() >= guildDriftWarn) {
+            getLogger().warning("ALERT guild_drift drift=" + service.guildValueDriftCount() + " threshold=" + guildDriftWarn);
+            lastAlertAt = now;
+            return;
+        }
+        if (service.replayDivergenceCount() >= replayWarn) {
+            getLogger().warning("ALERT replay_divergence divergence=" + service.replayDivergenceCount() + " threshold=" + replayWarn);
+            lastAlertAt = now;
+            return;
+        }
+        if (service.cleanupFailureCount() >= cleanupWarn) {
+            getLogger().warning("ALERT instance_cleanup_failure failures=" + service.cleanupFailureCount() + " threshold=" + cleanupWarn);
+            lastAlertAt = now;
+            return;
+        }
+        if (service.experimentRollbackCount() >= experimentWarn || service.policyRollbackCount() >= experimentWarn) {
+            getLogger().warning("ALERT experiment_anomaly experimentRollbacks=" + service.experimentRollbackCount() + " policyRollbacks=" + service.policyRollbackCount() + " threshold=" + experimentWarn);
+            lastAlertAt = now;
+            return;
+        }
+        if (service.dbOperationErrorCount() >= dbErrorWarn) {
+            getLogger().warning("ALERT db_saturation dbErrors=" + service.dbOperationErrorCount() + " threshold=" + dbErrorWarn);
             lastAlertAt = now;
         }
     }

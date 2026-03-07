@@ -20,11 +20,14 @@ redis:
   password_env: RPG_REDIS_PASSWORD
   timeout_ms: 1500
   mirror_live_sessions: true
+  required_for_session_authority: true
 local_fallback:
   enabled: true
   path: runtime_data
   allow_writes_when_db_unavailable: false
   mirror_snapshots: true
+  item_authority_manifests: true
+  artifact_exports: true
 write_policy:
   profile_save_interval_seconds: 60
   ledger_flush_interval_seconds: 1
