@@ -88,31 +88,73 @@ public final class RpgNetworkService {
     }
     private record LedgerEntry(String operationId, String server, long sequence, long createdAt, UUID playerUuid, String category, String reference, double goldDelta, Map<String, Integer> itemDelta, String payload, String payloadHash) {}
 
+    private enum InstanceLifecycleState {
+        REQUESTED,
+        ALLOCATING,
+        BOOTING,
+        READY,
+        ACTIVE,
+        RESOLVING,
+        REWARD_COMMIT,
+        EGRESS,
+        CLEANUP,
+        TERMINATED
+    }
+
+    private enum InstanceType {
+        DUNGEON,
+        BOSS_ENCOUNTER
+    }
+
     private static final class DungeonInstanceState {
         private final String instanceId;
         private final UUID ownerUuid;
         private final String dungeonId;
         private final String worldName;
         private final long createdAt;
+        private final InstanceType type;
+        private final Set<UUID> partyMembers = new LinkedHashSet<>();
+        private InstanceLifecycleState lifecycleState;
+        private long allocationRequestedAt;
+        private long allocationCompletedAt;
         private long expiresAt;
 
-        private DungeonInstanceState(String instanceId, UUID ownerUuid, String dungeonId, String worldName, long createdAt, long expiresAt) {
+        private DungeonInstanceState(String instanceId, UUID ownerUuid, String dungeonId, String worldName, long createdAt, long expiresAt, InstanceType type,
+                                     InstanceLifecycleState lifecycleState, long allocationRequestedAt, long allocationCompletedAt, Set<UUID> partyMembers) {
             this.instanceId = instanceId;
             this.ownerUuid = ownerUuid;
             this.dungeonId = dungeonId;
             this.worldName = worldName;
             this.createdAt = createdAt;
             this.expiresAt = expiresAt;
+            this.type = type;
+            this.lifecycleState = lifecycleState;
+            this.allocationRequestedAt = allocationRequestedAt;
+            this.allocationCompletedAt = allocationCompletedAt;
+            this.partyMembers.addAll(partyMembers);
         }
 
-        private static DungeonInstanceState create(UUID ownerUuid, String dungeonId, long ttlMillis) {
+        private static DungeonInstanceState create(UUID ownerUuid, String dungeonId, long ttlMillis, InstanceType type, Set<UUID> partyMembers) {
             long now = System.currentTimeMillis();
             String compact = ownerUuid.toString().replace("-", "");
             String ownerPart = compact.substring(0, Math.min(8, compact.length()));
             String entropy = Long.toHexString(now) + Integer.toHexString(ThreadLocalRandom.current().nextInt(0x1000, 0x10000));
-            String instanceId = dungeonId.toLowerCase(Locale.ROOT) + "-" + ownerPart + "-" + entropy;
+            String prefix = type == InstanceType.BOSS_ENCOUNTER ? "enc" : dungeonId.toLowerCase(Locale.ROOT);
+            String instanceId = prefix + "-" + ownerPart + "-" + entropy;
             String worldName = "inst_" + instanceId;
-            return new DungeonInstanceState(instanceId, ownerUuid, dungeonId, worldName, now, now + ttlMillis);
+            return new DungeonInstanceState(
+                instanceId,
+                ownerUuid,
+                dungeonId,
+                worldName,
+                now,
+                now + ttlMillis,
+                type,
+                InstanceLifecycleState.REQUESTED,
+                now,
+                0L,
+                partyMembers
+            );
         }
 
         private static DungeonInstanceState fromYaml(YamlConfiguration yaml) {
@@ -122,10 +164,39 @@ public final class RpgNetworkService {
             String worldName = yaml.getString("world", "");
             long createdAt = yaml.getLong("created_at", System.currentTimeMillis());
             long expiresAt = yaml.getLong("expires_at", createdAt);
+            String typeRaw = yaml.getString("type", InstanceType.DUNGEON.name());
+            String stateRaw = yaml.getString("state", InstanceLifecycleState.REQUESTED.name());
+            long requestedAt = yaml.getLong("allocation.requested_at", createdAt);
+            long completedAt = yaml.getLong("allocation.completed_at", 0L);
             if (instanceId.isBlank() || owner.isBlank() || dungeonId.isBlank() || worldName.isBlank()) {
                 return null;
             }
-            return new DungeonInstanceState(instanceId, UUID.fromString(owner), dungeonId, worldName, createdAt, expiresAt);
+            InstanceType type;
+            InstanceLifecycleState state;
+            try {
+                type = InstanceType.valueOf(typeRaw.toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException exception) {
+                type = InstanceType.DUNGEON;
+            }
+            try {
+                state = InstanceLifecycleState.valueOf(stateRaw.toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException exception) {
+                state = InstanceLifecycleState.REQUESTED;
+            }
+            Set<UUID> members = new LinkedHashSet<>();
+            for (String member : yaml.getStringList("party.members")) {
+                try {
+                    members.add(UUID.fromString(member));
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+            try {
+                UUID ownerUuid = UUID.fromString(owner);
+                members.add(ownerUuid);
+                return new DungeonInstanceState(instanceId, ownerUuid, dungeonId, worldName, createdAt, expiresAt, type, state, requestedAt, completedAt, members);
+            } catch (IllegalArgumentException ignored) {
+                return null;
+            }
         }
 
         private YamlConfiguration toYaml() {
@@ -136,6 +207,15 @@ public final class RpgNetworkService {
             yaml.set("world", worldName);
             yaml.set("created_at", createdAt);
             yaml.set("expires_at", expiresAt);
+            yaml.set("type", type.name());
+            yaml.set("state", lifecycleState.name());
+            yaml.set("allocation.requested_at", allocationRequestedAt);
+            yaml.set("allocation.completed_at", allocationCompletedAt);
+            List<String> members = new ArrayList<>();
+            for (UUID member : partyMembers) {
+                members.add(member.toString());
+            }
+            yaml.set("party.members", members);
             return yaml;
         }
 
@@ -145,6 +225,113 @@ public final class RpgNetworkService {
 
         private void extendTo(long nextExpiry) {
             this.expiresAt = Math.max(this.expiresAt, nextExpiry);
+        }
+
+        private void setLifecycleState(InstanceLifecycleState state) {
+            this.lifecycleState = state;
+            if (state == InstanceLifecycleState.ALLOCATING) {
+                this.allocationRequestedAt = System.currentTimeMillis();
+            }
+            if (state == InstanceLifecycleState.READY || state == InstanceLifecycleState.ACTIVE) {
+                this.allocationCompletedAt = System.currentTimeMillis();
+            }
+        }
+
+        private long allocationLatencyMillis() {
+            if (allocationCompletedAt <= 0L || allocationRequestedAt <= 0L) {
+                return -1L;
+            }
+            return Math.max(0L, allocationCompletedAt - allocationRequestedAt);
+        }
+
+        private boolean isPartyMember(UUID playerUuid) {
+            return playerUuid != null && partyMembers.contains(playerUuid);
+        }
+    }
+
+    private final class InstanceOrchestrator {
+        private DungeonInstanceState allocateDungeonInstance(UUID ownerUuid, String dungeonId, Set<UUID> partyMembers) {
+            cleanupOwnedDungeonInstance(ownerUuid, "replace");
+            DungeonInstanceState instance = DungeonInstanceState.create(ownerUuid, dungeonId, instanceHoldMillis(), InstanceType.DUNGEON, partyMembers);
+            instance.setLifecycleState(InstanceLifecycleState.ALLOCATING);
+            persistDungeonInstance(instance);
+            return instance;
+        }
+
+        private DungeonInstanceState allocateBossEncounter(UUID ownerUuid, String bossId, Set<UUID> partyMembers) {
+            DungeonInstanceState instance = DungeonInstanceState.create(ownerUuid, "boss_" + bossId, instanceHoldMillis(), InstanceType.BOSS_ENCOUNTER, partyMembers);
+            instance.setLifecycleState(InstanceLifecycleState.ALLOCATING);
+            persistDungeonInstance(instance);
+            return instance;
+        }
+
+        private World bootInstanceWorld(DungeonInstanceState instance) {
+            if (instance == null) {
+                return null;
+            }
+            instance.setLifecycleState(InstanceLifecycleState.BOOTING);
+            persistDungeonInstance(instance);
+            World world = instanceOrchestrator.bootInstanceWorld(instance);
+            if (world == null) {
+                return null;
+            }
+            instance.setLifecycleState(InstanceLifecycleState.READY);
+            persistDungeonInstance(instance);
+            long latency = instance.allocationLatencyMillis();
+            if (latency >= 0L) {
+                allocationLatencyCount.incrementAndGet();
+                allocationLatencyTotalMillis.addAndGet(latency);
+                allocationLatencyMaxMillis.accumulateAndGet(latency, Math::max);
+            }
+            return world;
+        }
+
+        private void activate(DungeonInstanceState instance) {
+            if (instance == null) {
+                return;
+            }
+            instance.setLifecycleState(InstanceLifecycleState.ACTIVE);
+            persistDungeonInstance(instance);
+        }
+
+        private void resolve(DungeonInstanceState instance) {
+            if (instance == null) {
+                return;
+            }
+            instance.setLifecycleState(InstanceLifecycleState.RESOLVING);
+            persistDungeonInstance(instance);
+        }
+
+        private void rewardCommit(DungeonInstanceState instance) {
+            if (instance == null) {
+                return;
+            }
+            instance.setLifecycleState(InstanceLifecycleState.REWARD_COMMIT);
+            persistDungeonInstance(instance);
+        }
+
+        private void beginEgress(DungeonInstanceState instance) {
+            if (instance == null) {
+                return;
+            }
+            instance.setLifecycleState(InstanceLifecycleState.EGRESS);
+            persistDungeonInstance(instance);
+        }
+
+        private void markCleanup(DungeonInstanceState instance) {
+            if (instance == null) {
+                return;
+            }
+            instance.setLifecycleState(InstanceLifecycleState.CLEANUP);
+            persistDungeonInstance(instance);
+        }
+
+        private void markTerminated(DungeonInstanceState instance) {
+            if (instance == null) {
+                return;
+            }
+            instance.setLifecycleState(InstanceLifecycleState.TERMINATED);
+            persistDungeonInstance(instance);
         }
     }
 
@@ -193,6 +380,11 @@ public final class RpgNetworkService {
     private final Map<String, DungeonInstanceState> dungeonInstances = new ConcurrentHashMap<>();
     private final Map<UUID, String> dungeonOwnerInstances = new ConcurrentHashMap<>();
     private final Map<String, String> dungeonWorldToInstance = new ConcurrentHashMap<>();
+    private final AtomicLong orphanInstancesCleaned = new AtomicLong();
+    private final AtomicLong allocationLatencyCount = new AtomicLong();
+    private final AtomicLong allocationLatencyTotalMillis = new AtomicLong();
+    private final AtomicLong allocationLatencyMaxMillis = new AtomicLong();
+    private final InstanceOrchestrator instanceOrchestrator = new InstanceOrchestrator();
     private final Map<String, Integer> managedEntityCounters = new ConcurrentHashMap<>();
     private final Set<UUID> managedEntityIds = ConcurrentHashMap.newKeySet();
     private final AtomicLong dbOperationCount = new AtomicLong();
@@ -394,6 +586,28 @@ public final class RpgNetworkService {
 
     public int activeInstanceCount() {
         return dungeonInstances.size();
+    }
+
+    public int orphanInstanceCount() {
+        int total = 0;
+        for (DungeonInstanceState instance : dungeonInstances.values()) {
+            if (Bukkit.getPlayer(instance.ownerUuid) == null) {
+                total += 1;
+            }
+        }
+        return total;
+    }
+
+    public double allocationLatencyMsAvg() {
+        long count = allocationLatencyCount.get();
+        if (count <= 0L) {
+            return 0.0D;
+        }
+        return allocationLatencyTotalMillis.get() / (double) count;
+    }
+
+    public double allocationLatencyMsMax() {
+        return allocationLatencyMaxMillis.get();
     }
 
     public int managedEntityTotalCount() {
@@ -885,6 +1099,7 @@ public final class RpgNetworkService {
 
     public BossReward handleBossKill(Player killer, Entity entity) {
         String bossId = resolveBossId(entity);
+        String instanceId = tagValue(entity, "rpg_instance:");
         if (bossId == null) {
             return new BossReward(false, "", false, 0.0D, Collections.emptyMap(), "");
         }
@@ -936,6 +1151,11 @@ public final class RpgNetworkService {
             awardSkillXp(profile, "combat", "boss_kill");
             updateQuestProgressForKill(profile, "", true, bossId);
             syncCollectQuestProgress(profile);
+            DungeonInstanceState encounter = loadDungeonInstance(instanceId);
+            if (encounter != null && encounter.type == InstanceType.BOSS_ENCOUNTER) {
+                instanceOrchestrator.beginEgress(encounter);
+                cleanupDungeonInstance(encounter, "boss_defeated");
+            }
             writeAudit("boss_kill", killer.getUniqueId() + ":" + bossId + ":gold=" + bonusGold + ":items=" + itemsGranted);
             String msg = color("&aBoss rewards &7boss=&e" + bossId + rewardSuffix(itemsGranted) + (bonusGold > 0.0D ? " &7bonus=&e" + money(bonusGold) : ""));
             return new BossReward(true, bossId, true, bonusGold, itemsGranted, msg);
@@ -968,7 +1188,7 @@ public final class RpgNetworkService {
             if (profile.getGold() + 0.000001D < fee) {
                 return new DungeonStart(false, dungeonId, 0, color("&cNeed " + money(fee) + " gold for entry."));
             }
-            DungeonInstanceState instance = createDungeonInstance(player.getUniqueId(), dungeonId);
+            DungeonInstanceState instance = createDungeonInstance(player.getUniqueId(), dungeonId, Set.of(player.getUniqueId()));
             World world = ensureDungeonWorld(instance);
             if (world == null) {
                 cleanupDungeonInstance(instance, "world_create_failed");
@@ -998,7 +1218,7 @@ public final class RpgNetworkService {
             Location entry = dungeonEntryLocation(world);
             player.teleport(entry);
             int spawnTotal = spawnDungeonWave(entry, player, dungeonId, instance.instanceId);
-            persistDungeonInstance(instance);
+            instanceOrchestrator.activate(instance);
             writeSession(profile, true);
             writeAudit("dungeon_enter", player.getUniqueId() + ":" + dungeonId + ":fee=" + fee + ":spawned=" + spawnTotal);
             return new DungeonStart(true, dungeonId, spawnTotal, color("&aEntered dungeon &e" + dungeonId + " &7spawned=&e" + spawnTotal));
@@ -1013,6 +1233,7 @@ public final class RpgNetworkService {
             String dungeonId = profile.getActiveDungeon();
             profile.setDungeonCooldown(dungeonId, System.currentTimeMillis() + exploit.getLong("progression.dungeon_reentry_cooldown_seconds", 15L) * 1000L);
             teleportToPrimaryWorldSpawn(player);
+            instanceOrchestrator.beginEgress(loadDungeonInstance(profile.getActiveDungeonInstanceId()));
             cleanupOwnedDungeonInstance(player.getUniqueId(), "abandon");
             profile.clearActiveDungeon();
             writeSession(profile, true);
@@ -1097,6 +1318,8 @@ public final class RpgNetworkService {
             }
             profile.markClaimedOperation(completionClaimKey);
             profile.pruneClaimedOperations(claimRetentionMillis());
+            DungeonInstanceState activeInstance = loadDungeonInstance(profile.getActiveDungeonInstanceId());
+            instanceOrchestrator.resolve(activeInstance);
             Map<String, Integer> rewards = intMap(dungeons.getConfigurationSection(dungeonId + ".completion_rewards"));
             for (Map.Entry<String, Integer> entry : rewards.entrySet()) {
                 profile.addItem(entry.getKey(), entry.getValue());
@@ -1109,8 +1332,10 @@ public final class RpgNetworkService {
                 profile.clearClaimedOperation(completionClaimKey);
                 return new DungeonCompletion(true, false, dungeonId, 0.0D, Collections.emptyMap(), color("&cReward commit delayed. Try again."));
             }
+            instanceOrchestrator.rewardCommit(activeInstance);
             profile.setDungeonCooldown(dungeonId, System.currentTimeMillis() + dungeons.getLong(dungeonId + ".repeat_cooldown_seconds", 30L) * 1000L);
             teleportToPrimaryWorldSpawn(player);
+            instanceOrchestrator.beginEgress(activeInstance);
             cleanupOwnedDungeonInstance(player.getUniqueId(), "complete");
             profile.clearActiveDungeon();
             awardSkillXp(profile, "combat", "dungeon_clear");
@@ -1163,17 +1388,17 @@ public final class RpgNetworkService {
             return new BossSummonResult(false, bossId, color("&cBoss summoning only allowed on boss or instance servers."), null);
         }
         String activeDungeon = withProfile(player, profile -> profile.getActiveDungeon());
-        String dungeonBoss = null;
         if ("instance".equalsIgnoreCase(serverRole)) {
             if (activeDungeon.isBlank()) {
                 return new BossSummonResult(false, bossId, color("&cBoss summons on instance servers require an active dungeon."), null);
             }
-            dungeonBoss = dungeons.getString(activeDungeon + ".boss", "");
+            String dungeonBoss = dungeons.getString(activeDungeon + ".boss", "");
             if (!bossId.equals(dungeonBoss)) {
                 return new BossSummonResult(false, bossId, color("&cActive dungeon requires boss &6" + dungeonBoss), null);
             }
         }
         final String dungeonIdForBoss = activeDungeon.isBlank() ? null : activeDungeon;
+
         if (!useGuildBank) {
             return withProfile(player, profile -> {
                 String operationKey = buildSummonOperationKey(profile.getUuid(), bossId, dungeonIdForBoss);
@@ -1193,7 +1418,27 @@ public final class RpgNetworkService {
                     addItems(profile, req);
                     return new BossSummonResult(false, bossId, color("&cSummon commit delayed. Try again."), null);
                 }
-                LivingEntity entity = spawnConfiguredBoss(player.getLocation().add(0.0D, 0.0D, 5.0D), bossId, player, dungeonIdForBoss);
+
+                DungeonInstanceState encounterInstance = null;
+                if (dungeonIdForBoss == null) {
+                    encounterInstance = instanceOrchestrator.allocateBossEncounter(player.getUniqueId(), bossId, Set.of(player.getUniqueId()));
+                    World encounterWorld = instanceOrchestrator.bootInstanceWorld(encounterInstance);
+                    if (encounterWorld == null) {
+                        profile.addGold(goldCost);
+                        addItems(profile, req);
+                        cleanupDungeonInstance(encounterInstance, "boss_encounter_world_failed");
+                        return new BossSummonResult(false, bossId, color("&cFailed to allocate boss encounter instance."), null);
+                    }
+                    instanceOrchestrator.activate(encounterInstance);
+                    Location entry = dungeonEntryLocation(encounterWorld);
+                    if (entry != null) {
+                        player.teleport(entry);
+                    }
+                }
+
+                Location spawnOrigin = player.getLocation().add(0.0D, 0.0D, 5.0D);
+                String encounterInstanceId = encounterInstance == null ? null : encounterInstance.instanceId;
+                LivingEntity entity = spawnConfiguredBoss(spawnOrigin, bossId, player, dungeonIdForBoss, encounterInstanceId);
                 if (entity == null) {
                     profile.addGold(goldCost);
                     addItems(profile, req);
@@ -1201,9 +1446,12 @@ public final class RpgNetworkService {
                     if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
                         return new BossSummonResult(false, bossId, color("&cFailed to spawn boss and refund commit delayed. Contact staff."), null);
                     }
+                    if (encounterInstance != null) {
+                        cleanupDungeonInstance(encounterInstance, "boss_spawn_failed");
+                    }
                     return new BossSummonResult(false, bossId, color("&cFailed to spawn boss."), null);
                 }
-                writeAudit("boss_summon", player.getUniqueId() + ":" + bossId + ":personal");
+                writeAudit("boss_summon", player.getUniqueId() + ":" + bossId + ":personal:instance=" + (encounterInstance == null ? "shared" : encounterInstance.instanceId));
                 return new BossSummonResult(true, bossId, color("&cBoss summoned: &6" + bossId), entity);
             });
         }
@@ -1246,7 +1494,30 @@ public final class RpgNetworkService {
                     dirtyGuilds.add(normalizeGuild(guild.getName()));
                     return new BossSummonResult(false, bossId, color("&cSummon commit delayed. Try again."), null);
                 }
-                LivingEntity entity = spawnConfiguredBoss(player.getLocation().add(0.0D, 0.0D, 5.0D), bossId, player, dungeonIdForBoss);
+
+                DungeonInstanceState encounterInstance = null;
+                if (dungeonIdForBoss == null) {
+                    encounterInstance = instanceOrchestrator.allocateBossEncounter(player.getUniqueId(), bossId, Set.of(player.getUniqueId()));
+                    World encounterWorld = instanceOrchestrator.bootInstanceWorld(encounterInstance);
+                    if (encounterWorld == null) {
+                        guild.addBankGold(goldCost);
+                        for (Map.Entry<String, Integer> entry : req.entrySet()) {
+                            guild.addBankItem(entry.getKey(), entry.getValue());
+                        }
+                        dirtyGuilds.add(normalizeGuild(guild.getName()));
+                        cleanupDungeonInstance(encounterInstance, "boss_encounter_world_failed");
+                        return new BossSummonResult(false, bossId, color("&cFailed to allocate boss encounter instance."), null);
+                    }
+                    instanceOrchestrator.activate(encounterInstance);
+                    Location entry = dungeonEntryLocation(encounterWorld);
+                    if (entry != null) {
+                        player.teleport(entry);
+                    }
+                }
+
+                Location spawnOrigin = player.getLocation().add(0.0D, 0.0D, 5.0D);
+                String encounterInstanceId = encounterInstance == null ? null : encounterInstance.instanceId;
+                LivingEntity entity = spawnConfiguredBoss(spawnOrigin, bossId, player, dungeonIdForBoss, encounterInstanceId);
                 if (entity == null) {
                     guild.addBankGold(goldCost);
                     for (Map.Entry<String, Integer> entry : req.entrySet()) {
@@ -1257,9 +1528,12 @@ public final class RpgNetworkService {
                     if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), guild.getName(), guild.getUpdatedAt())) {
                         return new BossSummonResult(false, bossId, color("&cFailed to spawn boss and guild refund commit delayed. Contact staff."), null);
                     }
+                    if (encounterInstance != null) {
+                        cleanupDungeonInstance(encounterInstance, "boss_spawn_failed");
+                    }
                     return new BossSummonResult(false, bossId, color("&cFailed to spawn boss."), null);
                 }
-                writeAudit("boss_summon", player.getUniqueId() + ":" + bossId + ":guild=" + guild.getName());
+                writeAudit("boss_summon", player.getUniqueId() + ":" + bossId + ":guild=" + guild.getName() + ":instance=" + (encounterInstance == null ? "shared" : encounterInstance.instanceId));
                 return new BossSummonResult(true, bossId, color("&cGuild summoned boss: &6" + bossId), entity);
             }
         });
@@ -2411,12 +2685,8 @@ public final class RpgNetworkService {
         return Math.max(configured, reconnectFloor) * 1000L;
     }
 
-    private DungeonInstanceState createDungeonInstance(UUID ownerUuid, String dungeonId) {
-        cleanupOwnedDungeonInstance(ownerUuid, "replace");
-        DungeonInstanceState instance = DungeonInstanceState.create(ownerUuid, dungeonId, instanceHoldMillis());
-        dungeonInstances.put(instance.instanceId, instance);
-        dungeonOwnerInstances.put(ownerUuid, instance.instanceId);
-        return instance;
+    private DungeonInstanceState createDungeonInstance(UUID ownerUuid, String dungeonId, Set<UUID> partyMembers) {
+        return instanceOrchestrator.allocateDungeonInstance(ownerUuid, dungeonId, partyMembers);
     }
 
     private void loadPersistedInstances() {
@@ -2432,6 +2702,7 @@ public final class RpgNetworkService {
                     }
                     dungeonInstances.put(instance.instanceId, instance);
                     dungeonOwnerInstances.put(instance.ownerUuid, instance.instanceId);
+                    dungeonWorldToInstance.put(instance.worldName, instance.instanceId);
                 } catch (Exception exception) {
                     plugin.getLogger().warning("Unable to load dungeon instance state " + path + ": " + exception.getMessage());
                 }
@@ -2539,7 +2810,7 @@ public final class RpgNetworkService {
             return true;
         }
         DungeonInstanceState instance = dungeonInstanceByWorld(worldName);
-        return instance != null && player.getUniqueId().equals(instance.ownerUuid);
+        return instance != null && instance.isPartyMember(player.getUniqueId());
     }
 
     public void enforceWorldAccess(Player player) {
@@ -2609,6 +2880,7 @@ public final class RpgNetworkService {
         if (instance == null) {
             return;
         }
+        instanceOrchestrator.markCleanup(instance);
         dungeonInstances.remove(instance.instanceId);
         dungeonOwnerInstances.remove(instance.ownerUuid);
         dungeonWorldToInstance.remove(instance.worldName);
@@ -2626,6 +2898,7 @@ public final class RpgNetworkService {
         } catch (IOException exception) {
             plugin.getLogger().warning("Unable to clear dungeon instance file: " + exception.getMessage());
         }
+        instanceOrchestrator.markTerminated(instance);
         writeAudit("dungeon_instance_cleanup", instance.instanceId + ":" + reason);
     }
 
@@ -2642,8 +2915,31 @@ public final class RpgNetworkService {
                 continue;
             }
             if (instance.expired(now)) {
+                orphanInstancesCleaned.incrementAndGet();
                 cleanupDungeonInstance(instance, "expired");
             }
+        }
+        cleanupOrphanWorlds();
+    }
+
+    private void cleanupOrphanWorlds() {
+        for (World world : new ArrayList<>(Bukkit.getWorlds())) {
+            String worldName = world.getName();
+            if (!worldName.startsWith("inst_")) {
+                continue;
+            }
+            DungeonInstanceState instance = dungeonInstanceByWorld(worldName);
+            if (instance != null) {
+                continue;
+            }
+            for (Player player : new ArrayList<>(world.getPlayers())) {
+                teleportToPrimaryWorldSpawn(player);
+            }
+            clearWorldEntities(world);
+            Bukkit.unloadWorld(world, false);
+            deletePathRecursively(Paths.get("").toAbsolutePath().resolve(worldName));
+            orphanInstancesCleaned.incrementAndGet();
+            writeAudit("dungeon_instance_cleanup", worldName + ":orphan_world");
         }
     }
 
@@ -2888,7 +3184,7 @@ public final class RpgNetworkService {
         }
         DungeonInstanceState instance = loadDungeonInstance(instanceId);
         return instance != null
-            && killer.getUniqueId().equals(instance.ownerUuid)
+            && instance.isPartyMember(killer.getUniqueId())
             && entity.getWorld() != null
             && instance.worldName.equals(entity.getWorld().getName());
     }
@@ -4009,6 +4305,10 @@ public final class RpgNetworkService {
         yaml.set("guilds_cached", guilds.size());
         yaml.set("active_dungeons", activeDungeonCount());
         yaml.set("active_instances", activeInstanceCount());
+        yaml.set("orphan_instances", orphanInstanceCount());
+        yaml.set("orphan_instances_cleaned_total", orphanInstancesCleaned.get());
+        yaml.set("instance_allocation_latency_ms_avg", allocationLatencyMsAvg());
+        yaml.set("instance_allocation_latency_ms_max", allocationLatencyMsMax());
         yaml.set("managed_entities", managedEntityTotalCount());
         yaml.set("safe_mode", safeMode);
         yaml.set("safe_mode_reason", safeModeReason);
