@@ -80,7 +80,9 @@ public final class RpgNetworkService {
     public record DungeonCompletion(boolean handled, boolean completed, String dungeonId, double gold, Map<String, Integer> items, String message) {}
     public record BossSummonResult(boolean ok, String bossId, String message, LivingEntity entity) {}
     private record LiveSession(String server, String role, boolean online, String guild, String activeDungeon, String activeDungeonInstanceId, long updatedAt) {}
-    private record TravelTicket(String transferId, String sourceServer, String targetServer, long issuedAt, long expiresAt, long expectedProfileVersion, String guildName, long expectedGuildVersion) {}
+    private record TravelTicket(String transferId, String transferLease, String sourceServer, String targetServer, long issuedAt, long expiresAt,
+                                long expectedProfileVersion, long expectedInventoryVersion, long expectedEconomyVersion,
+                                String guildName, long expectedGuildVersion, long versionClaim) {}
     private enum PersistOutcome {
         SUCCESS,
         CONFLICT,
@@ -185,6 +187,7 @@ public final class RpgNetworkService {
     private final Map<String, Long> lastFlushedGuildVersion = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastMobRewardAt = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastCommandAt = new ConcurrentHashMap<>();
+    private final Set<UUID> transferFrozenProfiles = ConcurrentHashMap.newKeySet();
     private final Map<String, BukkitTask> bossTasks = new ConcurrentHashMap<>();
     private final ConcurrentLinkedQueue<LedgerEntry> ledgerQueue = new ConcurrentLinkedQueue<>();
     private final AtomicLong ledgerSequence = new AtomicLong(System.currentTimeMillis());
@@ -498,6 +501,9 @@ public final class RpgNetworkService {
     public <T> T withProfile(UUID uuid, String latestName, Function<RpgProfile, T> action) {
         Objects.requireNonNull(action, "action");
         synchronized (profileLocks.computeIfAbsent(uuid, ignored -> new Object())) {
+            if (isMutationFrozen(uuid)) {
+                throw new IllegalStateException("Profile mutation authority is frozen during transfer");
+            }
             RpgProfile profile = profiles.computeIfAbsent(uuid, ignored -> loadProfile(uuid, latestName));
             long before = profile.getUpdatedAt();
             profile.touch(latestName);
@@ -587,6 +593,7 @@ public final class RpgNetworkService {
     public void flushPlayer(UUID uuid) {
         RpgProfile snapshot;
         long version;
+        long expectedStoredVersion;
         synchronized (profileLocks.computeIfAbsent(uuid, ignored -> new Object())) {
             RpgProfile profile = profiles.get(uuid);
             if (profile == null) {
@@ -599,9 +606,10 @@ public final class RpgNetworkService {
                 dirtyProfiles.remove(uuid);
                 return;
             }
+            expectedStoredVersion = flushed == null ? 0L : flushed;
             snapshot = profile.copy();
         }
-        if (!persistProfileSnapshot(uuid, snapshot)) {
+        if (!persistProfileSnapshot(uuid, snapshot, expectedStoredVersion)) {
             return;
         }
         synchronized (profileLocks.computeIfAbsent(uuid, ignored -> new Object())) {
@@ -617,6 +625,7 @@ public final class RpgNetworkService {
         String key = normalizeGuild(guildKey);
         RpgGuild snapshot;
         long version;
+        long expectedStoredVersion;
         synchronized (guildLocks.computeIfAbsent(key, ignored -> new Object())) {
             RpgGuild guild = guilds.get(key);
             if (guild == null) {
@@ -629,9 +638,10 @@ public final class RpgNetworkService {
                 dirtyGuilds.remove(key);
                 return;
             }
+            expectedStoredVersion = flushed == null ? 0L : flushed;
             snapshot = guild.copy();
         }
-        if (!persistGuildSnapshot(key, snapshot)) {
+        if (!persistGuildSnapshot(key, snapshot, expectedStoredVersion)) {
             return;
         }
         synchronized (guildLocks.computeIfAbsent(key, ignored -> new Object())) {
@@ -643,8 +653,8 @@ public final class RpgNetworkService {
         }
     }
 
-    private boolean persistProfileSnapshot(UUID uuid, RpgProfile snapshot) {
-        PersistOutcome authoritative = persistProfileAuthoritatively(snapshot);
+    private boolean persistProfileSnapshot(UUID uuid, RpgProfile snapshot, long expectedStoredVersion) {
+        PersistOutcome authoritative = persistProfileAuthoritatively(snapshot, expectedStoredVersion);
         if (authoritative == PersistOutcome.UNAVAILABLE) {
             enterSafeMode("MySQL backend unavailable");
             return false;
@@ -663,8 +673,8 @@ public final class RpgNetworkService {
         return true;
     }
 
-    private boolean persistGuildSnapshot(String key, RpgGuild snapshot) {
-        PersistOutcome authoritative = persistGuildAuthoritatively(snapshot);
+    private boolean persistGuildSnapshot(String key, RpgGuild snapshot, long expectedStoredVersion) {
+        PersistOutcome authoritative = persistGuildAuthoritatively(snapshot, expectedStoredVersion);
         if (authoritative == PersistOutcome.UNAVAILABLE) {
             enterSafeMode("MySQL backend unavailable");
             return false;
@@ -1404,8 +1414,10 @@ public final class RpgNetworkService {
         if (snapshot == null) {
             return new OperationResult(false, color("&cUnable to prepare travel state."));
         }
+        freezeMutationAuthority(player.getUniqueId());
         flushPlayer(player.getUniqueId());
         if (lastFlushedProfileVersion.getOrDefault(player.getUniqueId(), 0L) < expectedProfileVersion) {
+            unfreezeMutationAuthority(player.getUniqueId());
             withProfile(player, profile -> {
                 profile.addGold(fee);
                 appendLedgerMutation(profile.getUuid(), "travel_refund", serverName + "->" + targetServer, fee, Collections.emptyMap());
@@ -1415,6 +1427,7 @@ public final class RpgNetworkService {
         }
         if (!issueTravelTicket(player.getUniqueId(), transferId, targetServer, expectedProfileVersion, expectedGuildName, expectedGuildVersion)) {
             clearTravelTicket(player.getUniqueId());
+            unfreezeMutationAuthority(player.getUniqueId());
             withProfile(player, profile -> {
                 profile.addGold(fee);
                 appendLedgerMutation(profile.getUuid(), "travel_refund", serverName + "->" + targetServer, fee, Collections.emptyMap());
@@ -1424,6 +1437,7 @@ public final class RpgNetworkService {
         }
         if (!writeSession(snapshot, true)) {
             clearTravelTicket(player.getUniqueId());
+            unfreezeMutationAuthority(player.getUniqueId());
             withProfile(player, profile -> {
                 profile.addGold(fee);
                 appendLedgerMutation(profile.getUuid(), "travel_refund", serverName + "->" + targetServer, fee, Collections.emptyMap());
@@ -1433,6 +1447,7 @@ public final class RpgNetworkService {
         }
         if (!sendProxyConnect(player, targetServer, transferId, expectedProfileVersion, expectedGuildName, expectedGuildVersion)) {
             clearTravelTicket(player.getUniqueId());
+            unfreezeMutationAuthority(player.getUniqueId());
             withProfile(player, profile -> {
                 profile.addGold(fee);
                 appendLedgerMutation(profile.getUuid(), "travel_refund", serverName + "->" + targetServer, fee, Collections.emptyMap());
@@ -2154,6 +2169,22 @@ public final class RpgNetworkService {
         return String.format(Locale.US, "%.2f", amount);
     }
 
+    private boolean isMutationFrozen(UUID uuid) {
+        return uuid != null && transferFrozenProfiles.contains(uuid);
+    }
+
+    private void freezeMutationAuthority(UUID uuid) {
+        if (uuid != null) {
+            transferFrozenProfiles.add(uuid);
+        }
+    }
+
+    private void unfreezeMutationAuthority(UUID uuid) {
+        if (uuid != null) {
+            transferFrozenProfiles.remove(uuid);
+        }
+    }
+
     private boolean isTravelAllowed(String targetServer) {
         String targetRole = network.getString("servers." + targetServer + ".role", "");
         if (targetRole.isBlank()) {
@@ -2177,6 +2208,7 @@ public final class RpgNetworkService {
 
     private boolean authorizeJoin(Player player, LiveSession previousSession) {
         if ("lobby".equalsIgnoreCase(serverRole)) {
+            unfreezeMutationAuthority(player.getUniqueId());
             return true;
         }
         if (mysqlAuthorityRequired() && safeMode) {
@@ -2191,36 +2223,36 @@ public final class RpgNetworkService {
                 rerouteUnauthorizedJoin(player, ticket.sourceServer());
                 return false;
             }
-            RpgProfile profile = loadProfile(player.getUniqueId(), player.getName());
-            long actualVersion = profile.getUpdatedAt();
-            if (actualVersion < ticket.expectedProfileVersion()) {
-                profiles.put(player.getUniqueId(), profile);
-                dirtyProfiles.add(player.getUniqueId());
-                flushPlayer(player.getUniqueId());
-                if (lastFlushedProfileVersion.getOrDefault(player.getUniqueId(), 0L) < ticket.expectedProfileVersion()) {
-                    enterSafeMode("Travel version barrier profile mismatch");
-                    rerouteUnauthorizedJoin(player, ticket.sourceServer());
-                    return false;
-                }
+            if (ticket.versionClaim() < ticket.expectedProfileVersion()
+                || ticket.versionClaim() < ticket.expectedInventoryVersion()
+                || ticket.versionClaim() < ticket.expectedEconomyVersion()) {
+                enterSafeMode("Travel version claim mismatch");
+                rerouteUnauthorizedJoin(player, ticket.sourceServer());
+                return false;
+            }
+            long durableProfileVersion = readProfileDurableVersion(player.getUniqueId());
+            if (durableProfileVersion < ticket.expectedProfileVersion()
+                || durableProfileVersion < ticket.expectedInventoryVersion()
+                || durableProfileVersion < ticket.expectedEconomyVersion()) {
+                enterSafeMode("Travel version barrier profile mismatch");
+                rerouteUnauthorizedJoin(player, ticket.sourceServer());
+                return false;
             }
             if (!ticket.guildName().isBlank() && ticket.expectedGuildVersion() > 0L) {
-                String key = normalizeGuild(ticket.guildName());
-                synchronized (guildLocks.computeIfAbsent(key, ignored -> new Object())) {
-                    guilds.computeIfAbsent(key, ignored -> loadGuild(key));
-                }
-                flushGuild(key);
-                long actualGuild = lastFlushedGuildVersion.getOrDefault(key, 0L);
-                if (actualGuild < ticket.expectedGuildVersion()) {
+                long durableGuildVersion = readGuildDurableVersion(ticket.guildName());
+                if (durableGuildVersion < ticket.expectedGuildVersion()) {
                     enterSafeMode("Travel version barrier guild mismatch");
                     rerouteUnauthorizedJoin(player, ticket.sourceServer());
                     return false;
                 }
             }
+            unfreezeMutationAuthority(player.getUniqueId());
             return true;
         }
         if (previousSession != null && serverName.equalsIgnoreCase(previousSession.server())) {
             return true;
         }
+        unfreezeMutationAuthority(player.getUniqueId());
         rerouteUnauthorizedJoin(player, previousSession == null ? "" : previousSession.server());
         return false;
     }
@@ -2261,6 +2293,7 @@ public final class RpgNetworkService {
             if (ticket == null || !targetServer.equalsIgnoreCase(ticket.targetServer())) {
                 return;
             }
+            unfreezeMutationAuthority(uuid);
             withProfile(uuid, latestName, profile -> {
                 profile.addGold(fee);
                 appendLedgerMutation(profile.getUuid(), "travel_refund", serverName + "->" + targetServer, fee, Collections.emptyMap());
@@ -2311,16 +2344,26 @@ public final class RpgNetworkService {
     private boolean issueTravelTicket(UUID uuid, String transferId, String targetServer, long expectedProfileVersion, String guildName, long expectedGuildVersion) {
         long now = System.currentTimeMillis();
         long expiresAt = now + Math.max(15_000L, scaling.getLong("limits.transfer_ticket_seconds", 15L) * 1000L);
-        TravelTicket ticket = new TravelTicket(transferId, serverName, targetServer, now, expiresAt, expectedProfileVersion, normalizeGuild(guildName), Math.max(0L, expectedGuildVersion));
+        String normalizedGuild = normalizeGuild(guildName);
+        String transferLease = sha256(uuid + "|" + transferId + "|" + serverName + "|" + targetServer + "|" + now);
+        long inventoryVersion = expectedProfileVersion;
+        long economyVersion = expectedProfileVersion;
+        long versionClaim = Math.max(expectedProfileVersion, Math.max(expectedGuildVersion, Math.max(inventoryVersion, economyVersion)));
+        TravelTicket ticket = new TravelTicket(transferId, transferLease, serverName, targetServer, now, expiresAt,
+            expectedProfileVersion, inventoryVersion, economyVersion, normalizedGuild, Math.max(0L, expectedGuildVersion), versionClaim);
         YamlConfiguration yaml = new YamlConfiguration();
         yaml.set("transfer_id", ticket.transferId());
+        yaml.set("transfer_lease", ticket.transferLease());
         yaml.set("source", ticket.sourceServer());
         yaml.set("target", ticket.targetServer());
         yaml.set("issued_at", ticket.issuedAt());
         yaml.set("expires_at", ticket.expiresAt());
         yaml.set("expected_profile_version", ticket.expectedProfileVersion());
+        yaml.set("expected_inventory_version", ticket.expectedInventoryVersion());
+        yaml.set("expected_economy_version", ticket.expectedEconomyVersion());
         yaml.set("expected_guild", ticket.guildName());
         yaml.set("expected_guild_version", ticket.expectedGuildVersion());
+        yaml.set("version_claim", ticket.versionClaim());
         String serialized = yaml.saveToString();
         if (redisSessionRequired()) {
             int ttlSeconds = Math.max(15, (int) ((expiresAt - System.currentTimeMillis() + 999L) / 1000L));
@@ -2346,13 +2389,17 @@ public final class RpgNetworkService {
             }
             return new TravelTicket(
                 redisYaml.getString("transfer_id", ""),
+                redisYaml.getString("transfer_lease", ""),
                 redisYaml.getString("source", ""),
                 redisYaml.getString("target", ""),
                 redisYaml.getLong("issued_at", 0L),
                 expiresAt,
                 redisYaml.getLong("expected_profile_version", 0L),
+                redisYaml.getLong("expected_inventory_version", redisYaml.getLong("expected_profile_version", 0L)),
+                redisYaml.getLong("expected_economy_version", redisYaml.getLong("expected_profile_version", 0L)),
                 normalizeGuild(redisYaml.getString("expected_guild", "")),
-                redisYaml.getLong("expected_guild_version", 0L)
+                redisYaml.getLong("expected_guild_version", 0L),
+                redisYaml.getLong("version_claim", redisYaml.getLong("expected_profile_version", 0L))
             );
         }
         if (redisSessionRequired()) {
@@ -2370,19 +2417,28 @@ public final class RpgNetworkService {
         }
         return new TravelTicket(
             yaml.getString("transfer_id", ""),
+            yaml.getString("transfer_lease", ""),
             yaml.getString("source", ""),
             yaml.getString("target", ""),
             yaml.getLong("issued_at", 0L),
             expiresAt,
             yaml.getLong("expected_profile_version", 0L),
+            yaml.getLong("expected_inventory_version", yaml.getLong("expected_profile_version", 0L)),
+            yaml.getLong("expected_economy_version", yaml.getLong("expected_profile_version", 0L)),
             normalizeGuild(yaml.getString("expected_guild", "")),
-            yaml.getLong("expected_guild_version", 0L)
+            yaml.getLong("expected_guild_version", 0L),
+            yaml.getLong("version_claim", yaml.getLong("expected_profile_version", 0L))
         );
     }
 
     private TravelTicket consumeTravelTicket(UUID uuid, String expectedTarget, LiveSession previousSession) {
         TravelTicket ticket = loadTravelTicket(uuid);
         if (ticket == null || !expectedTarget.equalsIgnoreCase(ticket.targetServer())) {
+            return null;
+        }
+        if (ticket.transferLease().isBlank() || ticket.versionClaim() <= 0L) {
+            writeAudit("travel_fence_reject", uuid + ":invalid_lease:" + expectedTarget + ":transfer=" + ticket.transferId());
+            clearTravelTicket(uuid);
             return null;
         }
         if (previousSession != null && previousSession.updatedAt() > 0L && ticket.issuedAt() > 0L
@@ -3231,7 +3287,7 @@ public final class RpgNetworkService {
             if (Files.exists(path)) {
                 RpgProfile fallback = RpgProfile.fromYaml(uuid, name, readYaml(path));
                 if (persistence.getBoolean("mysql.enabled", true)) {
-                    persistProfileToMySql(fallback, false);
+                    persistProfileToMySql(fallback, 0L, false);
                 }
                 return fallback;
             }
@@ -3254,7 +3310,7 @@ public final class RpgNetworkService {
             if (Files.exists(path)) {
                 RpgGuild fallback = RpgGuild.fromYaml(normalized, readYaml(path));
                 if (persistence.getBoolean("mysql.enabled", true) && (!fallback.getOwnerUuid().isBlank() || !fallback.getMembersView().isEmpty())) {
-                    persistGuildToMySql(fallback, false);
+                    persistGuildToMySql(fallback, 0L, false);
                 }
                 return fallback;
             }
@@ -3408,6 +3464,56 @@ public final class RpgNetworkService {
             }
             return null;
         }
+    }
+
+    private long readProfileDurableVersion(UUID uuid) {
+        if (!persistence.getBoolean("mysql.enabled", true)) {
+            return lastFlushedProfileVersion.getOrDefault(uuid, 0L);
+        }
+        try (Connection connection = mysqlConnection()) {
+            if (connection == null) {
+                return 0L;
+            }
+            ensureMysqlSchema(connection);
+            try (PreparedStatement statement = connection.prepareStatement("SELECT updated_at FROM rpg_profiles WHERE uuid = ?")) {
+                statement.setString(1, uuid.toString());
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    if (resultSet.next()) {
+                        return resultSet.getLong("updated_at");
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // fall back to in-memory flush watermark
+        }
+        return lastFlushedProfileVersion.getOrDefault(uuid, 0L);
+    }
+
+    private long readGuildDurableVersion(String key) {
+        String normalized = normalizeGuild(key);
+        if (normalized.isBlank()) {
+            return 0L;
+        }
+        if (!persistence.getBoolean("mysql.enabled", true)) {
+            return lastFlushedGuildVersion.getOrDefault(normalized, 0L);
+        }
+        try (Connection connection = mysqlConnection()) {
+            if (connection == null) {
+                return 0L;
+            }
+            ensureMysqlSchema(connection);
+            try (PreparedStatement statement = connection.prepareStatement("SELECT updated_at FROM rpg_guilds WHERE name = ?")) {
+                statement.setString(1, normalized);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    if (resultSet.next()) {
+                        return resultSet.getLong("updated_at");
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // fall back to in-memory flush watermark
+        }
+        return lastFlushedGuildVersion.getOrDefault(normalized, 0L);
     }
 
     private boolean writeRedisYamlValue(String key, int ttlSeconds, String payload) {
@@ -3564,23 +3670,23 @@ public final class RpgNetworkService {
         }
     }
 
-    private PersistOutcome persistProfileAuthoritatively(RpgProfile profile) {
+    private PersistOutcome persistProfileAuthoritatively(RpgProfile profile, long expectedStoredVersion) {
         if (mysqlAuthorityRequired()) {
-            return persistProfileToMySql(profile, true);
+            return persistProfileToMySql(profile, expectedStoredVersion, true);
         }
-        PersistOutcome optional = persistProfileToMySql(profile, false);
+        PersistOutcome optional = persistProfileToMySql(profile, expectedStoredVersion, false);
         return optional == PersistOutcome.UNAVAILABLE ? PersistOutcome.SUCCESS : optional;
     }
 
-    private PersistOutcome persistGuildAuthoritatively(RpgGuild guild) {
+    private PersistOutcome persistGuildAuthoritatively(RpgGuild guild, long expectedStoredVersion) {
         if (mysqlAuthorityRequired()) {
-            return persistGuildToMySql(guild, true);
+            return persistGuildToMySql(guild, expectedStoredVersion, true);
         }
-        PersistOutcome optional = persistGuildToMySql(guild, false);
+        PersistOutcome optional = persistGuildToMySql(guild, expectedStoredVersion, false);
         return optional == PersistOutcome.UNAVAILABLE ? PersistOutcome.SUCCESS : optional;
     }
 
-    private PersistOutcome persistProfileToMySql(RpgProfile profile, boolean required) {
+    private PersistOutcome persistProfileToMySql(RpgProfile profile, long expectedStoredVersion, boolean required) {
         if (!persistence.getBoolean("mysql.enabled", true)) {
             if (required) {
                 enterSafeMode("MySQL authority disabled by configuration");
@@ -3597,28 +3703,30 @@ public final class RpgNetworkService {
             ensureMysqlSchema(connection);
             String payload = profile.toYaml().saveToString();
             long version = profile.getUpdatedAt();
-            try (PreparedStatement insert = connection.prepareStatement("INSERT INTO rpg_profiles (uuid, last_name, guild_name, gold, payload, updated_at) VALUES (?, ?, ?, ?, ?, ?)")) {
-                insert.setString(1, profile.getUuid().toString());
-                insert.setString(2, profile.getLastName());
-                insert.setString(3, profile.getGuildName());
-                insert.setDouble(4, profile.getGold());
-                insert.setString(5, payload);
-                insert.setLong(6, version);
-                if (insert.executeUpdate() > 0) {
-                    return PersistOutcome.SUCCESS;
+            if (expectedStoredVersion <= 0L) {
+                try (PreparedStatement insert = connection.prepareStatement("INSERT INTO rpg_profiles (uuid, last_name, guild_name, gold, payload, updated_at) VALUES (?, ?, ?, ?, ?, ?)")) {
+                    insert.setString(1, profile.getUuid().toString());
+                    insert.setString(2, profile.getLastName());
+                    insert.setString(3, profile.getGuildName());
+                    insert.setDouble(4, profile.getGold());
+                    insert.setString(5, payload);
+                    insert.setLong(6, version);
+                    if (insert.executeUpdate() > 0) {
+                        return PersistOutcome.SUCCESS;
+                    }
+                } catch (java.sql.SQLIntegrityConstraintViolationException ignored) {
+                    // fall through to CAS update
                 }
-            } catch (java.sql.SQLIntegrityConstraintViolationException ignored) {
-                // fall through to CAS update
             }
             try (PreparedStatement update = connection.prepareStatement(
-                "UPDATE rpg_profiles SET last_name = ?, guild_name = ?, gold = ?, payload = ?, updated_at = ? WHERE uuid = ? AND updated_at < ?")) {
+                "UPDATE rpg_profiles SET last_name = ?, guild_name = ?, gold = ?, payload = ?, updated_at = ? WHERE uuid = ? AND updated_at = ?")) {
                 update.setString(1, profile.getLastName());
                 update.setString(2, profile.getGuildName());
                 update.setDouble(3, profile.getGold());
                 update.setString(4, payload);
                 update.setLong(5, version);
                 update.setString(6, profile.getUuid().toString());
-                update.setLong(7, version);
+                update.setLong(7, expectedStoredVersion);
                 if (update.executeUpdate() > 0) {
                     return PersistOutcome.SUCCESS;
                 }
@@ -3628,13 +3736,11 @@ public final class RpgNetworkService {
                 try (ResultSet result = current.executeQuery()) {
                     if (result.next()) {
                         long durableVersion = result.getLong("updated_at");
-                        if (durableVersion > version) {
-                            plugin.getLogger().warning("CAS profile write rejected for " + profile.getUuid() + " stale=" + version + " durable=" + durableVersion);
-                            return PersistOutcome.CONFLICT;
-                        }
                         if (durableVersion == version) {
                             return PersistOutcome.SUCCESS;
                         }
+                        plugin.getLogger().warning("CAS profile write rejected for " + profile.getUuid() + " expected=" + expectedStoredVersion + " durable=" + durableVersion + " next=" + version);
+                        return PersistOutcome.CONFLICT;
                     }
                 }
             }
@@ -3648,7 +3754,7 @@ public final class RpgNetworkService {
         }
     }
 
-    private PersistOutcome persistGuildToMySql(RpgGuild guild, boolean required) {
+    private PersistOutcome persistGuildToMySql(RpgGuild guild, long expectedStoredVersion, boolean required) {
         if (!persistence.getBoolean("mysql.enabled", true)) {
             if (required) {
                 enterSafeMode("MySQL authority disabled by configuration");
@@ -3665,28 +3771,30 @@ public final class RpgNetworkService {
             ensureMysqlSchema(connection);
             String payload = guild.toYaml().saveToString();
             long version = guild.getUpdatedAt();
-            try (PreparedStatement insert = connection.prepareStatement("INSERT INTO rpg_guilds (name, owner_uuid, member_count, bank_gold, payload, updated_at) VALUES (?, ?, ?, ?, ?, ?)")) {
-                insert.setString(1, guild.getName());
-                insert.setString(2, guild.getOwnerUuid());
-                insert.setInt(3, guild.getMembersView().size());
-                insert.setDouble(4, guild.getBankGold());
-                insert.setString(5, payload);
-                insert.setLong(6, version);
-                if (insert.executeUpdate() > 0) {
-                    return PersistOutcome.SUCCESS;
+            if (expectedStoredVersion <= 0L) {
+                try (PreparedStatement insert = connection.prepareStatement("INSERT INTO rpg_guilds (name, owner_uuid, member_count, bank_gold, payload, updated_at) VALUES (?, ?, ?, ?, ?, ?)")) {
+                    insert.setString(1, guild.getName());
+                    insert.setString(2, guild.getOwnerUuid());
+                    insert.setInt(3, guild.getMembersView().size());
+                    insert.setDouble(4, guild.getBankGold());
+                    insert.setString(5, payload);
+                    insert.setLong(6, version);
+                    if (insert.executeUpdate() > 0) {
+                        return PersistOutcome.SUCCESS;
+                    }
+                } catch (java.sql.SQLIntegrityConstraintViolationException ignored) {
+                    // fall through to CAS update
                 }
-            } catch (java.sql.SQLIntegrityConstraintViolationException ignored) {
-                // fall through to CAS update
             }
             try (PreparedStatement update = connection.prepareStatement(
-                "UPDATE rpg_guilds SET owner_uuid = ?, member_count = ?, bank_gold = ?, payload = ?, updated_at = ? WHERE name = ? AND updated_at < ?")) {
+                "UPDATE rpg_guilds SET owner_uuid = ?, member_count = ?, bank_gold = ?, payload = ?, updated_at = ? WHERE name = ? AND updated_at = ?")) {
                 update.setString(1, guild.getOwnerUuid());
                 update.setInt(2, guild.getMembersView().size());
                 update.setDouble(3, guild.getBankGold());
                 update.setString(4, payload);
                 update.setLong(5, version);
                 update.setString(6, guild.getName());
-                update.setLong(7, version);
+                update.setLong(7, expectedStoredVersion);
                 if (update.executeUpdate() > 0) {
                     return PersistOutcome.SUCCESS;
                 }
@@ -3696,13 +3804,11 @@ public final class RpgNetworkService {
                 try (ResultSet result = current.executeQuery()) {
                     if (result.next()) {
                         long durableVersion = result.getLong("updated_at");
-                        if (durableVersion > version) {
-                            plugin.getLogger().warning("CAS guild write rejected for " + guild.getName() + " stale=" + version + " durable=" + durableVersion);
-                            return PersistOutcome.CONFLICT;
-                        }
                         if (durableVersion == version) {
                             return PersistOutcome.SUCCESS;
                         }
+                        plugin.getLogger().warning("CAS guild write rejected for " + guild.getName() + " expected=" + expectedStoredVersion + " durable=" + durableVersion + " next=" + version);
+                        return PersistOutcome.CONFLICT;
                     }
                 }
             }
