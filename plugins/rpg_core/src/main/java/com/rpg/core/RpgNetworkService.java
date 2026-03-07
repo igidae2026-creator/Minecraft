@@ -80,7 +80,12 @@ public final class RpgNetworkService {
     public record DungeonCompletion(boolean handled, boolean completed, String dungeonId, double gold, Map<String, Integer> items, String message) {}
     public record BossSummonResult(boolean ok, String bossId, String message, LivingEntity entity) {}
     private record LiveSession(String server, String role, boolean online, String guild, String activeDungeon, String activeDungeonInstanceId, long updatedAt) {}
-    private record TravelTicket(String sourceServer, String targetServer, long expiresAt, long expectedProfileVersion, String guildName, long expectedGuildVersion) {}
+    private record TravelTicket(String transferId, String sourceServer, String targetServer, long issuedAt, long expiresAt, long expectedProfileVersion, String guildName, long expectedGuildVersion) {}
+    private enum PersistOutcome {
+        SUCCESS,
+        CONFLICT,
+        UNAVAILABLE
+    }
     private record LedgerEntry(String operationId, String server, long sequence, long createdAt, UUID playerUuid, String category, String reference, double goldDelta, Map<String, Integer> itemDelta, String payload, String payloadHash) {}
 
     private static final class DungeonInstanceState {
@@ -184,10 +189,16 @@ public final class RpgNetworkService {
     private final ConcurrentLinkedQueue<LedgerEntry> ledgerQueue = new ConcurrentLinkedQueue<>();
     private final AtomicLong ledgerSequence = new AtomicLong(System.currentTimeMillis());
     private final AtomicLong ledgerHashChain = new AtomicLong(0L);
+    private final AtomicLong ledgerLastFlushAt = new AtomicLong(0L);
     private final Map<String, DungeonInstanceState> dungeonInstances = new ConcurrentHashMap<>();
     private final Map<UUID, String> dungeonOwnerInstances = new ConcurrentHashMap<>();
     private final Map<String, String> dungeonWorldToInstance = new ConcurrentHashMap<>();
     private final Map<String, Integer> managedEntityCounters = new ConcurrentHashMap<>();
+    private final Set<UUID> managedEntityIds = ConcurrentHashMap.newKeySet();
+    private final AtomicLong dbOperationCount = new AtomicLong();
+    private final AtomicLong dbOperationErrors = new AtomicLong();
+    private final AtomicLong dbLatencyTotalNanos = new AtomicLong();
+    private final AtomicLong dbLatencyMaxNanos = new AtomicLong();
     private volatile boolean mysqlSchemaReady;
     private volatile boolean mysqlDriverReady;
     private volatile boolean mysqlDriverUnavailableLogged;
@@ -245,9 +256,10 @@ public final class RpgNetworkService {
         validateBackendBaseline();
         loadPendingLedgerEntries();
         loadPersistedInstances();
+        rebuildManagedEntityCounters();
         plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, "BungeeCord");
         long flushIntervalTicks = Math.max(20L, persistence.getLong("write_policy.profile_save_interval_seconds", 60L) * 20L);
-        long ledgerFlushTicks = Math.max(20L, persistence.getLong("write_policy.ledger_flush_interval_seconds", 5L) * 20L);
+        long ledgerFlushTicks = Math.max(1L, persistence.getLong("write_policy.ledger_flush_interval_seconds", 1L) * 20L);
         flushTask = Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, this::flushDirty, flushIntervalTicks, flushIntervalTicks);
         ledgerFlushTask = Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, this::flushLedger, ledgerFlushTicks, ledgerFlushTicks);
         healthTask = Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, this::writeHealthSnapshot, 20L, 20L * 30L);
@@ -380,6 +392,49 @@ public final class RpgNetworkService {
         return total;
     }
 
+    public int activeInstanceCount() {
+        return dungeonInstances.size();
+    }
+
+    public int managedEntityTotalCount() {
+        return managedEntityCount(null);
+    }
+
+    public int ledgerQueueDepth() {
+        return ledgerQueue.size();
+    }
+
+    public int pendingLedgerFileCount() {
+        if (!Files.exists(ledgerPendingDir)) {
+            return 0;
+        }
+        try (var stream = Files.list(ledgerPendingDir)) {
+            return (int) stream.filter(path -> path.getFileName().toString().endsWith(".yml")).count();
+        } catch (IOException exception) {
+            return 0;
+        }
+    }
+
+    public double dbLatencyMsAvg() {
+        long ops = dbOperationCount.get();
+        if (ops <= 0) {
+            return 0.0D;
+        }
+        return (dbLatencyTotalNanos.get() / 1_000_000.0D) / ops;
+    }
+
+    public double dbLatencyMsMax() {
+        return dbLatencyMaxNanos.get() / 1_000_000.0D;
+    }
+
+    public long dbOperationCount() {
+        return dbOperationCount.get();
+    }
+
+    public long dbOperationErrorCount() {
+        return dbOperationErrors.get();
+    }
+
     public Set<String> blockedCommands() {
         Set<String> blocked = new LinkedHashSet<>();
         if (exploit.getBoolean("network.reload_commands_blocked", true)) {
@@ -416,7 +471,7 @@ public final class RpgNetworkService {
             autoAcceptStarterQuest(profile);
             syncCollectQuestProgress(profile);
             restoreDungeonInstance(player, profile);
-            return RpgProfile.fromYaml(profile.getUuid(), profile.getLastName(), profile.toYaml());
+            return profile.copy();
         });
         writeSession(sessionSnapshot, true);
         applyPassiveStats(player);
@@ -430,7 +485,7 @@ public final class RpgNetworkService {
         RpgProfile sessionSnapshot = withProfile(player, profile -> {
             profile.setLastQuitAt(System.currentTimeMillis());
             holdDungeonInstance(profile);
-            return RpgProfile.fromYaml(profile.getUuid(), profile.getLastName(), profile.toYaml());
+            return profile.copy();
         });
         writeSession(sessionSnapshot, false);
         flushPlayer(player.getUniqueId());
@@ -466,7 +521,7 @@ public final class RpgNetworkService {
         UUID uuid = player.getUniqueId();
         synchronized (profileLocks.computeIfAbsent(uuid, ignored -> new Object())) {
             RpgProfile profile = profiles.computeIfAbsent(uuid, ignored -> loadProfile(uuid, player.getName()));
-            return RpgProfile.fromYaml(profile.getUuid(), profile.getLastName(), profile.toYaml());
+            return profile.copy();
         }
     }
 
@@ -544,7 +599,7 @@ public final class RpgNetworkService {
                 dirtyProfiles.remove(uuid);
                 return;
             }
-            snapshot = RpgProfile.fromYaml(profile.getUuid(), profile.getLastName(), profile.toYaml());
+            snapshot = profile.copy();
         }
         if (!persistProfileSnapshot(uuid, snapshot)) {
             return;
@@ -574,7 +629,7 @@ public final class RpgNetworkService {
                 dirtyGuilds.remove(key);
                 return;
             }
-            snapshot = RpgGuild.fromYaml(guild.getName(), guild.toYaml());
+            snapshot = guild.copy();
         }
         if (!persistGuildSnapshot(key, snapshot)) {
             return;
@@ -589,9 +644,17 @@ public final class RpgNetworkService {
     }
 
     private boolean persistProfileSnapshot(UUID uuid, RpgProfile snapshot) {
-        boolean authoritativeOk = persistProfileAuthoritatively(snapshot);
-        if (!authoritativeOk) {
+        PersistOutcome authoritative = persistProfileAuthoritatively(snapshot);
+        if (authoritative == PersistOutcome.UNAVAILABLE) {
             enterSafeMode("MySQL backend unavailable");
+            return false;
+        }
+        if (authoritative == PersistOutcome.CONFLICT) {
+            synchronized (profileLocks.computeIfAbsent(uuid, ignored -> new Object())) {
+                profiles.put(uuid, loadProfile(uuid, snapshot.getLastName()));
+                dirtyProfiles.add(uuid);
+            }
+            writeAudit("profile_conflict", uuid + ":stale_version=" + snapshot.getUpdatedAt());
             return false;
         }
         if (persistence.getBoolean("local_fallback.enabled", true)) {
@@ -601,9 +664,18 @@ public final class RpgNetworkService {
     }
 
     private boolean persistGuildSnapshot(String key, RpgGuild snapshot) {
-        boolean authoritativeOk = persistGuildAuthoritatively(snapshot);
-        if (!authoritativeOk) {
+        PersistOutcome authoritative = persistGuildAuthoritatively(snapshot);
+        if (authoritative == PersistOutcome.UNAVAILABLE) {
             enterSafeMode("MySQL backend unavailable");
+            return false;
+        }
+        if (authoritative == PersistOutcome.CONFLICT) {
+            String normalized = normalizeGuild(key);
+            synchronized (guildLocks.computeIfAbsent(normalized, ignored -> new Object())) {
+                guilds.put(normalized, loadGuild(normalized));
+                dirtyGuilds.add(normalized);
+            }
+            writeAudit("guild_conflict", normalized + ":stale_version=" + snapshot.getUpdatedAt());
             return false;
         }
         if (persistence.getBoolean("local_fallback.enabled", true)) {
@@ -616,6 +688,10 @@ public final class RpgNetworkService {
         ensurePath(metricsDir);
         Path path = metricsDir.resolve("runtime_" + serverName + ".prom");
         writeYaml(path, serverSpecificContent);
+    }
+
+    public void writeAtomicFile(Path path, String contents) {
+        writeYaml(path, contents);
     }
 
     public void writeAudit(String category, String message) {
@@ -779,6 +855,7 @@ public final class RpgNetworkService {
         if (safeMode) {
             return new KillReward(true, mobId, 0.0D, Collections.emptyMap(), color("&cBackend safe mode active. Rewards paused."));
         }
+        markManagedEntityRemoved(entity);
         String nonce = "mob-kill:" + entity.getUniqueId();
         return withProfile(killer, profile -> {
             if (profile.isNonceSeen(nonce, nonceWindowMillis())) {
@@ -817,6 +894,7 @@ public final class RpgNetworkService {
         if (safeMode) {
             return new BossReward(true, bossId, false, 0.0D, Collections.emptyMap(), color("&cBackend safe mode active. Rewards paused."));
         }
+        markManagedEntityRemoved(entity);
         String nonce = "boss-kill:" + entity.getUniqueId();
         return withProfile(killer, profile -> {
             if (profile.isNonceSeen(nonce, nonceWindowMillis())) {
@@ -1293,6 +1371,7 @@ public final class RpgNetworkService {
         final long[] profileVersionHolder = new long[1];
         final long[] guildVersionHolder = new long[1];
         final String[] guildNameHolder = new String[1];
+        final String transferId = UUID.randomUUID().toString();
         OperationResult reservation = withProfile(player, profile -> {
             double fee = economy.getDouble("sinks.travel.local_transfer_fee", 0.0D);
             if (!profile.spendGold(fee)) {
@@ -1301,7 +1380,7 @@ public final class RpgNetworkService {
             profile.incrementTransfers();
             appendLedgerMutation(profile.getUuid(), "travel_fee", serverName + "->" + targetServer, -fee, Collections.emptyMap());
             feeHolder[0] = fee;
-            sessionSnapshot[0] = RpgProfile.fromYaml(profile.getUuid(), profile.getLastName(), profile.toYaml());
+            sessionSnapshot[0] = profile.copy();
             profileVersionHolder[0] = profile.getUpdatedAt();
             String guildName = normalizeGuild(profile.getGuildName());
             guildNameHolder[0] = guildName;
@@ -1334,7 +1413,7 @@ public final class RpgNetworkService {
             });
             return new OperationResult(false, color("&cTravel blocked until profile persistence catches up."));
         }
-        if (!issueTravelTicket(player.getUniqueId(), targetServer, expectedProfileVersion, expectedGuildName, expectedGuildVersion)) {
+        if (!issueTravelTicket(player.getUniqueId(), transferId, targetServer, expectedProfileVersion, expectedGuildName, expectedGuildVersion)) {
             clearTravelTicket(player.getUniqueId());
             withProfile(player, profile -> {
                 profile.addGold(fee);
@@ -1352,7 +1431,7 @@ public final class RpgNetworkService {
             });
             return new OperationResult(false, color("&cLive routing state unavailable. Travel aborted."));
         }
-        if (!sendProxyConnect(player, targetServer)) {
+        if (!sendProxyConnect(player, targetServer, transferId, expectedProfileVersion, expectedGuildName, expectedGuildVersion)) {
             clearTravelTicket(player.getUniqueId());
             withProfile(player, profile -> {
                 profile.addGold(fee);
@@ -2105,8 +2184,13 @@ public final class RpgNetworkService {
             rerouteUnauthorizedJoin(player, previousSession == null ? "" : previousSession.server());
             return false;
         }
-        TravelTicket ticket = consumeTravelTicket(player.getUniqueId(), serverName);
+        TravelTicket ticket = consumeTravelTicket(player.getUniqueId(), serverName, previousSession);
         if (ticket != null) {
+            if (ticket.transferId().isBlank()) {
+                enterSafeMode("Travel barrier transfer id missing");
+                rerouteUnauthorizedJoin(player, ticket.sourceServer());
+                return false;
+            }
             RpgProfile profile = loadProfile(player.getUniqueId(), player.getName());
             long actualVersion = profile.getUpdatedAt();
             if (actualVersion < ticket.expectedProfileVersion()) {
@@ -2144,20 +2228,22 @@ public final class RpgNetworkService {
     private void rerouteUnauthorizedJoin(Player player, String previousServer) {
         String safeServer = network.getString("operational.maintenance_mode_server", "lobby");
         writeAudit("travel_block", player.getUniqueId() + ":" + previousServer + "->" + serverName);
-        if (!safeServer.equalsIgnoreCase(serverName) && sendProxyConnect(player, safeServer)) {
+        if (!safeServer.equalsIgnoreCase(serverName) && sendProxyConnect(player, safeServer, "", 0L, "", 0L)) {
             player.sendMessage(color("&cUnauthorized server switch blocked."));
             return;
         }
         player.kickPlayer(color("&cUnauthorized server switch blocked."));
     }
 
-    private boolean sendProxyConnect(Player player, String targetServer) {
+    private boolean sendProxyConnect(Player player, String targetServer, String transferId, long expectedProfileVersion, String guildName, long expectedGuildVersion) {
         try {
             ByteArrayOutputStream buffer = new ByteArrayOutputStream();
             DataOutputStream output = new DataOutputStream(buffer);
             output.writeUTF("Connect");
             output.writeUTF(targetServer);
             player.sendPluginMessage(plugin, "BungeeCord", buffer.toByteArray());
+            writeAudit("travel_handoff", player.getUniqueId() + ":" + serverName + "->" + targetServer + ":transfer=" + transferId
+                + ":profile_v=" + expectedProfileVersion + ":guild=" + normalizeGuild(guildName) + ":guild_v=" + expectedGuildVersion);
             return true;
         } catch (IOException | IllegalArgumentException exception) {
             plugin.getLogger().warning("Proxy route failed: " + exception.getMessage());
@@ -2222,12 +2308,15 @@ public final class RpgNetworkService {
         );
     }
 
-    private boolean issueTravelTicket(UUID uuid, String targetServer, long expectedProfileVersion, String guildName, long expectedGuildVersion) {
-        long expiresAt = System.currentTimeMillis() + Math.max(15_000L, scaling.getLong("limits.transfer_ticket_seconds", 15L) * 1000L);
-        TravelTicket ticket = new TravelTicket(serverName, targetServer, expiresAt, expectedProfileVersion, normalizeGuild(guildName), Math.max(0L, expectedGuildVersion));
+    private boolean issueTravelTicket(UUID uuid, String transferId, String targetServer, long expectedProfileVersion, String guildName, long expectedGuildVersion) {
+        long now = System.currentTimeMillis();
+        long expiresAt = now + Math.max(15_000L, scaling.getLong("limits.transfer_ticket_seconds", 15L) * 1000L);
+        TravelTicket ticket = new TravelTicket(transferId, serverName, targetServer, now, expiresAt, expectedProfileVersion, normalizeGuild(guildName), Math.max(0L, expectedGuildVersion));
         YamlConfiguration yaml = new YamlConfiguration();
+        yaml.set("transfer_id", ticket.transferId());
         yaml.set("source", ticket.sourceServer());
         yaml.set("target", ticket.targetServer());
+        yaml.set("issued_at", ticket.issuedAt());
         yaml.set("expires_at", ticket.expiresAt());
         yaml.set("expected_profile_version", ticket.expectedProfileVersion());
         yaml.set("expected_guild", ticket.guildName());
@@ -2255,7 +2344,16 @@ public final class RpgNetworkService {
                 clearTravelTicket(uuid);
                 return null;
             }
-            return new TravelTicket(redisYaml.getString("source", ""), redisYaml.getString("target", ""), expiresAt, redisYaml.getLong("expected_profile_version", 0L), normalizeGuild(redisYaml.getString("expected_guild", "")), redisYaml.getLong("expected_guild_version", 0L));
+            return new TravelTicket(
+                redisYaml.getString("transfer_id", ""),
+                redisYaml.getString("source", ""),
+                redisYaml.getString("target", ""),
+                redisYaml.getLong("issued_at", 0L),
+                expiresAt,
+                redisYaml.getLong("expected_profile_version", 0L),
+                normalizeGuild(redisYaml.getString("expected_guild", "")),
+                redisYaml.getLong("expected_guild_version", 0L)
+            );
         }
         if (redisSessionRequired()) {
             return null;
@@ -2270,12 +2368,28 @@ public final class RpgNetworkService {
             clearTravelTicket(uuid);
             return null;
         }
-        return new TravelTicket(yaml.getString("source", ""), yaml.getString("target", ""), expiresAt, yaml.getLong("expected_profile_version", 0L), normalizeGuild(yaml.getString("expected_guild", "")), yaml.getLong("expected_guild_version", 0L));
+        return new TravelTicket(
+            yaml.getString("transfer_id", ""),
+            yaml.getString("source", ""),
+            yaml.getString("target", ""),
+            yaml.getLong("issued_at", 0L),
+            expiresAt,
+            yaml.getLong("expected_profile_version", 0L),
+            normalizeGuild(yaml.getString("expected_guild", "")),
+            yaml.getLong("expected_guild_version", 0L)
+        );
     }
 
-    private TravelTicket consumeTravelTicket(UUID uuid, String expectedTarget) {
+    private TravelTicket consumeTravelTicket(UUID uuid, String expectedTarget, LiveSession previousSession) {
         TravelTicket ticket = loadTravelTicket(uuid);
         if (ticket == null || !expectedTarget.equalsIgnoreCase(ticket.targetServer())) {
+            return null;
+        }
+        if (previousSession != null && previousSession.updatedAt() > 0L && ticket.issuedAt() > 0L
+            && previousSession.updatedAt() > ticket.issuedAt()
+            && !ticket.sourceServer().equalsIgnoreCase(previousSession.server())) {
+            writeAudit("travel_fence_reject", uuid + ":" + previousSession.server() + "->" + expectedTarget + ":transfer=" + ticket.transferId());
+            clearTravelTicket(uuid);
             return null;
         }
         clearTravelTicket(uuid);
@@ -2568,6 +2682,7 @@ public final class RpgNetworkService {
 
     private void rebuildManagedEntityCounters() {
         Map<String, Integer> rebuilt = new LinkedHashMap<>();
+        Set<UUID> rebuiltIds = ConcurrentHashMap.newKeySet();
         int total = 0;
         for (World world : Bukkit.getWorlds()) {
             for (Entity entity : world.getEntities()) {
@@ -2575,48 +2690,55 @@ public final class RpgNetworkService {
                 if (category == null) {
                     continue;
                 }
+                rebuiltIds.add(entity.getUniqueId());
                 total += 1;
                 rebuilt.merge("category:" + category.toLowerCase(Locale.ROOT), 1, Integer::sum);
             }
         }
         rebuilt.put("total", total);
+        managedEntityIds.clear();
+        managedEntityIds.addAll(rebuiltIds);
         managedEntityCounters.clear();
         managedEntityCounters.putAll(rebuilt);
     }
 
     private void cleanupTaggedEntities() {
-        rebuildManagedEntityCounters();
         long now = System.currentTimeMillis();
         Map<String, List<Entity>> byCategory = new LinkedHashMap<>();
         Map<UUID, Entity> toRemove = new LinkedHashMap<>();
-        for (World world : Bukkit.getWorlds()) {
-            for (Entity entity : world.getEntities()) {
-                String category = tagValue(entity, "rpg_category:");
-                if (category == null) {
+        for (UUID entityId : new ArrayList<>(managedEntityIds)) {
+            Entity entity = Bukkit.getEntity(entityId);
+            if (entity == null || !entity.isValid()) {
+                managedEntityIds.remove(entityId);
+                continue;
+            }
+            String category = tagValue(entity, "rpg_category:");
+            if (category == null) {
+                managedEntityIds.remove(entityId);
+                continue;
+            }
+            String expiry = tagValue(entity, "rpg_expires_at:");
+            if (expiry != null) {
+                try {
+                    if (Long.parseLong(expiry) <= now) {
+                        toRemove.put(entity.getUniqueId(), entity);
+                        continue;
+                    }
+                } catch (NumberFormatException ignored) {
+                    toRemove.put(entity.getUniqueId(), entity);
                     continue;
                 }
-                String expiry = tagValue(entity, "rpg_expires_at:");
-                if (expiry != null) {
-                    try {
-                        if (Long.parseLong(expiry) <= now) {
-                            toRemove.put(entity.getUniqueId(), entity);
-                            continue;
-                        }
-                    } catch (NumberFormatException ignored) {
-                        toRemove.put(entity.getUniqueId(), entity);
-                        continue;
-                    }
-                }
-                String instanceId = tagValue(entity, "rpg_instance:");
-                if (instanceId != null) {
-                    DungeonInstanceState instance = loadDungeonInstance(instanceId);
-                    if (instance == null || instance.expired(now) || !world.getName().equals(instance.worldName)) {
-                        toRemove.put(entity.getUniqueId(), entity);
-                        continue;
-                    }
-                }
-                byCategory.computeIfAbsent(category, ignored -> new ArrayList<>()).add(entity);
             }
+            String instanceId = tagValue(entity, "rpg_instance:");
+            if (instanceId != null) {
+                DungeonInstanceState instance = loadDungeonInstance(instanceId);
+                World world = entity.getWorld();
+                if (instance == null || instance.expired(now) || world == null || !world.getName().equals(instance.worldName)) {
+                    toRemove.put(entity.getUniqueId(), entity);
+                    continue;
+                }
+            }
+            byCategory.computeIfAbsent(category, ignored -> new ArrayList<>()).add(entity);
         }
         for (Map.Entry<String, List<Entity>> entry : byCategory.entrySet()) {
             List<Entity> entities = entry.getValue();
@@ -2631,6 +2753,20 @@ public final class RpgNetworkService {
             }
         }
         toRemove.values().forEach(this::removeManagedEntity);
+        trimManagedEntityCounters(byCategory);
+    }
+
+    private void markManagedEntityRemoved(Entity entity) {
+        if (entity == null) {
+            return;
+        }
+        managedEntityIds.remove(entity.getUniqueId());
+        String category = tagValue(entity, "rpg_category:");
+        if (category == null) {
+            return;
+        }
+        managedEntityCounters.compute("total", (k, v) -> Math.max(0, (v == null ? 0 : v) - 1));
+        managedEntityCounters.compute("category:" + category.toLowerCase(Locale.ROOT), (k, v) -> Math.max(0, (v == null ? 0 : v) - 1));
     }
 
     private long entityExpiry(Entity entity) {
@@ -2653,11 +2789,7 @@ public final class RpgNetworkService {
         if (task != null) {
             task.cancel();
         }
-        String category = tagValue(entity, "rpg_category:");
-        if (category != null) {
-            managedEntityCounters.compute("total", (k, v) -> Math.max(0, (v == null ? 0 : v) - 1));
-            managedEntityCounters.compute("category:" + category.toLowerCase(Locale.ROOT), (k, v) -> Math.max(0, (v == null ? 0 : v) - 1));
-        }
+        markManagedEntityRemoved(entity);
         entity.remove();
     }
 
@@ -2705,6 +2837,16 @@ public final class RpgNetworkService {
         return managedEntityCounters.getOrDefault("category:" + category.toLowerCase(Locale.ROOT), 0);
     }
 
+    private void trimManagedEntityCounters(Map<String, List<Entity>> byCategory) {
+        int total = 0;
+        for (Map.Entry<String, List<Entity>> entry : byCategory.entrySet()) {
+            int count = entry.getValue().size();
+            total += count;
+            managedEntityCounters.put("category:" + entry.getKey().toLowerCase(Locale.ROOT), count);
+        }
+        managedEntityCounters.put("total", total);
+    }
+
     private void tagManagedEntity(LivingEntity living, String category, Player owner, String dungeonId, String eventId, String instanceId, long ttlMillis) {
         living.addScoreboardTag("rpg_category:" + category);
         living.addScoreboardTag("rpg_expires_at:" + (System.currentTimeMillis() + ttlMillis));
@@ -2720,6 +2862,7 @@ public final class RpgNetworkService {
         if (instanceId != null && !instanceId.isBlank()) {
             living.addScoreboardTag("rpg_instance:" + instanceId);
         }
+        managedEntityIds.add(living.getUniqueId());
         managedEntityCounters.merge("total", 1, Integer::sum);
         managedEntityCounters.merge("category:" + category.toLowerCase(Locale.ROOT), 1, Integer::sum);
     }
@@ -2785,13 +2928,12 @@ public final class RpgNetworkService {
         return true;
     }
 
-    private void appendLedgerMutation(UUID playerUuid, String category, String reference, double goldDelta, Map<String, Integer> itemDelta) {
+    public void appendLedgerMutation(UUID playerUuid, String category, String reference, double goldDelta, Map<String, Integer> itemDelta) {
         if (playerUuid == null || category == null || category.isBlank()) {
             return;
         }
         long now = System.currentTimeMillis();
         long sequence = ledgerSequence.incrementAndGet();
-        String operationId = UUID.randomUUID().toString();
         Map<String, Integer> copy = new LinkedHashMap<>();
         if (itemDelta != null) {
             for (Map.Entry<String, Integer> entry : itemDelta.entrySet()) {
@@ -2802,26 +2944,37 @@ public final class RpgNetworkService {
         }
         long previousHash = ledgerHashChain.get();
         long hash = Objects.hash(sequence, now, serverName, playerUuid.toString(), category, reference == null ? "" : reference, goldDelta, copy, previousHash);
-        YamlConfiguration yaml = new YamlConfiguration();
-        yaml.set("operation_id", operationId);
-        yaml.set("sequence", sequence);
-        yaml.set("created_at", now);
-        yaml.set("server", serverName);
-        yaml.set("player", playerUuid.toString());
-        yaml.set("category", category);
-        yaml.set("reference", reference == null ? "" : reference);
-        yaml.set("gold_delta", goldDelta);
-        yaml.set("items", copy);
-        yaml.set("previous_hash", previousHash);
-        yaml.set("entry_hash", hash);
-        String payload = yaml.saveToString();
-        String payloadHash = sha256(payload);
-        yaml.set("payload_hash", payloadHash);
-        payload = yaml.saveToString();
-        LedgerEntry entry = new LedgerEntry(operationId, serverName, sequence, now, playerUuid, category, reference == null ? "" : reference, goldDelta, copy, payload, payloadHash);
+        String operationId = UUID.nameUUIDFromBytes((serverName + "|" + sequence + "|" + hash).getBytes(StandardCharsets.UTF_8)).toString();
+        String normalizedReference = reference == null ? "" : reference;
+        String payloadWithoutHash = ledgerPayload(operationId, sequence, now, serverName, playerUuid, category, normalizedReference, goldDelta, copy, previousHash, hash, "");
+        String payloadHash = sha256(payloadWithoutHash);
+        String payload = ledgerPayload(operationId, sequence, now, serverName, playerUuid, category, normalizedReference, goldDelta, copy, previousHash, hash, payloadHash);
+        LedgerEntry entry = new LedgerEntry(operationId, serverName, sequence, now, playerUuid, category, normalizedReference, goldDelta, copy, payload, payloadHash);
         persistPendingLedgerEntry(entry);
         ledgerQueue.add(entry);
         ledgerHashChain.set(hash);
+        int immediateFlushThreshold = Math.max(16, persistence.getInt("write_policy.ledger_immediate_flush_queue_threshold", 64));
+        if (ledgerQueue.size() >= immediateFlushThreshold) {
+            Bukkit.getScheduler().runTaskAsynchronously(plugin, this::flushLedger);
+        }
+    }
+
+    private String ledgerPayload(String operationId, long sequence, long createdAt, String server, UUID playerUuid, String category, String reference,
+                                 double goldDelta, Map<String, Integer> itemDelta, long previousHash, long entryHash, String payloadHash) {
+        YamlConfiguration yaml = new YamlConfiguration();
+        yaml.set("operation_id", operationId);
+        yaml.set("sequence", sequence);
+        yaml.set("created_at", createdAt);
+        yaml.set("server", server);
+        yaml.set("player", playerUuid.toString());
+        yaml.set("category", category);
+        yaml.set("reference", reference);
+        yaml.set("gold_delta", goldDelta);
+        yaml.set("items", itemDelta);
+        yaml.set("previous_hash", previousHash);
+        yaml.set("entry_hash", entryHash);
+        yaml.set("payload_hash", payloadHash);
+        return yaml.saveToString();
     }
 
     private void loadPendingLedgerEntries() {
@@ -2837,10 +2990,6 @@ public final class RpgNetworkService {
                     try {
                         YamlConfiguration yaml = readYaml(path);
                         String operationId = yaml.getString("operation_id", "");
-                        if (operationId.isBlank()) {
-                            operationId = UUID.randomUUID().toString();
-                            yaml.set("operation_id", operationId);
-                        }
                         long sequence = yaml.getLong("sequence", 0L);
                         String playerRaw = yaml.getString("player", "");
                         String entryServer = yaml.getString("server", serverName);
@@ -2855,17 +3004,27 @@ public final class RpgNetworkService {
                         Map<String, Integer> items = intMap(yaml.getConfigurationSection("items"));
                         long previousHash = yaml.getLong("previous_hash", 0L);
                         long entryHash = yaml.getLong("entry_hash", 0L);
+                        long expectedHash = Objects.hash(sequence, createdAt, entryServer, playerUuid.toString(), category, reference, goldDelta, items, previousHash);
+                        if (entryHash != 0L && entryHash != expectedHash) {
+                            enterSafeMode("Pending ledger hash mismatch");
+                            return;
+                        }
                         if (entryHash == 0L) {
-                            entryHash = Objects.hash(sequence, createdAt, serverName, playerUuid.toString(), category, reference, goldDelta, items, previousHash);
-                            yaml.set("entry_hash", entryHash);
-                            writeYaml(path, yaml.saveToString());
+                            entryHash = expectedHash;
+                        }
+                        if (operationId.isBlank()) {
+                            operationId = UUID.nameUUIDFromBytes((entryServer + "|" + sequence + "|" + entryHash).getBytes(StandardCharsets.UTF_8)).toString();
                         }
                         String payloadHash = yaml.getString("payload_hash", "");
-                        if (payloadHash.isBlank()) {
-                            payloadHash = sha256(yaml.saveToString());
-                            yaml.set("payload_hash", payloadHash);
+                        String payloadWithoutHash = ledgerPayload(operationId, sequence, createdAt, entryServer, playerUuid, category, reference, goldDelta, items, previousHash, entryHash, "");
+                        String expectedPayloadHash = sha256(payloadWithoutHash);
+                        if (!payloadHash.isBlank() && !payloadHash.equalsIgnoreCase(expectedPayloadHash)) {
+                            enterSafeMode("Pending ledger payload hash mismatch");
+                            return;
                         }
-                        recovered.add(new LedgerEntry(operationId, entryServer, sequence, createdAt, playerUuid, category, reference, goldDelta, items, yaml.saveToString(), payloadHash));
+                        payloadHash = expectedPayloadHash;
+                        String canonicalPayload = ledgerPayload(operationId, sequence, createdAt, entryServer, playerUuid, category, reference, goldDelta, items, previousHash, entryHash, payloadHash);
+                        recovered.add(new LedgerEntry(operationId, entryServer, sequence, createdAt, playerUuid, category, reference, goldDelta, items, canonicalPayload, payloadHash));
                         ledgerSequence.accumulateAndGet(sequence, Math::max);
                     } catch (Exception exception) {
                         plugin.getLogger().warning("Unable to recover pending ledger entry " + path + ": " + exception.getMessage());
@@ -3127,7 +3286,11 @@ public final class RpgNetworkService {
             try (var channel = java.nio.channels.FileChannel.open(temp, StandardOpenOption.WRITE)) {
                 channel.force(true);
             }
-            Files.move(temp, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            try {
+                Files.move(temp, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException atomicFailure) {
+                Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING);
+            }
         } catch (IOException exception) {
             plugin.getLogger().warning("Unable to write file " + path + ": " + exception.getMessage());
         }
@@ -3395,97 +3558,161 @@ public final class RpgNetworkService {
             try (Statement statement = connection.createStatement()) {
                 statement.executeUpdate("CREATE TABLE IF NOT EXISTS rpg_profiles (uuid VARCHAR(36) PRIMARY KEY, last_name VARCHAR(32), guild_name VARCHAR(32), gold DOUBLE NOT NULL, payload LONGTEXT NOT NULL, updated_at BIGINT NOT NULL)");
                 statement.executeUpdate("CREATE TABLE IF NOT EXISTS rpg_guilds (name VARCHAR(32) PRIMARY KEY, owner_uuid VARCHAR(36), member_count INT NOT NULL, bank_gold DOUBLE NOT NULL, payload LONGTEXT NOT NULL, updated_at BIGINT NOT NULL)");
-                statement.executeUpdate("CREATE TABLE IF NOT EXISTS rpg_ledger (operation_id VARCHAR(36) PRIMARY KEY, server VARCHAR(64) NOT NULL, sequence_id BIGINT NOT NULL, created_at BIGINT NOT NULL, player_uuid VARCHAR(36) NOT NULL, category VARCHAR(64) NOT NULL, reference_id VARCHAR(128) NOT NULL, gold_delta DOUBLE NOT NULL, item_delta LONGTEXT NOT NULL, payload LONGTEXT NOT NULL, payload_hash VARCHAR(64) NOT NULL, UNIQUE KEY uq_server_sequence (server, sequence_id))");
+                statement.executeUpdate("CREATE TABLE IF NOT EXISTS rpg_ledger (operation_id VARCHAR(36) PRIMARY KEY, server VARCHAR(64) NOT NULL, sequence_id BIGINT NOT NULL, created_at BIGINT NOT NULL, player_uuid VARCHAR(36) NOT NULL, category VARCHAR(64) NOT NULL, reference_id VARCHAR(128) NOT NULL, gold_delta DOUBLE NOT NULL, item_delta LONGTEXT NOT NULL, payload LONGTEXT NOT NULL, payload_hash VARCHAR(64) NOT NULL, UNIQUE KEY uq_server_sequence (server, sequence_id), UNIQUE KEY uq_payload_identity (server, sequence_id, payload_hash))");
                 mysqlSchemaReady = true;
             }
         }
     }
 
-    private boolean persistProfileAuthoritatively(RpgProfile profile) {
+    private PersistOutcome persistProfileAuthoritatively(RpgProfile profile) {
         if (mysqlAuthorityRequired()) {
             return persistProfileToMySql(profile, true);
         }
-        persistProfileToMySql(profile, false);
-        return true;
+        PersistOutcome optional = persistProfileToMySql(profile, false);
+        return optional == PersistOutcome.UNAVAILABLE ? PersistOutcome.SUCCESS : optional;
     }
 
-    private boolean persistGuildAuthoritatively(RpgGuild guild) {
+    private PersistOutcome persistGuildAuthoritatively(RpgGuild guild) {
         if (mysqlAuthorityRequired()) {
             return persistGuildToMySql(guild, true);
         }
-        persistGuildToMySql(guild, false);
-        return true;
+        PersistOutcome optional = persistGuildToMySql(guild, false);
+        return optional == PersistOutcome.UNAVAILABLE ? PersistOutcome.SUCCESS : optional;
     }
 
-    private boolean persistProfileToMySql(RpgProfile profile, boolean required) {
+    private PersistOutcome persistProfileToMySql(RpgProfile profile, boolean required) {
         if (!persistence.getBoolean("mysql.enabled", true)) {
             if (required) {
                 enterSafeMode("MySQL authority disabled by configuration");
-                return false;
             }
-            return false;
+            return PersistOutcome.UNAVAILABLE;
         }
         try (Connection connection = mysqlConnection()) {
             if (connection == null) {
                 if (required) {
                     enterSafeMode("MySQL backend unavailable");
-                    return false;
                 }
-                return false;
+                return PersistOutcome.UNAVAILABLE;
             }
             ensureMysqlSchema(connection);
-            try (PreparedStatement statement = connection.prepareStatement("REPLACE INTO rpg_profiles (uuid, last_name, guild_name, gold, payload, updated_at) VALUES (?, ?, ?, ?, ?, ?)")) {
-                statement.setString(1, profile.getUuid().toString());
-                statement.setString(2, profile.getLastName());
-                statement.setString(3, profile.getGuildName());
-                statement.setDouble(4, profile.getGold());
-                statement.setString(5, profile.toYaml().saveToString());
-                statement.setLong(6, profile.getUpdatedAt());
-                statement.executeUpdate();
-                return true;
+            String payload = profile.toYaml().saveToString();
+            long version = profile.getUpdatedAt();
+            try (PreparedStatement insert = connection.prepareStatement("INSERT INTO rpg_profiles (uuid, last_name, guild_name, gold, payload, updated_at) VALUES (?, ?, ?, ?, ?, ?)")) {
+                insert.setString(1, profile.getUuid().toString());
+                insert.setString(2, profile.getLastName());
+                insert.setString(3, profile.getGuildName());
+                insert.setDouble(4, profile.getGold());
+                insert.setString(5, payload);
+                insert.setLong(6, version);
+                if (insert.executeUpdate() > 0) {
+                    return PersistOutcome.SUCCESS;
+                }
+            } catch (java.sql.SQLIntegrityConstraintViolationException ignored) {
+                // fall through to CAS update
             }
+            try (PreparedStatement update = connection.prepareStatement(
+                "UPDATE rpg_profiles SET last_name = ?, guild_name = ?, gold = ?, payload = ?, updated_at = ? WHERE uuid = ? AND updated_at < ?")) {
+                update.setString(1, profile.getLastName());
+                update.setString(2, profile.getGuildName());
+                update.setDouble(3, profile.getGold());
+                update.setString(4, payload);
+                update.setLong(5, version);
+                update.setString(6, profile.getUuid().toString());
+                update.setLong(7, version);
+                if (update.executeUpdate() > 0) {
+                    return PersistOutcome.SUCCESS;
+                }
+            }
+            try (PreparedStatement current = connection.prepareStatement("SELECT updated_at FROM rpg_profiles WHERE uuid = ?")) {
+                current.setString(1, profile.getUuid().toString());
+                try (ResultSet result = current.executeQuery()) {
+                    if (result.next()) {
+                        long durableVersion = result.getLong("updated_at");
+                        if (durableVersion > version) {
+                            plugin.getLogger().warning("CAS profile write rejected for " + profile.getUuid() + " stale=" + version + " durable=" + durableVersion);
+                            return PersistOutcome.CONFLICT;
+                        }
+                        if (durableVersion == version) {
+                            return PersistOutcome.SUCCESS;
+                        }
+                    }
+                }
+            }
+            return PersistOutcome.CONFLICT;
         } catch (Exception exception) {
             plugin.getLogger().fine("MySQL profile persistence unavailable: " + exception.getMessage());
             if (required) {
                 enterSafeMode("MySQL backend unavailable");
             }
-            return false;
+            return PersistOutcome.UNAVAILABLE;
         }
     }
 
-    private boolean persistGuildToMySql(RpgGuild guild, boolean required) {
+    private PersistOutcome persistGuildToMySql(RpgGuild guild, boolean required) {
         if (!persistence.getBoolean("mysql.enabled", true)) {
             if (required) {
                 enterSafeMode("MySQL authority disabled by configuration");
-                return false;
             }
-            return false;
+            return PersistOutcome.UNAVAILABLE;
         }
         try (Connection connection = mysqlConnection()) {
             if (connection == null) {
                 if (required) {
                     enterSafeMode("MySQL backend unavailable");
-                    return false;
                 }
-                return false;
+                return PersistOutcome.UNAVAILABLE;
             }
             ensureMysqlSchema(connection);
-            try (PreparedStatement statement = connection.prepareStatement("REPLACE INTO rpg_guilds (name, owner_uuid, member_count, bank_gold, payload, updated_at) VALUES (?, ?, ?, ?, ?, ?)")) {
-                statement.setString(1, guild.getName());
-                statement.setString(2, guild.getOwnerUuid());
-                statement.setInt(3, guild.getMembersView().size());
-                statement.setDouble(4, guild.getBankGold());
-                statement.setString(5, guild.toYaml().saveToString());
-                statement.setLong(6, guild.getUpdatedAt());
-                statement.executeUpdate();
-                return true;
+            String payload = guild.toYaml().saveToString();
+            long version = guild.getUpdatedAt();
+            try (PreparedStatement insert = connection.prepareStatement("INSERT INTO rpg_guilds (name, owner_uuid, member_count, bank_gold, payload, updated_at) VALUES (?, ?, ?, ?, ?, ?)")) {
+                insert.setString(1, guild.getName());
+                insert.setString(2, guild.getOwnerUuid());
+                insert.setInt(3, guild.getMembersView().size());
+                insert.setDouble(4, guild.getBankGold());
+                insert.setString(5, payload);
+                insert.setLong(6, version);
+                if (insert.executeUpdate() > 0) {
+                    return PersistOutcome.SUCCESS;
+                }
+            } catch (java.sql.SQLIntegrityConstraintViolationException ignored) {
+                // fall through to CAS update
             }
+            try (PreparedStatement update = connection.prepareStatement(
+                "UPDATE rpg_guilds SET owner_uuid = ?, member_count = ?, bank_gold = ?, payload = ?, updated_at = ? WHERE name = ? AND updated_at < ?")) {
+                update.setString(1, guild.getOwnerUuid());
+                update.setInt(2, guild.getMembersView().size());
+                update.setDouble(3, guild.getBankGold());
+                update.setString(4, payload);
+                update.setLong(5, version);
+                update.setString(6, guild.getName());
+                update.setLong(7, version);
+                if (update.executeUpdate() > 0) {
+                    return PersistOutcome.SUCCESS;
+                }
+            }
+            try (PreparedStatement current = connection.prepareStatement("SELECT updated_at FROM rpg_guilds WHERE name = ?")) {
+                current.setString(1, guild.getName());
+                try (ResultSet result = current.executeQuery()) {
+                    if (result.next()) {
+                        long durableVersion = result.getLong("updated_at");
+                        if (durableVersion > version) {
+                            plugin.getLogger().warning("CAS guild write rejected for " + guild.getName() + " stale=" + version + " durable=" + durableVersion);
+                            return PersistOutcome.CONFLICT;
+                        }
+                        if (durableVersion == version) {
+                            return PersistOutcome.SUCCESS;
+                        }
+                    }
+                }
+            }
+            return PersistOutcome.CONFLICT;
         } catch (Exception exception) {
             plugin.getLogger().fine("MySQL guild persistence unavailable: " + exception.getMessage());
             if (required) {
                 enterSafeMode("MySQL backend unavailable");
             }
-            return false;
+            return PersistOutcome.UNAVAILABLE;
         }
     }
 
@@ -3521,11 +3748,12 @@ public final class RpgNetworkService {
     }
 
     private void flushLedger() {
+        ledgerLastFlushAt.set(System.currentTimeMillis());
         if (ledgerQueue.isEmpty()) {
             return;
         }
         List<LedgerEntry> pending = new ArrayList<>();
-        int batch = Math.max(250, persistence.getInt("write_policy.ledger_max_entries_per_flush", 1000));
+        int batch = Math.max(500, persistence.getInt("write_policy.ledger_max_entries_per_flush", 4000));
         for (int i = 0; i < batch; i++) {
             LedgerEntry entry = ledgerQueue.poll();
             if (entry == null) {
@@ -3610,31 +3838,39 @@ public final class RpgNetworkService {
             if (connection == null) {
                 return false;
             }
-            try (PreparedStatement statement = connection.prepareStatement("SELECT payload_hash FROM rpg_ledger WHERE operation_id = ? OR (server = ? AND sequence_id = ?) LIMIT 2")) {
+            try (PreparedStatement statement = connection.prepareStatement("SELECT operation_id, server, sequence_id, payload_hash FROM rpg_ledger WHERE operation_id = ? OR (server = ? AND sequence_id = ?) LIMIT 2")) {
                 statement.setString(1, entry.operationId());
                 statement.setString(2, entry.server());
                 statement.setLong(3, entry.sequence());
                 try (ResultSet resultSet = statement.executeQuery()) {
-                    int matches = 0;
+                    boolean matchedByOperationId = false;
+                    boolean matchedByServerSequence = false;
                     int rows = 0;
                     while (resultSet.next()) {
                         rows++;
+                        String existingOperationId = resultSet.getString("operation_id");
+                        String existingServer = resultSet.getString("server");
+                        long existingSequence = resultSet.getLong("sequence_id");
                         String existingHash = resultSet.getString("payload_hash");
-                        if (existingHash != null && existingHash.equalsIgnoreCase(entry.payloadHash())) {
-                            matches++;
-                            continue;
+                        if (existingOperationId != null && existingOperationId.equalsIgnoreCase(entry.operationId())) {
+                            matchedByOperationId = true;
                         }
-                        enterSafeMode("Ledger corruption detected");
-                        return false;
+                        if (existingServer != null && existingServer.equalsIgnoreCase(entry.server()) && existingSequence == entry.sequence()) {
+                            matchedByServerSequence = true;
+                        }
+                        if (existingHash == null || !existingHash.equalsIgnoreCase(entry.payloadHash())) {
+                            enterSafeMode("Ledger duplicate payload mismatch");
+                            return false;
+                        }
                     }
                     if (rows > 1) {
-                        enterSafeMode("Ledger corruption detected");
+                        enterSafeMode("Ledger duplicate identity collision");
                         return false;
                     }
-                    if (matches > 0) {
+                    if (matchedByOperationId || matchedByServerSequence) {
                         return true;
                     }
-                    enterSafeMode("Ledger corruption detected");
+                    enterSafeMode("Ledger duplicate unknown identity");
                     return false;
                 }
             }
@@ -3675,6 +3911,15 @@ public final class RpgNetworkService {
         }
     }
 
+    private void recordDbLatency(long nanos, boolean success) {
+        dbOperationCount.incrementAndGet();
+        dbLatencyTotalNanos.addAndGet(Math.max(0L, nanos));
+        dbLatencyMaxNanos.accumulateAndGet(Math.max(0L, nanos), Math::max);
+        if (!success) {
+            dbOperationErrors.incrementAndGet();
+        }
+    }
+
     private boolean mysqlDriverAvailable() {
         if (mysqlDriverReady) {
             return true;
@@ -3695,11 +3940,16 @@ public final class RpgNetworkService {
     private Connection mysqlConnection() {
         HikariDataSource pool = mysqlPool();
         if (pool == null) {
+            recordDbLatency(0L, false);
             return null;
         }
+        long started = System.nanoTime();
         try {
-            return pool.getConnection();
+            Connection connection = pool.getConnection();
+            recordDbLatency(System.nanoTime() - started, true);
+            return connection;
         } catch (Exception exception) {
+            recordDbLatency(System.nanoTime() - started, false);
             plugin.getLogger().fine("MySQL connection unavailable: " + exception.getMessage());
             return null;
         }
@@ -3758,7 +4008,8 @@ public final class RpgNetworkService {
         yaml.set("profiles_dirty", dirtyProfiles.size());
         yaml.set("guilds_cached", guilds.size());
         yaml.set("active_dungeons", activeDungeonCount());
-        yaml.set("active_instances", dungeonInstances.size());
+        yaml.set("active_instances", activeInstanceCount());
+        yaml.set("managed_entities", managedEntityTotalCount());
         yaml.set("safe_mode", safeMode);
         yaml.set("safe_mode_reason", safeModeReason);
         yaml.set("mysql_enabled", persistence.getBoolean("mysql.enabled", true));
@@ -3769,7 +4020,14 @@ public final class RpgNetworkService {
         yaml.set("redis_authority_required", redisSessionRequired());
         yaml.set("redis_reachable", endpointReachable(persistence.getString("redis.host", "127.0.0.1"), persistence.getInt("redis.port", 6379), 500));
         yaml.set("online_players", Bukkit.getOnlinePlayers().size());
+        yaml.set("ledger_queue_pending", ledgerQueueDepth());
+        yaml.set("ledger_pending_files", pendingLedgerFileCount());
+        yaml.set("db_operations_total", dbOperationCount());
+        yaml.set("db_operation_errors_total", dbOperationErrorCount());
+        yaml.set("db_latency_ms_avg", dbLatencyMsAvg());
+        yaml.set("db_latency_ms_max", dbLatencyMsMax());
         yaml.set("ledger_queue_pending", ledgerQueue.size());
+        yaml.set("ledger_last_flush_at", ledgerLastFlushAt.get());
         writeYaml(runtimeDir.resolve("status").resolve(serverName + ".yml"), yaml.saveToString());
     }
 
