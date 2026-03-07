@@ -12,6 +12,7 @@ def test_rendered_network_files_match_security_baseline():
     assert 'player-info-forwarding-mode = "MODERN"' in velocity_toml
     assert 'prevent-client-proxy-connections = true' in velocity_toml
     assert exploit["network"]["direct_backend_join_block"] is True
+    assert network["proxy"]["advanced"]["accepts_transfers"] is False
 
     for server_name in network["servers"]:
         server_props = (ROOT / server_name / "server.properties").read_text(encoding="utf-8")
