@@ -1,9 +1,9 @@
 package com.rpg.event;
 
 import com.rpg.core.RpgNetworkService;
-import com.rpg.core.RpgProfile;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Locale;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 import org.bukkit.Bukkit;
@@ -78,6 +78,17 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor {
         }
         event.getDrops().clear();
         event.setDroppedExp(0);
+        double gold = service.events().getDouble("events." + activeEventId + ".bonus_gold", 0.0D);
+        String itemId = service.events().getString("events." + activeEventId + ".bonus_item", "");
+        int amount = service.events().getInt("events." + activeEventId + ".bonus_item_amount", 1);
+        double chance = service.events().getDouble("events." + activeEventId + ".bonus_item_chance", 0.0D);
+        boolean grantItem = !itemId.isBlank() && ThreadLocalRandom.current().nextDouble() < chance;
+        String nonce = eventRewardNonce(activeEventId, event.getEntity().getUniqueId().toString());
+        RpgNetworkService.OperationResult result = service.grantEventBonusReward(killer, activeEventId, nonce, gold, itemId, amount, grantItem);
+        if (!result.message().isBlank()) {
+            killer.sendMessage(result.message());
+        }
+
         service.withProfile(killer, profile -> {
             double gold = service.events().getDouble("events." + activeEventId + ".bonus_gold", 0.0D);
             profile.addGold(gold);
@@ -123,6 +134,10 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor {
         sender.sendMessage("/rpgevent status");
         sender.sendMessage("/rpgevent force <id>");
         return true;
+    }
+
+    private String eventRewardNonce(String eventId, String entityUuid) {
+        return eventId.toLowerCase(Locale.ROOT) + ":" + entityUuid;
     }
 
     private void tickEvents() {

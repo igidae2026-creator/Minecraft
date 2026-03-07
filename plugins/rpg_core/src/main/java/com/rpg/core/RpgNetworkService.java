@@ -17,8 +17,11 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.time.DateTimeException;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -67,6 +70,8 @@ import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
 
 public final class RpgNetworkService {
+    private static final long CLAIM_RETENTION_MILLIS = 14L * 24L * 60L * 60L * 1000L;
+    private static final ZoneId DEFAULT_REWARD_ZONE = ZoneOffset.UTC;
     public record OperationResult(boolean ok, String message) {}
     public record KillReward(boolean handled, String mobId, double gold, Map<String, Integer> items, String message) {}
     public record BossReward(boolean handled, String bossId, boolean rewarded, double bonusGold, Map<String, Integer> items, String message) {}
@@ -916,7 +921,7 @@ public final class RpgNetworkService {
             }
             String bonusKey = bossId + "_first_daily_bonus";
             double bonusGold = 0.0D;
-            String today = LocalDate.now(ZoneId.systemDefault()).toString();
+            String today = dailyDateKey(System.currentTimeMillis());
             if (!today.equals(profile.getBossDailyBonusDate(bossId)) && economy.contains("faucets.bosses." + bonusKey)) {
                 bonusGold = economy.getDouble("faucets.bosses." + bonusKey, 0.0D);
                 profile.addGold(bonusGold);
@@ -1082,10 +1087,16 @@ public final class RpgNetworkService {
             if (!Objects.equals(instanceId, profile.getActiveDungeonInstanceId())) {
                 return new DungeonCompletion(true, false, dungeonId, 0.0D, Collections.emptyMap(), color("&cBoss denied outside your reserved instance."));
             }
+            String completionClaimKey = "dungeon-complete:" + profile.getUuid() + ":" + instanceId;
+            if (profile.hasClaimedOperation(completionClaimKey)) {
+                return new DungeonCompletion(true, false, dungeonId, 0.0D, Collections.emptyMap(), color("&eDungeon rewards already claimed for this run."));
+            }
             String requiredBoss = dungeons.getString(dungeonId + ".boss", "");
             if (!requiredBoss.equals(bossId)) {
                 return new DungeonCompletion(false, false, dungeonId, 0.0D, Collections.emptyMap(), "");
             }
+            profile.markClaimedOperation(completionClaimKey);
+            profile.pruneClaimedOperations(claimRetentionMillis());
             Map<String, Integer> rewards = intMap(dungeons.getConfigurationSection(dungeonId + ".completion_rewards"));
             for (Map.Entry<String, Integer> entry : rewards.entrySet()) {
                 profile.addItem(entry.getKey(), entry.getValue());
@@ -1095,6 +1106,7 @@ public final class RpgNetworkService {
             profile.addGold(goldReward);
             appendLedgerMutation(profile.getUuid(), "dungeon_complete", dungeonId, goldReward, rewards);
             if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
+                profile.clearClaimedOperation(completionClaimKey);
                 return new DungeonCompletion(true, false, dungeonId, 0.0D, Collections.emptyMap(), color("&cReward commit delayed. Try again."));
             }
             profile.setDungeonCooldown(dungeonId, System.currentTimeMillis() + dungeons.getLong(dungeonId + ".repeat_cooldown_seconds", 30L) * 1000L);
@@ -1107,6 +1119,36 @@ public final class RpgNetworkService {
             writeSession(profile, true);
             writeAudit("dungeon_complete", player.getUniqueId() + ":" + dungeonId + ":gold=" + goldReward + ":items=" + rewards);
             return new DungeonCompletion(true, true, dungeonId, goldReward, rewards, color("&aDungeon cleared &e" + dungeonId + rewardSuffix(rewards) + " &7bonus=&e" + money(goldReward)));
+        });
+    }
+
+    public OperationResult grantEventBonusReward(Player player, String eventId, String nonce, double gold, String itemId, int amount, boolean grantItem) {
+        return withProfile(player, profile -> {
+            if (nonce == null || nonce.isBlank()) {
+                return new OperationResult(false, color("&cMissing reward nonce."));
+            }
+            String opKey = "event-bonus:" + eventId + ":" + nonce;
+            if (profile.hasClaimedOperation(opKey)) {
+                return new OperationResult(true, color("&7Duplicate event reward suppressed."));
+            }
+            profile.markClaimedOperation(opKey);
+            profile.pruneClaimedOperations(claimRetentionMillis());
+            Map<String, Integer> grantedItems = Collections.emptyMap();
+            profile.addGold(gold);
+            if (grantItem && itemId != null && !itemId.isBlank() && amount > 0) {
+                String normalized = itemId.toLowerCase(Locale.ROOT);
+                profile.addItem(normalized, amount);
+                grantedItems = Map.of(normalized, amount);
+            }
+            appendLedgerMutation(profile.getUuid(), "event_bonus_reward", eventId + ":" + nonce, gold, grantedItems);
+            if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
+                profile.clearClaimedOperation(opKey);
+                return new OperationResult(false, color("&cEvent bonus commit delayed. Try again."));
+            }
+            awardSkillXp(profile, "combat", "mob_kill");
+            syncCollectQuestProgress(profile);
+            writeAudit("event_bonus_reward", player.getUniqueId() + ":" + eventId + ":" + nonce + ":gold=" + gold + ":items=" + grantedItems);
+            return new OperationResult(true, color("&dEvent bonus: " + eventId));
         });
     }
 
@@ -1134,6 +1176,8 @@ public final class RpgNetworkService {
         final String dungeonIdForBoss = activeDungeon.isBlank() ? null : activeDungeon;
         if (!useGuildBank) {
             return withProfile(player, profile -> {
+                String operationKey = buildSummonOperationKey(profile.getUuid(), bossId, dungeonIdForBoss);
+                String refundReference = bossId + ":refund:" + operationKey;
                 Map<String, Integer> req = intMap(bosses.getConfigurationSection(bossId + ".summon.required_items"));
                 if (!profile.hasItems(req)) {
                     return new BossSummonResult(false, bossId, color("&cMissing summon materials: " + missingItems(profile, req)), null);
@@ -1143,7 +1187,7 @@ public final class RpgNetworkService {
                     return new BossSummonResult(false, bossId, color("&cNeed " + money(goldCost) + " gold to summon."), null);
                 }
                 removeItems(profile, req);
-                appendLedgerMutation(profile.getUuid(), "boss_summon_personal", bossId, -goldCost, negativeItemMap(req));
+                appendLedgerMutation(profile.getUuid(), "boss_summon_personal", bossId + ":" + operationKey, -goldCost, negativeItemMap(req));
                 if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
                     profile.addGold(goldCost);
                     addItems(profile, req);
@@ -1153,7 +1197,10 @@ public final class RpgNetworkService {
                 if (entity == null) {
                     profile.addGold(goldCost);
                     addItems(profile, req);
-                    appendLedgerMutation(profile.getUuid(), "boss_summon_personal_refund", bossId, goldCost, req);
+                    appendLedgerMutation(profile.getUuid(), "boss_summon_personal_refund", refundReference, goldCost, req);
+                    if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
+                        return new BossSummonResult(false, bossId, color("&cFailed to spawn boss and refund commit delayed. Contact staff."), null);
+                    }
                     return new BossSummonResult(false, bossId, color("&cFailed to spawn boss."), null);
                 }
                 writeAudit("boss_summon", player.getUniqueId() + ":" + bossId + ":personal");
@@ -1171,6 +1218,8 @@ public final class RpgNetworkService {
             }
             RpgGuild guild = guildOptional.get();
             synchronized (guildLocks.computeIfAbsent(normalizeGuild(guild.getName()), ignored -> new Object())) {
+                String operationKey = buildSummonOperationKey(profile.getUuid(), bossId, dungeonIdForBoss);
+                String refundReference = bossId + ":refund:" + operationKey;
                 Map<String, Integer> req = intMap(bosses.getConfigurationSection(bossId + ".summon.required_items"));
                 if (req.keySet().stream().anyMatch(this::isBoundMaterial)) {
                     return new BossSummonResult(false, bossId, color("&cBound summon materials cannot be sourced from guild storage."), null);
@@ -1188,7 +1237,7 @@ public final class RpgNetworkService {
                     guild.removeBankItem(entry.getKey(), entry.getValue());
                 }
                 dirtyGuilds.add(normalizeGuild(guild.getName()));
-                appendLedgerMutation(profile.getUuid(), "boss_summon_guild", bossId, -goldCost, negativeItemMap(req));
+                appendLedgerMutation(profile.getUuid(), "boss_summon_guild", bossId + ":" + operationKey, -goldCost, negativeItemMap(req));
                 if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), guild.getName(), guild.getUpdatedAt())) {
                     guild.addBankGold(goldCost);
                     for (Map.Entry<String, Integer> entry : req.entrySet()) {
@@ -1204,7 +1253,10 @@ public final class RpgNetworkService {
                         guild.addBankItem(entry.getKey(), entry.getValue());
                     }
                     dirtyGuilds.add(normalizeGuild(guild.getName()));
-                    appendLedgerMutation(profile.getUuid(), "guild_bank_refund_failed_summon", bossId, goldCost, req);
+                    appendLedgerMutation(profile.getUuid(), "guild_bank_refund_failed_summon", refundReference, goldCost, req);
+                    if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), guild.getName(), guild.getUpdatedAt())) {
+                        return new BossSummonResult(false, bossId, color("&cFailed to spawn boss and guild refund commit delayed. Contact staff."), null);
+                    }
                     return new BossSummonResult(false, bossId, color("&cFailed to spawn boss."), null);
                 }
                 writeAudit("boss_summon", player.getUniqueId() + ":" + bossId + ":guild=" + guild.getName());
@@ -2005,6 +2057,28 @@ public final class RpgNetworkService {
 
     private long nonceWindowMillis() {
         return persistence.getLong("write_policy.idempotent_transaction_window_seconds", 300L) * 1000L;
+    }
+
+    private long claimRetentionMillis() {
+        long configuredDays = persistence.getLong("write_policy.transaction_ledger_retention_days", 14L);
+        return Math.max(CLAIM_RETENTION_MILLIS, configuredDays * 24L * 60L * 60L * 1000L);
+    }
+
+    private ZoneId rewardBoundaryZone() {
+        String configuredZone = network.getString("operational.reward_boundary_timezone", DEFAULT_REWARD_ZONE.getId());
+        try {
+            return ZoneId.of(configuredZone);
+        } catch (DateTimeException ignored) {
+            return DEFAULT_REWARD_ZONE;
+        }
+    }
+
+    private String dailyDateKey(long epochMillis) {
+        return LocalDate.ofInstant(Instant.ofEpochMilli(epochMillis), rewardBoundaryZone()).toString();
+    }
+
+    private String buildSummonOperationKey(UUID playerUuid, String bossId, String dungeonId) {
+        return serverName + ":" + playerUuid + ":" + bossId + ":" + (dungeonId == null || dungeonId.isBlank() ? "open" : dungeonId) + ":" + System.currentTimeMillis();
     }
 
     private String rewardSuffix(Map<String, Integer> itemsGranted) {

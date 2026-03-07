@@ -88,6 +88,7 @@ operational:
   proxy_failover_server: lobby
   disable_reload_in_production: true
   required_java_version: 21
+  reward_boundary_timezone: UTC
 data_flow:
   player_profile: mysql
   inventory_authority: mysql
