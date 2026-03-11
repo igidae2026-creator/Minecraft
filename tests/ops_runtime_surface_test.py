@@ -233,6 +233,7 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         subprocess.run([sys.executable, str(ROOT / "ops" / "content_volume_governor.py")], check=True, cwd=ROOT)
         subprocess.run([sys.executable, str(ROOT / "ops" / "service_responsiveness_governor.py")], check=True, cwd=ROOT)
         subprocess.run([sys.executable, str(ROOT / "ops" / "matchmaking_quality_governor.py")], check=True, cwd=ROOT)
+        subprocess.run([sys.executable, str(ROOT / "ops" / "economy_market_governor.py")], check=True, cwd=ROOT)
         subprocess.run([sys.executable, str(ROOT / "ops" / "player_experience_governor.py")], check=True, cwd=ROOT)
         subprocess.run([sys.executable, str(ROOT / "ops" / "engagement_fatigue_governor.py")], check=True, cwd=ROOT)
         subprocess.run([sys.executable, str(ROOT / "ops" / "material_inventory.py")], check=True, cwd=ROOT)
@@ -272,6 +273,7 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         engagement_fatigue_summary = yaml.safe_load((runtime_data / "autonomy" / "engagement_fatigue_summary.yml").read_text(encoding="utf-8"))
         service_responsiveness_summary = yaml.safe_load((runtime_data / "autonomy" / "service_responsiveness_summary.yml").read_text(encoding="utf-8"))
         matchmaking_quality_summary = yaml.safe_load((runtime_data / "autonomy" / "matchmaking_quality_summary.yml").read_text(encoding="utf-8"))
+        economy_market_summary = yaml.safe_load((runtime_data / "autonomy" / "economy_market_summary.yml").read_text(encoding="utf-8"))
 
         assert content_summary["generated"] >= 14
         assert content_summary["by_type"]["onboarding"] >= 1
@@ -316,6 +318,8 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         assert service_responsiveness_summary["responsiveness_state"] in {"strained", "steady", "crisp"}
         assert float(matchmaking_quality_summary["matchmaking_quality_score"]) >= 0
         assert matchmaking_quality_summary["matchmaking_state"] in {"uneven", "healthy", "sharp"}
+        assert float(economy_market_summary["market_maturity_score"]) >= 0
+        assert economy_market_summary["market_state"] in {"fragile", "stable", "mature"}
         assert material_summary["canonical_source_files"] > 0
         assert partition_summary["runtime_files"] >= partition_summary["canonical_snapshot_files"]
         assert partition_summary["volatile_runtime_files"] >= 1
@@ -356,6 +360,9 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         assert float(player_experience_summary["matchmaking_quality_score"]) >= 0
         assert float(player_experience_summary["routing_clarity_score"]) >= 0
         assert float(player_experience_summary["queue_fairness_score"]) >= 0
+        assert float(player_experience_summary["market_maturity_score"]) >= 0
+        assert float(player_experience_summary["faucet_balance_score"]) >= 0
+        assert float(player_experience_summary["reward_sustainability_score"]) >= 0
         assert player_experience_soak_summary["player_experience_soak_state"] in {"tune", "observe", "stable"}
         assert float(player_experience_soak_summary["first_session_strength"]) >= 0
         assert float(player_experience_soak_summary["trust_pull"]) >= 0

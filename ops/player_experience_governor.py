@@ -22,6 +22,7 @@ PLAYER_EXPERIENCE_SOAK_SUMMARY_PATH = AUTONOMY / "player_experience_soak_summary
 RUNTIME_INTEGRITY_SUMMARY_PATH = AUTONOMY / "runtime_integrity_summary.yml"
 SERVICE_RESPONSIVENESS_SUMMARY_PATH = AUTONOMY / "service_responsiveness_summary.yml"
 MATCHMAKING_QUALITY_SUMMARY_PATH = AUTONOMY / "matchmaking_quality_summary.yml"
+ECONOMY_MARKET_SUMMARY_PATH = AUTONOMY / "economy_market_summary.yml"
 
 
 def now_iso() -> str:
@@ -57,6 +58,7 @@ def main() -> int:
     runtime_integrity = load_yaml(RUNTIME_INTEGRITY_SUMMARY_PATH)
     service_responsiveness = load_yaml(SERVICE_RESPONSIVENESS_SUMMARY_PATH)
     matchmaking_quality = load_yaml(MATCHMAKING_QUALITY_SUMMARY_PATH)
+    economy_market = load_yaml(ECONOMY_MARKET_SUMMARY_PATH)
 
     totals = {
         "queue_size": 0.0,
@@ -117,6 +119,9 @@ def main() -> int:
     matchmaking_quality_score = float(matchmaking_quality.get("matchmaking_quality_score", 0.0))
     routing_clarity_score = float(matchmaking_quality.get("routing_clarity_score", 0.0))
     queue_fairness_score = float(matchmaking_quality.get("queue_fairness_score", 0.0))
+    market_maturity_score = float(economy_market.get("market_maturity_score", 0.0))
+    faucet_balance_score = float(economy_market.get("faucet_balance_score", 0.0))
+    reward_sustainability_score = float(economy_market.get("reward_sustainability_score", 0.0))
     fatigue_gap_score = float(fatigue.get("fatigue_gap_score", 0.0))
     thinness_score = float(fatigue.get("thinness_score", 0.0))
     repetition_score = float(fatigue.get("repetition_score", 0.0))
@@ -165,6 +170,9 @@ def main() -> int:
         + matchmaking_quality_score * 0.08
         + routing_clarity_score * 0.04
         + queue_fairness_score * 0.03
+        + market_maturity_score * 0.06
+        + faucet_balance_score * 0.03
+        + reward_sustainability_score * 0.03
     )
     completeness_percent = round(
         clamp(
@@ -231,6 +239,9 @@ def main() -> int:
         "matchmaking_quality_score": matchmaking_quality_score,
         "routing_clarity_score": routing_clarity_score,
         "queue_fairness_score": queue_fairness_score,
+        "market_maturity_score": market_maturity_score,
+        "faucet_balance_score": faucet_balance_score,
+        "reward_sustainability_score": reward_sustainability_score,
         "thinness_score": thinness_score,
         "repetition_score": repetition_score,
         "novelty_gap_score": novelty_gap_score,

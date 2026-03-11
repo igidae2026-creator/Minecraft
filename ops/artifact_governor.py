@@ -29,6 +29,7 @@ GAMEPLAY_PROGRESSION_PATH = RUNTIME / "autonomy" / "gameplay_progression_summary
 ENGAGEMENT_FATIGUE_PATH = RUNTIME / "autonomy" / "engagement_fatigue_summary.yml"
 SERVICE_RESPONSIVENESS_PATH = RUNTIME / "autonomy" / "service_responsiveness_summary.yml"
 MATCHMAKING_QUALITY_PATH = RUNTIME / "autonomy" / "matchmaking_quality_summary.yml"
+ECONOMY_MARKET_PATH = RUNTIME / "autonomy" / "economy_market_summary.yml"
 PROPOSAL_DIR = RUNTIME / "artifact_proposals"
 CANONICAL_DIR = RUNTIME / "canonical_artifacts"
 VERDICT_LOG = PROPOSAL_DIR / "verdicts.jsonl"
@@ -77,6 +78,7 @@ def canonical_candidates(control: dict[str, Any]) -> list[dict[str, Any]]:
     engagement_fatigue = load_yaml(ENGAGEMENT_FATIGUE_PATH)
     service_responsiveness = load_yaml(SERVICE_RESPONSIVENESS_PATH)
     matchmaking_quality = load_yaml(MATCHMAKING_QUALITY_PATH)
+    economy_market = load_yaml(ECONOMY_MARKET_PATH)
     streak = int(control.get("steady_noop_streak", 0))
     thresholds = {
         "execution": bool(control.get("execution_threshold_ready", False)),
@@ -395,6 +397,27 @@ def canonical_candidates(control: dict[str, Any]) -> list[dict[str, Any]]:
                     "routing_clarity_score": float(matchmaking_quality.get("routing_clarity_score", 0.0)),
                     "queue_fairness_score": float(matchmaking_quality.get("queue_fairness_score", 0.0)),
                     "social_match_score": float(matchmaking_quality.get("social_match_score", 0.0)),
+                },
+            }
+        )
+        proposals.append(
+            {
+                "artifact_class": "economy_market_profile",
+                "scope": "minecraft_runtime",
+                "reason": "market maturity and faucet/sink discipline should be governed as canonical economy quality signals",
+                "source": "economy_market_governor",
+                "criteria": {
+                    "scope_fit": float(economy_market.get("market_maturity_score", 0.0)) >= 0.0,
+                    "authority_fit": thresholds["final"],
+                    "upgrade_value": bool(economy_market.get("market_state", "")),
+                    "exploration_os_compatibility": True,
+                },
+                "payload": {
+                    "market_maturity_score": float(economy_market.get("market_maturity_score", 0.0)),
+                    "market_state": str(economy_market.get("market_state", "")),
+                    "faucet_balance_score": float(economy_market.get("faucet_balance_score", 0.0)),
+                    "reward_sustainability_score": float(economy_market.get("reward_sustainability_score", 0.0)),
+                    "sink_pressure": float(economy_market.get("sink_pressure", 0.0)),
                 },
             }
         )

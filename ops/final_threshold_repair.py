@@ -36,6 +36,7 @@ KNOWN_REPAIRS = {
     "engagement_fatigue_governor",
     "service_responsiveness_governor",
     "matchmaking_quality_governor",
+    "economy_market_governor",
     "runtime_summary",
 }
 
