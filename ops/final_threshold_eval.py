@@ -13,13 +13,18 @@ RUNTIME = ROOT / "runtime_data"
 AUTONOMY = RUNTIME / "autonomy"
 CONFIG = ROOT / "configs"
 OUTPUT_PATH = AUTONOMY / "final_threshold_eval.json"
+CONTROL_PATH = AUTONOMY / "control" / "state.yml"
+HEARTBEAT_PATH = AUTONOMY / "supervisor" / "heartbeat.json"
 
 
 def load_yaml(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
-    with path.open("r", encoding="utf-8") as handle:
-        return yaml.safe_load(handle) or {}
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            return yaml.safe_load(handle) or {}
+    except Exception:
+        return {}
 
 
 def tail_jsonl(path: Path, limit: int) -> list[dict[str, Any]]:
@@ -43,17 +48,69 @@ def file_has_tracked_lines(path: Path) -> bool:
     return path.exists() and path.stat().st_size > 0
 
 
+def canonical_registry_contains(registry: list[Any], artifact_class: str) -> bool:
+    for item in registry or []:
+        if isinstance(item, str) and artifact_class in item:
+            return True
+        if isinstance(item, dict) and artifact_class in item.values():
+            return True
+    return False
+
+
+def output_is_stale() -> bool:
+    if not OUTPUT_PATH.exists():
+        return True
+    output_mtime = OUTPUT_PATH.stat().st_mtime
+    dependency_paths = [
+        CONTROL_PATH,
+        HEARTBEAT_PATH,
+        AUTONOMY / "artifact_governor_summary.yml",
+        AUTONOMY / "content_strategy_summary.yml",
+        AUTONOMY / "content_soak_summary.yml",
+        AUTONOMY / "content_bundle_summary.yml",
+        AUTONOMY / "repo_bundle_summary.yml",
+        AUTONOMY / "minecraft_bundle_summary.yml",
+        AUTONOMY / "minecraft_strategy_summary.yml",
+        AUTONOMY / "minecraft_soak_summary.yml",
+        AUTONOMY / "player_experience_summary.yml",
+        AUTONOMY / "player_experience_soak_summary.yml",
+        AUTONOMY / "engagement_fatigue_summary.yml",
+        RUNTIME / "audit" / "COVERAGE_AUDIT.yml",
+    ]
+    newest_dependency = max((path.stat().st_mtime for path in dependency_paths if path.exists()), default=0.0)
+    if newest_dependency > output_mtime:
+        return True
+    try:
+        payload = json.loads(OUTPUT_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return True
+    control = load_yaml(CONTROL_PATH)
+    if bool(control.get("final_threshold_ready", False)) and not bool(payload.get("final_threshold_ready", False)):
+        return True
+    return False
+
+
 def evaluate() -> dict[str, Any]:
-    control = load_yaml(AUTONOMY / "control" / "state.yml")
-    heartbeat = json.loads((RUNTIME / "autonomy" / "supervisor" / "heartbeat.json").read_text(encoding="utf-8")) if (RUNTIME / "autonomy" / "supervisor" / "heartbeat.json").exists() else {}
+    control = load_yaml(CONTROL_PATH)
+    heartbeat = json.loads(HEARTBEAT_PATH.read_text(encoding="utf-8")) if HEARTBEAT_PATH.exists() else {}
     conformance = load_yaml(RUNTIME / "audit" / "COVERAGE_AUDIT.yml")
     artifact_governor = load_yaml(AUTONOMY / "artifact_governor_summary.yml")
     content_governor = load_yaml(AUTONOMY / "content_governor_summary.yml")
     economy_governor = load_yaml(AUTONOMY / "economy_governor_summary.yml")
     anti_cheat_governor = load_yaml(AUTONOMY / "anti_cheat_governor_summary.yml")
     liveops_governor = load_yaml(AUTONOMY / "liveops_governor_summary.yml")
+    content_strategy = load_yaml(AUTONOMY / "content_strategy_summary.yml")
+    content_soak = load_yaml(AUTONOMY / "content_soak_summary.yml")
+    repo_bundle = load_yaml(AUTONOMY / "repo_bundle_summary.yml")
+    minecraft_bundle = load_yaml(AUTONOMY / "minecraft_bundle_summary.yml")
+    minecraft_strategy = load_yaml(AUTONOMY / "minecraft_strategy_summary.yml")
+    minecraft_soak = load_yaml(AUTONOMY / "minecraft_soak_summary.yml")
+    player_experience = load_yaml(AUTONOMY / "player_experience_summary.yml")
+    player_experience_soak = load_yaml(AUTONOMY / "player_experience_soak_summary.yml")
+    engagement_fatigue = load_yaml(AUTONOMY / "engagement_fatigue_summary.yml")
+    canonical_registry = artifact_governor.get("canonical_registry", []) or []
     autonomy_cfg = load_yaml(CONFIG / "autonomy.yml")
-    event_tail = tail_jsonl(AUTONOMY / "core" / "event_log.jsonl", 48)
+    event_tail = tail_jsonl(AUTONOMY / "core" / "event_log.jsonl", 160)
     status_dir = RUNTIME / "status"
 
     quality_targets = (autonomy_cfg.get("quality_targets", {}) or {})
@@ -173,6 +230,72 @@ def evaluate() -> dict[str, Any]:
             f"inflation_ratio={economy_governor.get('inflation_ratio', 0.0)} sandbox_cases={anti_cheat_governor.get('sandbox_cases', 0)} content_generated={content_governor.get('generated', 0)}",
             ["economy_governor", "anti_cheat_governor", "content_governor"],
         ),
+        "content_strategy_canonicalized": (
+            bool(content_strategy.get("next_focus_csv", ""))
+            and int(content_strategy.get("recommended_repairs_count", 0)) >= 0
+            and canonical_registry_contains(canonical_registry, "content_portfolio_strategy"),
+            "content strategy is not yet governed as a canonical operating artifact",
+            f"next_focus_csv={content_strategy.get('next_focus_csv', '')} canonical_registry={canonical_registry}",
+            ["content_strategy_governor", "artifact_governor"],
+        ),
+        "content_long_soak_governed": (
+            bool(content_soak.get("content_soak_state", ""))
+            and canonical_registry_contains(canonical_registry, "content_soak_report"),
+            "content soak state is not yet governed as a canonical operating artifact",
+            f"content_soak_state={content_soak.get('content_soak_state', '')} canonical_registry={canonical_registry}",
+            ["content_soak_governor", "artifact_governor"],
+        ),
+        "repo_and_minecraft_bundle_governed": (
+            int(repo_bundle.get("bundle_completed", 0)) >= int(repo_bundle.get("bundle_total", 0)) > 0
+            and int(minecraft_bundle.get("bundle_completed", 0)) >= int(minecraft_bundle.get("bundle_total", 0)) > 0,
+            "large-bundle repo or minecraft surface is incomplete",
+            (
+                f"repo_bundle={repo_bundle.get('bundle_completed', 0)}/{repo_bundle.get('bundle_total', 0)} "
+                f"minecraft_bundle={minecraft_bundle.get('bundle_completed', 0)}/{minecraft_bundle.get('bundle_total', 0)}"
+            ),
+            ["repo_bundle_governor", "minecraft_bundle_governor"],
+        ),
+        "minecraft_strategy_canonicalized": (
+            bool(minecraft_strategy.get("next_focus_csv", ""))
+            and canonical_registry_contains(canonical_registry, "minecraft_domain_strategy"),
+            "minecraft-scale strategy is not yet governed as a canonical operating artifact",
+            f"next_focus_csv={minecraft_strategy.get('next_focus_csv', '')} canonical_registry={canonical_registry}",
+            ["minecraft_strategy_governor", "artifact_governor"],
+        ),
+        "minecraft_soak_governed": (
+            bool(minecraft_soak.get("minecraft_soak_state", ""))
+            and canonical_registry_contains(canonical_registry, "minecraft_domain_soak_report"),
+            "minecraft-scale soak state is not yet governed as a canonical operating artifact",
+            f"minecraft_soak_state={minecraft_soak.get('minecraft_soak_state', '')} canonical_registry={canonical_registry}",
+            ["minecraft_soak_governor", "artifact_governor"],
+        ),
+        "player_experience_governed": (
+            float(player_experience.get("estimated_completeness_percent", 0.0)) >= 0.0
+            and canonical_registry_contains(canonical_registry, "player_experience_profile"),
+            "player-facing completeness is not yet governed as a canonical operating artifact",
+            f"experience_percent={player_experience.get('estimated_completeness_percent', 0)} canonical_registry={canonical_registry}",
+            ["player_experience_governor", "artifact_governor"],
+        ),
+        "player_experience_long_soak_governed": (
+            bool(player_experience_soak.get("player_experience_soak_state", ""))
+            and canonical_registry_contains(canonical_registry, "player_experience_soak_report"),
+            "player-facing completeness does not yet preserve a governed long-soak artifact",
+            f"player_experience_soak_state={player_experience_soak.get('player_experience_soak_state', '')} canonical_registry={canonical_registry}",
+            ["player_experience_soak_governor", "artifact_governor"],
+        ),
+        "engagement_fatigue_governed": (
+            float(engagement_fatigue.get("fatigue_gap_score", 0.0)) >= 0.0
+            and canonical_registry_contains(canonical_registry, "engagement_fatigue_profile"),
+            "thinness and repetition fatigue are not yet governed as a canonical operating artifact",
+            f"fatigue_gap_score={engagement_fatigue.get('fatigue_gap_score', '')} canonical_registry={canonical_registry}",
+            ["engagement_fatigue_governor", "artifact_governor"],
+        ),
+        "engagement_fatigue_under_control": (
+            float(engagement_fatigue.get("fatigue_gap_score", 1.0)) <= 0.55,
+            "thinness, repetition fatigue, or novelty gap remains too high for the conservative bar",
+            f"fatigue_gap_score={engagement_fatigue.get('fatigue_gap_score', '')} fatigue_state={engagement_fatigue.get('fatigue_state', '')}",
+            ["content_governor", "content_strategy_governor", "engagement_fatigue_governor", "player_experience_governor"],
+        ),
     }
 
     failed_criteria = [name for name, criterion in criteria.items() if not criterion[0]]
@@ -198,10 +321,26 @@ def evaluate() -> dict[str, Any]:
     }
 
 
-def main() -> int:
-    payload = evaluate()
+def write_payload(payload: dict[str, Any]) -> None:
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_PATH.write_text(json.dumps(payload, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+
+
+def load_eval_bundle(*, refresh_if_stale: bool = True) -> dict[str, Any]:
+    if refresh_if_stale and output_is_stale():
+        payload = evaluate()
+        write_payload(payload)
+        return payload
+    if OUTPUT_PATH.exists():
+        return json.loads(OUTPUT_PATH.read_text(encoding="utf-8"))
+    payload = evaluate()
+    write_payload(payload)
+    return payload
+
+
+def main() -> int:
+    payload = evaluate()
+    write_payload(payload)
     print("FINAL_THRESHOLD_EVAL")
     print(f"FINAL_THRESHOLD_READY={1 if payload['final_threshold_ready'] else 0}")
     print(f"FAILED_CRITERIA={len(payload['failed_criteria'])}")

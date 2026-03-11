@@ -18,6 +18,7 @@ CONTROL_STATE = RUNTIME / "autonomy" / "control" / "state.yml"
 SUMMARY_PATH = RUNTIME / "autonomy" / "anti_cheat_governor_summary.yml"
 ANTI_CHEAT_DIR = RUNTIME / "anti_cheat"
 LEDGER_PATH = ANTI_CHEAT_DIR / "ledger.jsonl"
+PLAYER_EXPERIENCE_PATH = RUNTIME / "autonomy" / "player_experience_summary.yml"
 
 
 def now_iso() -> str:
@@ -46,6 +47,7 @@ def append_jsonl(path: Path, payload: dict[str, Any]) -> None:
 def main() -> int:
     created_at = now_iso()
     control = load_yaml(CONTROL_STATE)
+    player_experience = load_yaml(PLAYER_EXPERIENCE_PATH)
     ANTI_CHEAT_DIR.mkdir(parents=True, exist_ok=True)
     threshold = float(((load_yaml(CONFIG / "autonomy.yml").get("quality_targets", {}) or {}).get("exploit_incident_warning", 2.0)))
     status_dir = RUNTIME / "status"
@@ -79,6 +81,23 @@ def main() -> int:
             }
         )
 
+    experience_percent = float(player_experience.get("estimated_completeness_percent", 0.0))
+    first_session_strength = float(player_experience.get("first_session_strength", 0.0))
+    progression_protection_score = round(
+        max(
+            0.0,
+            min(
+                1.0,
+                0.55
+                + (0.25 if incidents == 0 else 0.0)
+                + (0.1 if exploit_flags == 0 else 0.0)
+                + (0.1 if first_session_strength >= 0.9 else 0.0),
+            ),
+        ),
+        2,
+    )
+    trusted_progression_window = bool(incidents == 0 and exploit_flags == 0 and experience_percent >= 40.0)
+
     plan_id = f"ac-{uuid.uuid4().hex[:12]}"
     payload = {
         "plan_id": plan_id,
@@ -92,6 +111,10 @@ def main() -> int:
             "mode": "hold_and_review" if incidents >= threshold or exploit_flags > 0 else "observe_and_replay",
             "replayable": True,
             "append_only_truth": True,
+        },
+        "progression_protection": {
+            "progression_protection_score": progression_protection_score,
+            "trusted_progression_window": trusted_progression_window,
         },
     }
     payload["signature"] = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
@@ -113,6 +136,8 @@ def main() -> int:
         "incident_total": incidents,
         "exploit_flags": exploit_flags,
         "mode": payload["rule_change"]["mode"],
+        "progression_protection_score": progression_protection_score,
+        "trusted_progression_window": trusted_progression_window,
         "autonomy_threshold_ready": bool(control.get("autonomy_threshold_ready", False)),
     }
     write_yaml(SUMMARY_PATH, summary)

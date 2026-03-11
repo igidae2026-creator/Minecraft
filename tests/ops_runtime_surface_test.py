@@ -39,6 +39,9 @@ def test_policy_layer_seeds_soak_observation_jobs(tmp_path: Path):
     try:
         control_dir = runtime_data / "autonomy" / "control"
         control_dir.mkdir(parents=True, exist_ok=True)
+        jobs_root = runtime_data / "autonomy" / "core" / "jobs"
+        if jobs_root.exists():
+            shutil.rmtree(jobs_root, ignore_errors=True)
         (control_dir / "state.yml").write_text(
             dump_yaml({"active_soak": {"decision_id": "aql-soak"}}),
             encoding="utf-8",
@@ -126,6 +129,40 @@ def test_artifact_governor_creates_canonical_operating_artifacts(tmp_path: Path)
             ),
             encoding="utf-8",
         )
+        autonomy_dir = runtime_data / "autonomy"
+        autonomy_dir.mkdir(parents=True, exist_ok=True)
+        (autonomy_dir / "content_governor_summary.yml").write_text(
+            "generated: 16\npromoted: 7\nheld: 9\naverage_depth_score: 1.99\naverage_retention_proxy: 1.59\naverage_quality_score: 8.0\nfirst_loop_coverage_score: 2.4\nsocial_loop_density: 1.8\nreplayable_loop_score: 2.1\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "content_strategy_summary.yml").write_text(
+            "next_focus_csv: social,event,onboarding\nrecommended_repairs_csv: content_governor,liveops_governor,economy_governor,anti_cheat_governor\nrecommended_repairs_count: 4\nruntime_queue_avg: 5.2\nruntime_event_join_avg: 808.4\nruntime_return_player_reward_avg: 47.0\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "repo_bundle_summary.yml").write_text(
+            "bundle_total: 7\nbundle_completed: 7\nbundle_completion_percent: 100.0\ngovernance_bundle_state: complete\nautonomy_bundle_state: complete\ndocs_information_architecture_bundle_state: complete\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "minecraft_bundle_summary.yml").write_text(
+            "bundle_total: 5\nbundle_completed: 5\nbundle_completion_percent: 100.0\ngameplay_progression_bundle_state: complete\neconomy_market_bundle_state: complete\nsocial_liveops_bundle_state: complete\nanti_cheat_recovery_bundle_state: complete\ngovernance_autonomy_bundle_state: complete\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "minecraft_strategy_summary.yml").write_text(
+            "next_focus_csv: anti_cheat_recovery,gameplay_progression,social_liveops\nrecommended_repairs_csv: anti_cheat_governor,content_governor,liveops_governor\nrecommended_repairs_count: 3\ntop_focus_domain: anti_cheat_recovery\ninflation_ratio: 0.94\nsandbox_cases: 1\ncontent_soak_state: tune\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "player_experience_summary.yml").write_text(
+            "estimated_completeness_percent: 22.4\nexperience_state: early\nonboarding_tempo: 0.41\nreward_tempo: 0.44\nsocial_stickiness: 0.33\nreplay_pull: 0.38\nfriction_penalty: 0.12\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "engagement_fatigue_summary.yml").write_text(
+            "fatigue_gap_score: 0.31\nfatigue_state: watch\nthinness_score: 0.34\nrepetition_score: 0.29\nnovelty_gap_score: 0.28\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "player_experience_soak_summary.yml").write_text(
+            "player_experience_soak_state: observe\nestimated_completeness_percent: 22.4\nexperience_state: early\ncombined_recommended_repairs_count: 4\n",
+            encoding="utf-8",
+        )
 
         result = subprocess.run([sys.executable, str(ROOT / "ops" / "artifact_governor.py")], check=True, cwd=ROOT, capture_output=True, text=True)
         proposal_dir = runtime_data / "artifact_proposals"
@@ -137,6 +174,14 @@ def test_artifact_governor_creates_canonical_operating_artifacts(tmp_path: Path)
         assert summary["accepted"] >= 4
         assert len(list(proposal_dir.glob("*.yml"))) >= 4
         assert len(list(canonical_dir.glob("*.yml"))) >= 4
+        assert "CANONICAL=minecraft_runtime:content_quality_profile" in result.stdout
+        assert "CANONICAL=minecraft_runtime:content_portfolio_strategy" in result.stdout
+        assert "CANONICAL=minecraft_runtime:repo_bundle_profile" in result.stdout
+        assert "CANONICAL=minecraft_runtime:minecraft_domain_bundle_profile" in result.stdout
+        assert "CANONICAL=minecraft_runtime:minecraft_domain_strategy" in result.stdout
+        assert "CANONICAL=minecraft_runtime:player_experience_profile" in result.stdout
+        assert "CANONICAL=minecraft_runtime:engagement_fatigue_profile" in result.stdout
+        assert "CANONICAL=minecraft_runtime:player_experience_soak_report" in result.stdout
     finally:
         if runtime_data.exists():
             shutil.rmtree(runtime_data, ignore_errors=True)
@@ -179,22 +224,91 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         subprocess.run([sys.executable, str(ROOT / "ops" / "economy_governor.py")], check=True, cwd=ROOT)
         subprocess.run([sys.executable, str(ROOT / "ops" / "anti_cheat_governor.py")], check=True, cwd=ROOT)
         subprocess.run([sys.executable, str(ROOT / "ops" / "liveops_governor.py")], check=True, cwd=ROOT)
+        subprocess.run([sys.executable, str(ROOT / "ops" / "player_experience_governor.py")], check=True, cwd=ROOT)
+        subprocess.run([sys.executable, str(ROOT / "ops" / "gameplay_progression_governor.py")], check=True, cwd=ROOT)
+        subprocess.run([sys.executable, str(ROOT / "ops" / "engagement_fatigue_governor.py")], check=True, cwd=ROOT)
+        subprocess.run([sys.executable, str(ROOT / "ops" / "material_inventory.py")], check=True, cwd=ROOT)
+        subprocess.run([sys.executable, str(ROOT / "ops" / "runtime_partition_governor.py")], check=True, cwd=ROOT)
+        subprocess.run([sys.executable, str(ROOT / "ops" / "content_strategy_governor.py")], check=True, cwd=ROOT)
+        subprocess.run([sys.executable, str(ROOT / "ops" / "content_soak_governor.py")], check=True, cwd=ROOT)
+        subprocess.run([sys.executable, str(ROOT / "ops" / "content_bundle_governor.py")], check=True, cwd=ROOT)
+        subprocess.run([sys.executable, str(ROOT / "ops" / "repo_bundle_governor.py")], check=True, cwd=ROOT)
+        subprocess.run([sys.executable, str(ROOT / "ops" / "minecraft_bundle_governor.py")], check=True, cwd=ROOT)
+        subprocess.run([sys.executable, str(ROOT / "ops" / "minecraft_strategy_governor.py")], check=True, cwd=ROOT)
+        subprocess.run([sys.executable, str(ROOT / "ops" / "player_experience_soak_governor.py")], check=True, cwd=ROOT)
+        subprocess.run([sys.executable, str(ROOT / "ops" / "minecraft_soak_governor.py")], check=True, cwd=ROOT)
 
         assert len(list((runtime_data / "content_pipeline").rglob("*.yml"))) >= 1
         assert len(list((runtime_data / "economy_operations").glob("*.yml"))) >= 1
         assert len(list((runtime_data / "anti_cheat").glob("*.yml"))) >= 1
         assert len(list((runtime_data / "live_ops").glob("*.yml"))) >= 1
+        assert (runtime_data / "audit" / "MATERIAL_INVENTORY.yml").is_file()
         content_summary = yaml.safe_load((runtime_data / "autonomy" / "content_governor_summary.yml").read_text(encoding="utf-8"))
         economy_summary = yaml.safe_load((runtime_data / "autonomy" / "economy_governor_summary.yml").read_text(encoding="utf-8"))
         anti_cheat_summary = yaml.safe_load((runtime_data / "autonomy" / "anti_cheat_governor_summary.yml").read_text(encoding="utf-8"))
         liveops_summary = yaml.safe_load((runtime_data / "autonomy" / "liveops_governor_summary.yml").read_text(encoding="utf-8"))
+        material_summary = yaml.safe_load((runtime_data / "autonomy" / "material_inventory_summary.yml").read_text(encoding="utf-8"))
+        partition_summary = yaml.safe_load((runtime_data / "autonomy" / "runtime_partition_summary.yml").read_text(encoding="utf-8"))
+        strategy_summary = yaml.safe_load((runtime_data / "autonomy" / "content_strategy_summary.yml").read_text(encoding="utf-8"))
+        soak_summary = yaml.safe_load((runtime_data / "autonomy" / "content_soak_summary.yml").read_text(encoding="utf-8"))
+        bundle_summary = yaml.safe_load((runtime_data / "autonomy" / "content_bundle_summary.yml").read_text(encoding="utf-8"))
+        repo_bundle_summary = yaml.safe_load((runtime_data / "autonomy" / "repo_bundle_summary.yml").read_text(encoding="utf-8"))
+        minecraft_bundle_summary = yaml.safe_load((runtime_data / "autonomy" / "minecraft_bundle_summary.yml").read_text(encoding="utf-8"))
+        minecraft_strategy_summary = yaml.safe_load((runtime_data / "autonomy" / "minecraft_strategy_summary.yml").read_text(encoding="utf-8"))
+        minecraft_soak_summary = yaml.safe_load((runtime_data / "autonomy" / "minecraft_soak_summary.yml").read_text(encoding="utf-8"))
+        player_experience_summary = yaml.safe_load((runtime_data / "autonomy" / "player_experience_summary.yml").read_text(encoding="utf-8"))
+        player_experience_soak_summary = yaml.safe_load((runtime_data / "autonomy" / "player_experience_soak_summary.yml").read_text(encoding="utf-8"))
+        gameplay_progression_summary = yaml.safe_load((runtime_data / "autonomy" / "gameplay_progression_summary.yml").read_text(encoding="utf-8"))
+        engagement_fatigue_summary = yaml.safe_load((runtime_data / "autonomy" / "engagement_fatigue_summary.yml").read_text(encoding="utf-8"))
 
-        assert content_summary["generated"] >= 8
+        assert content_summary["generated"] >= 14
         assert content_summary["by_type"]["onboarding"] >= 1
         assert content_summary["by_type"]["social"] >= 1
+        assert content_summary["by_type"]["quest_chain"] >= 1
+        assert content_summary["by_type"]["dungeon_variation"] >= 1
+        assert content_summary["by_type"]["season"] >= 1
+        assert content_summary["average_depth_score"] > 0
+        assert content_summary["average_quality_score"] > 0
+        assert float(content_summary["first_loop_coverage_score"]) >= 2.0
+        assert float(content_summary["social_loop_density"]) >= 1.5
+        assert float(content_summary["replayable_loop_score"]) >= 1.5
         assert economy_summary["action"] in {"adjust", "observe"}
         assert anti_cheat_summary["sandbox_cases"] >= 1
+        assert float(anti_cheat_summary["progression_protection_score"]) >= 0
         assert liveops_summary["promoted_actions"] >= 1
+        assert isinstance(liveops_summary["boost_reentry"], bool)
+        assert float(gameplay_progression_summary["progression_total_score"]) >= 0
+        assert gameplay_progression_summary["progression_state"] in {"early", "mid", "advanced"}
+        assert float(engagement_fatigue_summary["fatigue_gap_score"]) >= 0
+        assert engagement_fatigue_summary["fatigue_state"] in {"low", "watch", "high"}
+        assert material_summary["canonical_source_files"] > 0
+        assert partition_summary["runtime_files"] >= partition_summary["canonical_snapshot_files"]
+        assert partition_summary["volatile_runtime_files"] >= 1
+        assert len([item for item in strategy_summary["next_focus_csv"].split(",") if item]) == 3
+        assert strategy_summary["candidate_count"] >= 8
+        assert float(strategy_summary["runtime_event_join_avg"]) >= 0
+        assert float(strategy_summary["runtime_queue_avg"]) >= 0
+        assert soak_summary["content_soak_state"] in {"active", "observe", "tune", "stable"}
+        assert int(bundle_summary["bundle_total"]) == 7
+        assert int(bundle_summary["bundle_completed"]) >= 1
+        assert bundle_summary["player_facing_depth_state"] in {"partial", "complete"}
+        assert int(repo_bundle_summary["bundle_total"]) == 7
+        assert int(repo_bundle_summary["bundle_completed"]) >= 1
+        assert int(minecraft_bundle_summary["bundle_total"]) == 6
+        assert int(minecraft_bundle_summary["bundle_completed"]) >= 1
+        assert minecraft_bundle_summary["player_experience_bundle_state"] in {"partial", "complete"}
+        assert int(minecraft_strategy_summary["recommended_repairs_count"]) >= 1
+        assert len([item for item in minecraft_strategy_summary["next_focus_csv"].split(",") if item]) == 3
+        assert float(minecraft_strategy_summary["estimated_completeness_percent"]) >= 0
+        assert minecraft_strategy_summary["experience_state"] in {"early", "mid", "advanced"}
+        assert minecraft_soak_summary["minecraft_soak_state"] in {"tune", "observe", "stable"}
+        assert float(player_experience_summary["estimated_completeness_percent"]) >= 0
+        assert player_experience_summary["experience_state"] in {"early", "mid", "advanced"}
+        assert float(player_experience_summary["first_session_strength"]) >= 0
+        assert float(player_experience_summary["trust_pull"]) >= 0
+        assert player_experience_soak_summary["player_experience_soak_state"] in {"tune", "observe", "stable"}
+        assert float(player_experience_soak_summary["first_session_strength"]) >= 0
+        assert float(player_experience_soak_summary["trust_pull"]) >= 0
     finally:
         if runtime_data.exists():
             shutil.rmtree(runtime_data, ignore_errors=True)
@@ -271,11 +385,60 @@ def test_final_threshold_eval_and_repair_bundle(tmp_path: Path):
                 encoding="utf-8",
             )
         autonomy_dir = runtime_data / "autonomy"
-        (autonomy_dir / "artifact_governor_summary.yml").write_text("canonical_registry:\n- minecraft_runtime:consumer_health_rollup\n", encoding="utf-8")
+        (autonomy_dir / "artifact_governor_summary.yml").write_text(
+            "canonical_registry:\n"
+            "- minecraft_runtime:consumer_health_rollup\n"
+            "- minecraft_runtime:content_portfolio_strategy\n"
+            "- minecraft_runtime:content_soak_report\n"
+            "- minecraft_runtime:minecraft_domain_strategy\n"
+            "- minecraft_runtime:minecraft_domain_soak_report\n"
+            "- minecraft_runtime:player_experience_profile\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "engagement_fatigue_summary.yml").write_text(
+            "fatigue_gap_score: 0.25\nfatigue_state: low\nthinness_score: 0.21\nrepetition_score: 0.28\nnovelty_gap_score: 0.26\n",
+            encoding="utf-8",
+        )
         (autonomy_dir / "content_governor_summary.yml").write_text("generated: 3\npromoted: 3\nheld: 0\n", encoding="utf-8")
         (autonomy_dir / "economy_governor_summary.yml").write_text("action: observe\ninflation_ratio: 1.1\n", encoding="utf-8")
         (autonomy_dir / "anti_cheat_governor_summary.yml").write_text("sandbox_cases: 1\nmode: observe_and_replay\n", encoding="utf-8")
         (autonomy_dir / "liveops_governor_summary.yml").write_text("promoted_actions: 2\nheld_actions: 0\n", encoding="utf-8")
+        (autonomy_dir / "content_strategy_summary.yml").write_text(
+            "next_focus_csv: social,event,onboarding\nrecommended_repairs_csv: content_governor,liveops_governor\nrecommended_repairs_count: 2\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "content_soak_summary.yml").write_text(
+            "content_soak_state: stable\nsteady_noop_streak: 12\nrecommended_repairs_count: 0\ncontent_next_focus_csv: social,event,onboarding\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "content_bundle_summary.yml").write_text(
+            "bundle_total: 6\nbundle_completed: 6\nbundle_completion_percent: 100.0\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "repo_bundle_summary.yml").write_text(
+            "bundle_total: 7\nbundle_completed: 7\nbundle_completion_percent: 100.0\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "minecraft_bundle_summary.yml").write_text(
+            "bundle_total: 6\nbundle_completed: 6\nbundle_completion_percent: 100.0\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "minecraft_strategy_summary.yml").write_text(
+            "next_focus_csv: gameplay_progression,social_liveops,anti_cheat_recovery\nrecommended_repairs_csv: content_governor,player_experience_governor,player_experience_soak_governor\nrecommended_repairs_count: 3\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "minecraft_soak_summary.yml").write_text(
+            "minecraft_soak_state: observe\nsteady_noop_streak: 12\nrecommended_repairs_count: 1\nminecraft_bundle_completion_percent: 100.0\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "player_experience_summary.yml").write_text(
+            "estimated_completeness_percent: 37.6\nexperience_state: mid\nfriction_penalty: 0.15\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "player_experience_soak_summary.yml").write_text(
+            "player_experience_soak_state: observe\nestimated_completeness_percent: 37.6\nexperience_state: mid\ncombined_recommended_repairs_count: 3\n",
+            encoding="utf-8",
+        )
 
         subprocess.run([sys.executable, str(ROOT / "ops" / "final_threshold_eval.py")], check=True, cwd=ROOT)
         result = subprocess.run([sys.executable, str(ROOT / "ops" / "final_threshold_repair.py")], check=True, cwd=ROOT, capture_output=True, text=True)
@@ -285,6 +448,9 @@ def test_final_threshold_eval_and_repair_bundle(tmp_path: Path):
         assert "long_soak_steady_noop" in payload["failed_criteria"]
         assert "autonomous_quality_loop" in payload["next_required_repairs"]
         assert "ENQUEUED=" in result.stdout
+        assert "REPAIR=content_governor" in result.stdout
+        assert "REPAIR=liveops_governor" in result.stdout
+        assert "REPAIR=player_experience_soak_governor" in result.stdout
     finally:
         if runtime_data.exists():
             shutil.rmtree(runtime_data, ignore_errors=True)

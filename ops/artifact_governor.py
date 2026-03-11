@@ -15,6 +15,17 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNTIME = ROOT / "runtime_data"
 CONTROL_STATE = RUNTIME / "autonomy" / "control" / "state.yml"
 SUMMARY_PATH = RUNTIME / "autonomy" / "artifact_governor_summary.yml"
+CONTENT_SUMMARY_PATH = RUNTIME / "autonomy" / "content_governor_summary.yml"
+CONTENT_STRATEGY_PATH = RUNTIME / "autonomy" / "content_strategy_summary.yml"
+CONTENT_SOAK_PATH = RUNTIME / "autonomy" / "content_soak_summary.yml"
+REPO_BUNDLE_PATH = RUNTIME / "autonomy" / "repo_bundle_summary.yml"
+MINECRAFT_BUNDLE_PATH = RUNTIME / "autonomy" / "minecraft_bundle_summary.yml"
+MINECRAFT_STRATEGY_PATH = RUNTIME / "autonomy" / "minecraft_strategy_summary.yml"
+MINECRAFT_SOAK_PATH = RUNTIME / "autonomy" / "minecraft_soak_summary.yml"
+PLAYER_EXPERIENCE_PATH = RUNTIME / "autonomy" / "player_experience_summary.yml"
+PLAYER_EXPERIENCE_SOAK_PATH = RUNTIME / "autonomy" / "player_experience_soak_summary.yml"
+GAMEPLAY_PROGRESSION_PATH = RUNTIME / "autonomy" / "gameplay_progression_summary.yml"
+ENGAGEMENT_FATIGUE_PATH = RUNTIME / "autonomy" / "engagement_fatigue_summary.yml"
 PROPOSAL_DIR = RUNTIME / "artifact_proposals"
 CANONICAL_DIR = RUNTIME / "canonical_artifacts"
 VERDICT_LOG = PROPOSAL_DIR / "verdicts.jsonl"
@@ -49,6 +60,17 @@ def proposal_key(scope: str, artifact_class: str) -> str:
 
 
 def canonical_candidates(control: dict[str, Any]) -> list[dict[str, Any]]:
+    content = load_yaml(CONTENT_SUMMARY_PATH)
+    content_strategy = load_yaml(CONTENT_STRATEGY_PATH)
+    content_soak = load_yaml(CONTENT_SOAK_PATH)
+    repo_bundle = load_yaml(REPO_BUNDLE_PATH)
+    minecraft_bundle = load_yaml(MINECRAFT_BUNDLE_PATH)
+    minecraft_strategy = load_yaml(MINECRAFT_STRATEGY_PATH)
+    minecraft_soak = load_yaml(MINECRAFT_SOAK_PATH)
+    player_experience = load_yaml(PLAYER_EXPERIENCE_PATH)
+    player_experience_soak = load_yaml(PLAYER_EXPERIENCE_SOAK_PATH)
+    gameplay_progression = load_yaml(GAMEPLAY_PROGRESSION_PATH)
+    engagement_fatigue = load_yaml(ENGAGEMENT_FATIGUE_PATH)
     streak = int(control.get("steady_noop_streak", 0))
     thresholds = {
         "execution": bool(control.get("execution_threshold_ready", False)),
@@ -113,6 +135,91 @@ def canonical_candidates(control: dict[str, Any]) -> list[dict[str, Any]]:
                 },
             }
         )
+        proposals.append(
+            {
+                "artifact_class": "content_quality_profile",
+                "scope": "minecraft_runtime",
+                "reason": "content quality scoring should become a canonical operating input for replayable promotion decisions",
+                "source": "content_governor",
+                "criteria": {
+                    "scope_fit": int(content.get("generated", 0)) > 0,
+                    "authority_fit": thresholds["execution"],
+                    "upgrade_value": float(content.get("average_quality_score", 0.0)) > 0,
+                    "exploration_os_compatibility": True,
+                },
+                "payload": {
+                    "generated": int(content.get("generated", 0)),
+                    "promoted": int(content.get("promoted", 0)),
+                    "held": int(content.get("held", 0)),
+                    "families": len(content.get("by_type", {})),
+                    "average_depth_score": float(content.get("average_depth_score", 0.0)),
+                    "average_retention_proxy": float(content.get("average_retention_proxy", 0.0)),
+                    "average_quality_score": float(content.get("average_quality_score", 0.0)),
+                },
+            }
+        )
+        proposals.append(
+            {
+                "artifact_class": "content_portfolio_strategy",
+                "scope": "minecraft_runtime",
+                "reason": "portfolio focus and repair priorities should be promoted into the governed operating surface",
+                "source": "content_strategy_governor",
+                "criteria": {
+                    "scope_fit": bool(content_strategy.get("next_focus_csv", "")),
+                    "authority_fit": thresholds["autonomy"],
+                    "upgrade_value": int(content_strategy.get("recommended_repairs_count", 0)) >= 0,
+                    "exploration_os_compatibility": True,
+                },
+                "payload": {
+                    "next_focus_csv": str(content_strategy.get("next_focus_csv", "")),
+                    "recommended_repairs_csv": str(content_strategy.get("recommended_repairs_csv", "")),
+                    "runtime_queue_avg": float(content_strategy.get("runtime_queue_avg", 0.0)),
+                    "runtime_event_join_avg": float(content_strategy.get("runtime_event_join_avg", 0.0)),
+                    "runtime_return_player_reward_avg": float(content_strategy.get("runtime_return_player_reward_avg", 0.0)),
+                },
+            }
+        )
+        proposals.append(
+            {
+                "artifact_class": "content_soak_report",
+                "scope": "minecraft_runtime",
+                "reason": "content long-soak state should be governed for promotion and replay decisions",
+                "source": "content_soak_governor",
+                "criteria": {
+                    "scope_fit": bool(content_soak.get("content_soak_state", "")),
+                    "authority_fit": thresholds["autonomy"],
+                    "upgrade_value": int(content_soak.get("steady_noop_streak", 0)) >= 0,
+                    "exploration_os_compatibility": True,
+                },
+                "payload": {
+                    "content_soak_state": str(content_soak.get("content_soak_state", "")),
+                    "steady_noop_streak": int(content_soak.get("steady_noop_streak", 0)),
+                    "recommended_repairs_count": int(content_soak.get("recommended_repairs_count", 0)),
+                    "content_next_focus_csv": str(content_soak.get("content_next_focus_csv", "")),
+                },
+            }
+        )
+        proposals.append(
+            {
+                "artifact_class": "gameplay_progression_profile",
+                "scope": "minecraft_runtime",
+                "reason": "gameplay progression spine should become a governed operating artifact rather than a loose aggregate intuition",
+                "source": "gameplay_progression_governor",
+                "criteria": {
+                    "scope_fit": float(gameplay_progression.get("progression_total_score", 0.0)) >= 0.0,
+                    "authority_fit": thresholds["autonomy"],
+                    "upgrade_value": bool(gameplay_progression.get("progression_state", "")),
+                    "exploration_os_compatibility": True,
+                },
+                "payload": {
+                    "progression_total_score": float(gameplay_progression.get("progression_total_score", 0.0)),
+                    "progression_state": str(gameplay_progression.get("progression_state", "")),
+                    "quest_chain_count": int(gameplay_progression.get("quest_chain_count", 0)),
+                    "dungeon_variation_count": int(gameplay_progression.get("dungeon_variation_count", 0)),
+                    "season_count": int(gameplay_progression.get("season_count", 0)),
+                },
+            }
+        )
     if thresholds["final"]:
         proposals.append(
             {
@@ -130,6 +237,159 @@ def canonical_candidates(control: dict[str, Any]) -> list[dict[str, Any]]:
                     "steady_noop_streak": streak,
                     "projection": "final_threshold_governed_surface",
                     "constraints": ["exploration", "lineage", "replayability", "append_only_truth"],
+                },
+            }
+        )
+        proposals.append(
+            {
+                "artifact_class": "repo_bundle_profile",
+                "scope": "minecraft_runtime",
+                "reason": "repo-scale large-bundle status should be governed as canonical operating context",
+                "source": "repo_bundle_governor",
+                "criteria": {
+                    "scope_fit": int(repo_bundle.get("bundle_total", 0)) > 0,
+                    "authority_fit": thresholds["final"],
+                    "upgrade_value": int(repo_bundle.get("bundle_completed", 0)) >= 1,
+                    "exploration_os_compatibility": True,
+                },
+                "payload": {
+                    "bundle_total": int(repo_bundle.get("bundle_total", 0)),
+                    "bundle_completed": int(repo_bundle.get("bundle_completed", 0)),
+                    "bundle_completion_percent": float(repo_bundle.get("bundle_completion_percent", 0.0)),
+                    "governance_bundle_state": str(repo_bundle.get("governance_bundle_state", "")),
+                    "autonomy_bundle_state": str(repo_bundle.get("autonomy_bundle_state", "")),
+                    "docs_information_architecture_bundle_state": str(repo_bundle.get("docs_information_architecture_bundle_state", "")),
+                },
+            }
+        )
+        proposals.append(
+            {
+                "artifact_class": "minecraft_domain_bundle_profile",
+                "scope": "minecraft_runtime",
+                "reason": "minecraft-scale large-bundle status should be canonical for domain-level promotion and repair reasoning",
+                "source": "minecraft_bundle_governor",
+                "criteria": {
+                    "scope_fit": int(minecraft_bundle.get("bundle_total", 0)) > 0,
+                    "authority_fit": thresholds["final"],
+                    "upgrade_value": int(minecraft_bundle.get("bundle_completed", 0)) >= 1,
+                    "exploration_os_compatibility": True,
+                },
+                "payload": {
+                    "bundle_total": int(minecraft_bundle.get("bundle_total", 0)),
+                    "bundle_completed": int(minecraft_bundle.get("bundle_completed", 0)),
+                    "bundle_completion_percent": float(minecraft_bundle.get("bundle_completion_percent", 0.0)),
+                    "gameplay_progression_bundle_state": str(minecraft_bundle.get("gameplay_progression_bundle_state", "")),
+                    "economy_market_bundle_state": str(minecraft_bundle.get("economy_market_bundle_state", "")),
+                    "social_liveops_bundle_state": str(minecraft_bundle.get("social_liveops_bundle_state", "")),
+                    "anti_cheat_recovery_bundle_state": str(minecraft_bundle.get("anti_cheat_recovery_bundle_state", "")),
+                    "governance_autonomy_bundle_state": str(minecraft_bundle.get("governance_autonomy_bundle_state", "")),
+                },
+            }
+        )
+        proposals.append(
+            {
+                "artifact_class": "minecraft_domain_strategy",
+                "scope": "minecraft_runtime",
+                "reason": "minecraft-scale next-focus and repair strategy should be canonical for cross-domain repair reasoning",
+                "source": "minecraft_strategy_governor",
+                "criteria": {
+                    "scope_fit": bool(minecraft_strategy.get("next_focus_csv", "")),
+                    "authority_fit": thresholds["final"],
+                    "upgrade_value": int(minecraft_strategy.get("recommended_repairs_count", 0)) >= 0,
+                    "exploration_os_compatibility": True,
+                },
+                "payload": {
+                    "next_focus_csv": str(minecraft_strategy.get("next_focus_csv", "")),
+                    "recommended_repairs_csv": str(minecraft_strategy.get("recommended_repairs_csv", "")),
+                    "recommended_repairs_count": int(minecraft_strategy.get("recommended_repairs_count", 0)),
+                    "top_focus_domain": str(minecraft_strategy.get("top_focus_domain", "")),
+                    "inflation_ratio": float(minecraft_strategy.get("inflation_ratio", 0.0)),
+                    "sandbox_cases": int(minecraft_strategy.get("sandbox_cases", 0)),
+                    "content_soak_state": str(minecraft_strategy.get("content_soak_state", "")),
+                },
+            }
+        )
+        proposals.append(
+            {
+                "artifact_class": "minecraft_domain_soak_report",
+                "scope": "minecraft_runtime",
+                "reason": "minecraft-scale soak state should be canonical for long-running domain governance",
+                "source": "minecraft_soak_governor",
+                "criteria": {
+                    "scope_fit": bool(minecraft_soak.get("minecraft_soak_state", "")),
+                    "authority_fit": thresholds["final"],
+                    "upgrade_value": int(minecraft_soak.get("steady_noop_streak", 0)) >= 0,
+                    "exploration_os_compatibility": True,
+                },
+                "payload": {
+                    "minecraft_soak_state": str(minecraft_soak.get("minecraft_soak_state", "")),
+                    "steady_noop_streak": int(minecraft_soak.get("steady_noop_streak", 0)),
+                    "recommended_repairs_count": int(minecraft_soak.get("recommended_repairs_count", 0)),
+                    "minecraft_bundle_completion_percent": float(minecraft_soak.get("minecraft_bundle_completion_percent", 0.0)),
+                },
+            }
+        )
+        proposals.append(
+            {
+                "artifact_class": "player_experience_profile",
+                "scope": "minecraft_runtime",
+                "reason": "player-facing completeness should be governed as an operating artifact rather than a loose narrative estimate",
+                "source": "player_experience_governor",
+                "criteria": {
+                    "scope_fit": float(player_experience.get("estimated_completeness_percent", 0.0)) >= 0.0,
+                    "authority_fit": thresholds["final"],
+                    "upgrade_value": bool(player_experience.get("experience_state", "")),
+                    "exploration_os_compatibility": True,
+                },
+                "payload": {
+                    "estimated_completeness_percent": float(player_experience.get("estimated_completeness_percent", 0.0)),
+                    "experience_state": str(player_experience.get("experience_state", "")),
+                    "onboarding_tempo": float(player_experience.get("onboarding_tempo", 0.0)),
+                    "reward_tempo": float(player_experience.get("reward_tempo", 0.0)),
+                    "social_stickiness": float(player_experience.get("social_stickiness", 0.0)),
+                    "replay_pull": float(player_experience.get("replay_pull", 0.0)),
+                    "friction_penalty": float(player_experience.get("friction_penalty", 0.0)),
+                },
+            }
+        )
+        proposals.append(
+            {
+                "artifact_class": "engagement_fatigue_profile",
+                "scope": "minecraft_runtime",
+                "reason": "thinness, repetition fatigue, and novelty gap should be governed as a conservative operating surface rather than hidden in narrative review",
+                "source": "engagement_fatigue_governor",
+                "criteria": {
+                    "scope_fit": float(engagement_fatigue.get("fatigue_gap_score", 0.0)) >= 0.0,
+                    "authority_fit": thresholds["final"],
+                    "upgrade_value": bool(engagement_fatigue.get("fatigue_state", "")),
+                    "exploration_os_compatibility": True,
+                },
+                "payload": {
+                    "fatigue_gap_score": float(engagement_fatigue.get("fatigue_gap_score", 0.0)),
+                    "fatigue_state": str(engagement_fatigue.get("fatigue_state", "")),
+                    "thinness_score": float(engagement_fatigue.get("thinness_score", 0.0)),
+                    "repetition_score": float(engagement_fatigue.get("repetition_score", 0.0)),
+                    "novelty_gap_score": float(engagement_fatigue.get("novelty_gap_score", 0.0)),
+                },
+            }
+        )
+        proposals.append(
+            {
+                "artifact_class": "player_experience_soak_report",
+                "scope": "minecraft_runtime",
+                "reason": "player-facing completeness should retain a governed long-soak state instead of a point-in-time estimate",
+                "source": "player_experience_soak_governor",
+                "criteria": {
+                    "scope_fit": bool(player_experience_soak.get("player_experience_soak_state", "")),
+                    "authority_fit": thresholds["final"],
+                    "upgrade_value": float(player_experience_soak.get("estimated_completeness_percent", 0.0)) >= 0.0,
+                    "exploration_os_compatibility": True,
+                },
+                "payload": {
+                    "player_experience_soak_state": str(player_experience_soak.get("player_experience_soak_state", "")),
+                    "estimated_completeness_percent": float(player_experience_soak.get("estimated_completeness_percent", 0.0)),
+                    "experience_state": str(player_experience_soak.get("experience_state", "")),
+                    "combined_recommended_repairs_count": int(player_experience_soak.get("combined_recommended_repairs_count", 0)),
                 },
             }
         )
@@ -197,6 +457,7 @@ def main() -> int:
         "created_at": created_at,
         "proposed": proposed,
         "accepted": accepted,
+        "canonical_classes": len(canonical_registry),
         "canonical_registry": canonical_registry,
         "thresholds": {
             "execution": bool(control.get("execution_threshold_ready", False)),

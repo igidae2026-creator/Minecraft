@@ -6,6 +6,8 @@ import sys
 import json
 import yaml
 
+from final_threshold_eval import load_eval_bundle
+
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME = ROOT / "runtime_data"
@@ -17,6 +19,19 @@ ECONOMY_GOVERNOR_SUMMARY = RUNTIME / "autonomy" / "economy_governor_summary.yml"
 ANTI_CHEAT_GOVERNOR_SUMMARY = RUNTIME / "autonomy" / "anti_cheat_governor_summary.yml"
 LIVEOPS_GOVERNOR_SUMMARY = RUNTIME / "autonomy" / "liveops_governor_summary.yml"
 FINAL_THRESHOLD_EVAL = RUNTIME / "autonomy" / "final_threshold_eval.json"
+MATERIAL_INVENTORY_SUMMARY = RUNTIME / "autonomy" / "material_inventory_summary.yml"
+RUNTIME_PARTITION_SUMMARY = RUNTIME / "autonomy" / "runtime_partition_summary.yml"
+CONTENT_STRATEGY_SUMMARY = RUNTIME / "autonomy" / "content_strategy_summary.yml"
+CONTENT_SOAK_SUMMARY = RUNTIME / "autonomy" / "content_soak_summary.yml"
+CONTENT_BUNDLE_SUMMARY = RUNTIME / "autonomy" / "content_bundle_summary.yml"
+REPO_BUNDLE_SUMMARY = RUNTIME / "autonomy" / "repo_bundle_summary.yml"
+MINECRAFT_BUNDLE_SUMMARY = RUNTIME / "autonomy" / "minecraft_bundle_summary.yml"
+MINECRAFT_STRATEGY_SUMMARY = RUNTIME / "autonomy" / "minecraft_strategy_summary.yml"
+MINECRAFT_SOAK_SUMMARY = RUNTIME / "autonomy" / "minecraft_soak_summary.yml"
+PLAYER_EXPERIENCE_SUMMARY = RUNTIME / "autonomy" / "player_experience_summary.yml"
+PLAYER_EXPERIENCE_SOAK_SUMMARY = RUNTIME / "autonomy" / "player_experience_soak_summary.yml"
+GAMEPLAY_PROGRESSION_SUMMARY = RUNTIME / "autonomy" / "gameplay_progression_summary.yml"
+ENGAGEMENT_FATIGUE_SUMMARY = RUNTIME / "autonomy" / "engagement_fatigue_summary.yml"
 
 
 def load_yaml(path: Path):
@@ -195,7 +210,20 @@ def main() -> int:
     economy_governor = load_yaml(ECONOMY_GOVERNOR_SUMMARY)
     anti_cheat_governor = load_yaml(ANTI_CHEAT_GOVERNOR_SUMMARY)
     liveops_governor = load_yaml(LIVEOPS_GOVERNOR_SUMMARY)
-    final_threshold_eval = json.loads(FINAL_THRESHOLD_EVAL.read_text(encoding="utf-8")) if FINAL_THRESHOLD_EVAL.exists() else {}
+    final_threshold_eval = load_eval_bundle(refresh_if_stale=True)
+    material_inventory = load_yaml(MATERIAL_INVENTORY_SUMMARY)
+    runtime_partition = load_yaml(RUNTIME_PARTITION_SUMMARY)
+    content_strategy = load_yaml(CONTENT_STRATEGY_SUMMARY)
+    content_soak = load_yaml(CONTENT_SOAK_SUMMARY)
+    content_bundle = load_yaml(CONTENT_BUNDLE_SUMMARY)
+    repo_bundle = load_yaml(REPO_BUNDLE_SUMMARY)
+    minecraft_bundle = load_yaml(MINECRAFT_BUNDLE_SUMMARY)
+    minecraft_strategy = load_yaml(MINECRAFT_STRATEGY_SUMMARY)
+    minecraft_soak = load_yaml(MINECRAFT_SOAK_SUMMARY)
+    player_experience = load_yaml(PLAYER_EXPERIENCE_SUMMARY)
+    player_experience_soak = load_yaml(PLAYER_EXPERIENCE_SOAK_SUMMARY)
+    gameplay_progression = load_yaml(GAMEPLAY_PROGRESSION_SUMMARY)
+    engagement_fatigue = load_yaml(ENGAGEMENT_FATIGUE_SUMMARY)
     print("RUNTIME_SUMMARY")
     print(f"AUTONOMY_DECISIONS={autonomy_decisions}")
     print(f"AUTONOMY_LAST_MODE={control.get('last_mode', 'unknown')}")
@@ -215,12 +243,57 @@ def main() -> int:
     print(f"CONTENT_PROMOTED={int(content_governor.get('promoted', 0))}")
     print(f"CONTENT_HELD={int(content_governor.get('held', 0))}")
     print(f"CONTENT_FAMILIES={len(content_governor.get('by_type', {}))}")
+    print(f"CONTENT_AVERAGE_DEPTH_SCORE={content_governor.get('average_depth_score', 0)}")
+    print(f"CONTENT_AVERAGE_RETENTION_PROXY={content_governor.get('average_retention_proxy', 0)}")
+    print(f"CONTENT_AVERAGE_QUALITY_SCORE={content_governor.get('average_quality_score', 0)}")
+    print(f"CONTENT_FIRST_LOOP_COVERAGE_SCORE={content_governor.get('first_loop_coverage_score', 0)}")
+    print(f"CONTENT_SOCIAL_LOOP_DENSITY={content_governor.get('social_loop_density', 0)}")
+    print(f"CONTENT_REPLAYABLE_LOOP_SCORE={content_governor.get('replayable_loop_score', 0)}")
+    print(f"CONTENT_NEXT_FOCUS={content_strategy.get('next_focus_csv', '')}")
+    print(f"CONTENT_RECOMMENDED_REPAIRS={int(content_strategy.get('recommended_repairs_count', 0))}")
+    print(f"CONTENT_RUNTIME_QUEUE_AVG={content_strategy.get('runtime_queue_avg', 0)}")
+    print(f"CONTENT_RUNTIME_EVENT_JOIN_AVG={content_strategy.get('runtime_event_join_avg', 0)}")
+    print(f"CONTENT_RUNTIME_RETURN_PLAYER_REWARD_AVG={content_strategy.get('runtime_return_player_reward_avg', 0)}")
+    print(f"GAMEPLAY_PROGRESSION_TOTAL_SCORE={gameplay_progression.get('progression_total_score', 0)}")
+    print(f"GAMEPLAY_PROGRESSION_STATE={gameplay_progression.get('progression_state', '')}")
+    print(f"ENGAGEMENT_FATIGUE_GAP_SCORE={engagement_fatigue.get('fatigue_gap_score', 0)}")
+    print(f"ENGAGEMENT_FATIGUE_STATE={engagement_fatigue.get('fatigue_state', '')}")
+    print(f"CONTENT_SOAK_STATE={content_soak.get('content_soak_state', '')}")
+    print(f"CONTENT_SOAK_RECOMMENDED_REPAIRS={int(content_soak.get('recommended_repairs_count', 0))}")
+    print(f"CONTENT_BUNDLE_COMPLETED={int(content_bundle.get('bundle_completed', 0))}")
+    print(f"CONTENT_BUNDLE_TOTAL={int(content_bundle.get('bundle_total', 0))}")
+    print(f"CONTENT_BUNDLE_COMPLETION_PERCENT={content_bundle.get('bundle_completion_percent', 0)}")
+    print(f"CONTENT_PLAYER_FACING_DEPTH_STATE={content_bundle.get('player_facing_depth_state', '')}")
+    print(f"REPO_BUNDLE_COMPLETED={int(repo_bundle.get('bundle_completed', 0))}")
+    print(f"REPO_BUNDLE_TOTAL={int(repo_bundle.get('bundle_total', 0))}")
+    print(f"REPO_BUNDLE_COMPLETION_PERCENT={repo_bundle.get('bundle_completion_percent', 0)}")
+    print(f"MINECRAFT_BUNDLE_COMPLETED={int(minecraft_bundle.get('bundle_completed', 0))}")
+    print(f"MINECRAFT_BUNDLE_TOTAL={int(minecraft_bundle.get('bundle_total', 0))}")
+    print(f"MINECRAFT_BUNDLE_COMPLETION_PERCENT={minecraft_bundle.get('bundle_completion_percent', 0)}")
+    print(f"MINECRAFT_PLAYER_EXPERIENCE_BUNDLE_STATE={minecraft_bundle.get('player_experience_bundle_state', '')}")
+    print(f"MINECRAFT_NEXT_FOCUS={minecraft_strategy.get('next_focus_csv', '')}")
+    print(f"MINECRAFT_RECOMMENDED_REPAIRS={int(minecraft_strategy.get('recommended_repairs_count', 0))}")
+    print(f"MINECRAFT_SOAK_STATE={minecraft_soak.get('minecraft_soak_state', '')}")
+    print(f"PLAYER_EXPERIENCE_PERCENT={player_experience.get('estimated_completeness_percent', 0)}")
+    print(f"PLAYER_EXPERIENCE_STATE={player_experience.get('experience_state', '')}")
+    print(f"PLAYER_EXPERIENCE_FIRST_SESSION_STRENGTH={player_experience.get('first_session_strength', 0)}")
+    print(f"PLAYER_EXPERIENCE_TRUST_PULL={player_experience.get('trust_pull', 0)}")
+    print(f"PLAYER_EXPERIENCE_SOAK_STATE={player_experience_soak.get('player_experience_soak_state', '')}")
     print(f"ECONOMY_ACTION={economy_governor.get('action', '')}")
     print(f"ECONOMY_INFLATION_RATIO={economy_governor.get('inflation_ratio', 0)}")
     print(f"ANTI_CHEAT_SANDBOX_CASES={int(anti_cheat_governor.get('sandbox_cases', 0))}")
     print(f"ANTI_CHEAT_MODE={anti_cheat_governor.get('mode', '')}")
+    print(f"ANTI_CHEAT_PROGRESSION_PROTECTION_SCORE={anti_cheat_governor.get('progression_protection_score', 0)}")
     print(f"LIVEOPS_PROMOTED_ACTIONS={int(liveops_governor.get('promoted_actions', 0))}")
     print(f"LIVEOPS_HELD_ACTIONS={int(liveops_governor.get('held_actions', 0))}")
+    print(f"LIVEOPS_BOOST_REENTRY={1 if liveops_governor.get('boost_reentry', False) else 0}")
+    print(f"MATERIAL_TOTAL_FILES={int(material_inventory.get('total_files', 0))}")
+    print(f"MATERIAL_CANONICAL_SOURCE_FILES={int(material_inventory.get('canonical_source_files', 0))}")
+    print(f"MATERIAL_APPEND_ONLY_RUNTIME_TRUTH_FILES={int(material_inventory.get('append_only_runtime_truth_files', 0))}")
+    print(f"RUNTIME_PARTITION_FILES={int(runtime_partition.get('runtime_files', 0))}")
+    print(f"RUNTIME_VOLATILE_FILES={int(runtime_partition.get('volatile_runtime_files', 0))}")
+    print(f"RUNTIME_CANONICAL_SNAPSHOT_FILES={int(runtime_partition.get('canonical_snapshot_files', 0))}")
+    print(f"RUNTIME_ARCHIVE_CANDIDATE_FILES={int(runtime_partition.get('archive_candidate_files', 0))}")
     print(f"FINAL_THRESHOLD_BUNDLE_READY={1 if final_threshold_eval.get('final_threshold_ready', False) else 0}")
     print(f"FINAL_THRESHOLD_BUNDLE_FAILED_CRITERIA={len(final_threshold_eval.get('failed_criteria', []))}")
     print(f"FINAL_THRESHOLD_BUNDLE_HUMAN_LIFT={final_threshold_eval.get('quality_lift_if_human_intervenes', 0)}")

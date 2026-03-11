@@ -15,6 +15,28 @@ For layer positioning and higher-order design constraints, read [EXPLORATION_OS_
 - Automation limited only to already-included repository scope is not enough; the outer loop must also evaluate newly arriving material, decide whether it belongs in scope, and promote it automatically when it clears quality and relevance gates.
 - The system should continuously raise, reject, defer, or promote work items and source material without waiting for manual triage.
 
+## Current Minecraft Goal
+
+- The active repository goal is not only runtime steadiness.
+- The current direct target is to push Minecraft service completeness upward while keeping Final Threshold closure intact.
+- Progress is counted only if player-facing completeness rises without breaking append-only truth, lineage, replayability, or fail-closed governance.
+- The current uplift path is:
+  1. deepen gameplay progression through longer quest chains, denser dungeon variations, and stronger seasonal arcs
+  2. strengthen onboarding, social, and live-ops re-entry loops
+  3. keep anti-cheat, recovery, and progression trust coupled so completeness gains do not rely on unsafe shortcuts
+  4. preserve bundle, soak, artifact, and final-threshold closure while the player-facing layer grows
+- A content or gameplay increase that lowers governance quality or breaks replayable operating truth does not count as progress.
+- A governance surface that stays green while player-facing completeness stalls also does not count as success.
+
+## Runtime Success Condition
+
+- The current success condition is:
+  - `final_threshold_eval.json` remains ready
+  - repo/content/minecraft bundles remain governed
+  - player-facing completeness keeps rising
+  - human marginal gain stays near zero on the operating surface
+- Until those hold together, the target is still in progress.
+
 ## Evaluation Gate
 
 - If the system still depends on frequent operator steering to maintain runtime quality, the target has not yet been met.

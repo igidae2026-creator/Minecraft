@@ -34,9 +34,39 @@ def test_ops_tooling_executes_cleanly(tmp_path: Path):
     assert "rpg_network_autonomy_control_lineage_entries" in text
     assert "rpg_network_content_generated" in text
     assert "rpg_network_content_families" in text
+    assert "rpg_network_content_average_depth_score" in text
+    assert "rpg_network_content_average_quality_score" in text
+    assert "rpg_network_content_first_loop_coverage_score" in text
+    assert "rpg_network_content_social_loop_density" in text
+    assert "rpg_network_content_recommended_repairs" in text
+    assert "rpg_network_content_focus_families" in text
+    assert "rpg_network_content_runtime_queue_avg" in text
+    assert "rpg_network_content_runtime_event_join_avg" in text
+    assert "rpg_network_gameplay_progression_total_score" in text
+    assert "rpg_network_engagement_fatigue_gap_score" in text
+    assert "rpg_network_content_soak_recommended_repairs" in text
+    assert "rpg_network_content_bundle_completed" in text
+    assert "rpg_network_content_bundle_completion_percent" in text
+    assert "rpg_network_content_player_facing_depth_complete" in text
+    assert "rpg_network_repo_bundle_completed" in text
+    assert "rpg_network_repo_bundle_completion_percent" in text
+    assert "rpg_network_minecraft_bundle_completed" in text
+    assert "rpg_network_minecraft_bundle_completion_percent" in text
+    assert "rpg_network_minecraft_recommended_repairs" in text
+    assert "rpg_network_minecraft_soak_stable" in text
+    assert "rpg_network_player_experience_percent" in text
+    assert "rpg_network_player_experience_first_session_strength" in text
+    assert "rpg_network_player_experience_trust_pull" in text
+    assert "rpg_network_player_experience_soak_stable" in text
     assert "rpg_network_economy_inflation_ratio" in text
     assert "rpg_network_anti_cheat_sandbox_cases" in text
+    assert "rpg_network_anti_cheat_progression_protection_score" in text
     assert "rpg_network_liveops_promoted_actions" in text
+    assert "rpg_network_liveops_boost_reentry" in text
+    assert "rpg_network_material_total_files" in text
+    assert "rpg_network_material_canonical_source_files" in text
+    assert "rpg_network_runtime_partition_files" in text
+    assert "rpg_network_runtime_partition_canonical_snapshot_files" in text
     assert "rpg_network_final_threshold_bundle_ready" in text
     assert "rpg_network_final_threshold_bundle_failed_criteria" in text
 

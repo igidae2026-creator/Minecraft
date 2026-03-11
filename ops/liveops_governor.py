@@ -18,6 +18,7 @@ CONTROL_STATE = RUNTIME / "autonomy" / "control" / "state.yml"
 SUMMARY_PATH = RUNTIME / "autonomy" / "liveops_governor_summary.yml"
 LIVEOPS_DIR = RUNTIME / "live_ops"
 LEDGER_PATH = LIVEOPS_DIR / "ledger.jsonl"
+PLAYER_EXPERIENCE_PATH = RUNTIME / "autonomy" / "player_experience_summary.yml"
 
 
 def now_iso() -> str:
@@ -49,11 +50,38 @@ def main() -> int:
     LIVEOPS_DIR.mkdir(parents=True, exist_ok=True)
     scheduler = load_yaml(CONFIG / "event_scheduler.yml")
     events = load_yaml(CONFIG / "events.yml").get("events", {})
+    player_experience = load_yaml(PLAYER_EXPERIENCE_PATH)
     rotation = scheduler.get("rotation", {})
     scheduled_events = scheduler.get("events", {})
     migration_required = int(rotation.get("dungeon_rotation_minutes", 0)) < 10
+    experience_percent = float(player_experience.get("estimated_completeness_percent", 0.0))
+    experience_state = str(player_experience.get("experience_state", ""))
+    boost_reentry = experience_percent < 50.0 or experience_state in {"early", "mid"}
 
     action_id = f"liveops-{uuid.uuid4().hex[:12]}"
+    scaffolded_actions = [
+        {"action": "event_rotation", "mode": "promote", "event_ids": sorted(scheduled_events.keys())[:2]},
+        {"action": "hotfix_window", "mode": "hold" if migration_required else "promote", "migration_plan_required": bool(migration_required)},
+        {"action": "rollback_plan", "mode": "promote", "source": "append_only_lineage"},
+    ]
+    if boost_reentry:
+        scaffolded_actions.extend(
+            [
+                {
+                    "action": "returner_flash_week",
+                    "mode": "promote",
+                    "cohort": "returners",
+                    "tempo_bias": "fast",
+                    "reward_bias": "starter_plus",
+                },
+                {
+                    "action": "guild_cohort_weekend",
+                    "mode": "promote",
+                    "cohort": "guild_social",
+                    "objective": "cohort_progression",
+                },
+            ]
+        )
     payload = {
         "action_id": action_id,
         "created_at": created_at,
@@ -63,14 +91,12 @@ def main() -> int:
             "event_count": len(scheduled_events),
             "broadcast_poll_seconds": int(rotation.get("lobby_broadcast_poll_seconds", 0)),
         },
-        "scaffolded_actions": [
-            {"action": "event_rotation", "mode": "promote", "event_ids": sorted(scheduled_events.keys())[:2]},
-            {"action": "hotfix_window", "mode": "hold" if migration_required else "promote", "migration_plan_required": bool(migration_required)},
-            {"action": "rollback_plan", "mode": "promote", "source": "append_only_lineage"},
-        ],
+        "scaffolded_actions": scaffolded_actions,
         "consumer_signals": {
             "live_events_defined": len(events),
             "scheduled_events_defined": len(scheduled_events),
+            "estimated_completeness_percent": experience_percent,
+            "experience_state": experience_state,
         },
     }
     payload["signature"] = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
@@ -82,6 +108,7 @@ def main() -> int:
             "action_id": action_id,
             "migration_required": bool(migration_required),
             "scheduled_events": len(scheduled_events),
+            "boost_reentry": boost_reentry,
             "signature": payload["signature"],
         },
     )
@@ -91,8 +118,10 @@ def main() -> int:
         "migration_required": bool(migration_required),
         "scheduled_events": len(scheduled_events),
         "live_events_defined": len(events),
+        "boost_reentry": boost_reentry,
         "promoted_actions": sum(1 for action in payload["scaffolded_actions"] if action["mode"] == "promote"),
         "held_actions": sum(1 for action in payload["scaffolded_actions"] if action["mode"] == "hold"),
+        "estimated_completeness_percent": experience_percent,
         "autonomy_threshold_ready": bool(control.get("autonomy_threshold_ready", False)),
     }
     write_yaml(SUMMARY_PATH, summary)
