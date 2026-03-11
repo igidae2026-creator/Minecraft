@@ -62,6 +62,9 @@ def main() -> int:
     fatigue_gap_score = float(fatigue.get("fatigue_gap_score", 0.0))
     fatigue_state = str(fatigue.get("fatigue_state", ""))
     boost_novelty = fatigue_gap_score >= 0.45 or fatigue_state == "high"
+    distinct_reward_pools = len({str(event.get("reward_pool", "")) for event in scheduled_events.values() if event.get("reward_pool")})
+    distinct_event_types = len({str(event.get("type", "")) for event in scheduled_events.values() if event.get("type")})
+    cadence_diversity_score = round(min(1.0, distinct_event_types / 4.0 + distinct_reward_pools / 4.0), 2)
 
     action_id = f"liveops-{uuid.uuid4().hex[:12]}"
     scaffolded_actions = [
@@ -121,6 +124,7 @@ def main() -> int:
             "experience_state": experience_state,
             "fatigue_gap_score": fatigue_gap_score,
             "fatigue_state": fatigue_state,
+            "cadence_diversity_score": cadence_diversity_score,
         },
     }
     payload["signature"] = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
@@ -144,6 +148,9 @@ def main() -> int:
         "live_events_defined": len(events),
         "boost_reentry": boost_reentry,
         "boost_novelty": boost_novelty,
+        "cadence_diversity_score": cadence_diversity_score,
+        "distinct_event_types": distinct_event_types,
+        "distinct_reward_pools": distinct_reward_pools,
         "promoted_actions": sum(1 for action in payload["scaffolded_actions"] if action["mode"] == "promote"),
         "held_actions": sum(1 for action in payload["scaffolded_actions"] if action["mode"] == "hold"),
         "estimated_completeness_percent": experience_percent,

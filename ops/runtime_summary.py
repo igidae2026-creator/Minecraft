@@ -288,6 +288,7 @@ def main() -> int:
     print(f"LIVEOPS_HELD_ACTIONS={int(liveops_governor.get('held_actions', 0))}")
     print(f"LIVEOPS_BOOST_REENTRY={1 if liveops_governor.get('boost_reentry', False) else 0}")
     print(f"LIVEOPS_BOOST_NOVELTY={1 if liveops_governor.get('boost_novelty', False) else 0}")
+    print(f"LIVEOPS_CADENCE_DIVERSITY_SCORE={liveops_governor.get('cadence_diversity_score', 0)}")
     print(f"MATERIAL_TOTAL_FILES={int(material_inventory.get('total_files', 0))}")
     print(f"MATERIAL_CANONICAL_SOURCE_FILES={int(material_inventory.get('canonical_source_files', 0))}")
     print(f"MATERIAL_APPEND_ONLY_RUNTIME_TRUTH_FILES={int(material_inventory.get('append_only_runtime_truth_files', 0))}")

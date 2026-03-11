@@ -277,6 +277,7 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         assert float(anti_cheat_summary["progression_protection_score"]) >= 0
         assert liveops_summary["promoted_actions"] >= 1
         assert isinstance(liveops_summary["boost_reentry"], bool)
+        assert float(liveops_summary["cadence_diversity_score"]) >= 0
         assert float(gameplay_progression_summary["progression_total_score"]) >= 0
         assert gameplay_progression_summary["progression_state"] in {"early", "mid", "advanced"}
         assert float(engagement_fatigue_summary["fatigue_gap_score"]) >= 0
