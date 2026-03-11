@@ -27,6 +27,7 @@ PLAYER_EXPERIENCE_PATH = RUNTIME / "autonomy" / "player_experience_summary.yml"
 PLAYER_EXPERIENCE_SOAK_PATH = RUNTIME / "autonomy" / "player_experience_soak_summary.yml"
 GAMEPLAY_PROGRESSION_PATH = RUNTIME / "autonomy" / "gameplay_progression_summary.yml"
 ENGAGEMENT_FATIGUE_PATH = RUNTIME / "autonomy" / "engagement_fatigue_summary.yml"
+SERVICE_RESPONSIVENESS_PATH = RUNTIME / "autonomy" / "service_responsiveness_summary.yml"
 PROPOSAL_DIR = RUNTIME / "artifact_proposals"
 CANONICAL_DIR = RUNTIME / "canonical_artifacts"
 VERDICT_LOG = PROPOSAL_DIR / "verdicts.jsonl"
@@ -73,6 +74,7 @@ def canonical_candidates(control: dict[str, Any]) -> list[dict[str, Any]]:
     player_experience_soak = load_yaml(PLAYER_EXPERIENCE_SOAK_PATH)
     gameplay_progression = load_yaml(GAMEPLAY_PROGRESSION_PATH)
     engagement_fatigue = load_yaml(ENGAGEMENT_FATIGUE_PATH)
+    service_responsiveness = load_yaml(SERVICE_RESPONSIVENESS_PATH)
     streak = int(control.get("steady_noop_streak", 0))
     thresholds = {
         "execution": bool(control.get("execution_threshold_ready", False)),
@@ -349,6 +351,27 @@ def canonical_candidates(control: dict[str, Any]) -> list[dict[str, Any]]:
                     "steady_noop_streak": int(minecraft_soak.get("steady_noop_streak", 0)),
                     "recommended_repairs_count": int(minecraft_soak.get("recommended_repairs_count", 0)),
                     "minecraft_bundle_completion_percent": float(minecraft_soak.get("minecraft_bundle_completion_percent", 0.0)),
+                },
+            }
+        )
+        proposals.append(
+            {
+                "artifact_class": "service_responsiveness_profile",
+                "scope": "minecraft_runtime",
+                "reason": "queue immediacy and service responsiveness should be governed as a canonical player-facing service quality artifact",
+                "source": "service_responsiveness_governor",
+                "criteria": {
+                    "scope_fit": float(service_responsiveness.get("responsiveness_score", 0.0)) >= 0.0,
+                    "authority_fit": thresholds["final"],
+                    "upgrade_value": bool(service_responsiveness.get("responsiveness_state", "")),
+                    "exploration_os_compatibility": True,
+                },
+                "payload": {
+                    "responsiveness_score": float(service_responsiveness.get("responsiveness_score", 0.0)),
+                    "responsiveness_state": str(service_responsiveness.get("responsiveness_state", "")),
+                    "queue_immediacy_score": float(service_responsiveness.get("queue_immediacy_score", 0.0)),
+                    "latency_confidence": float(service_responsiveness.get("latency_confidence", 0.0)),
+                    "density_balance_score": float(service_responsiveness.get("density_balance_score", 0.0)),
                 },
             }
         )

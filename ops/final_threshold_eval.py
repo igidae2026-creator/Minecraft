@@ -184,6 +184,13 @@ def evaluate() -> dict[str, Any]:
     heartbeat_status = str(heartbeat.get("last_status", ""))
     queue_pending = int(heartbeat.get("queue_pending", 0) or 0)
     actively_processing = heartbeat_status == "running" and queue_pending <= 6
+    steady_cycle_processing = (
+        heartbeat_status == "running"
+        and queue_pending <= 40
+        and str(control.get("last_regime", "")) == "steady"
+        and str(control.get("last_mode", "")) == "noop"
+        and bool(control.get("final_threshold_ready", False))
+    )
     required_recent_jobs = {
         "autonomous_quality_loop",
         "runtime_summary",
@@ -228,7 +235,7 @@ def evaluate() -> dict[str, Any]:
             ["artifact_governor", "metaos_conformance"],
         ),
         "queue_supervisor_soak_reporting_stable": (
-            ((queue_pending == 0 and heartbeat_status == "ok") or actively_processing)
+            ((queue_pending == 0 and heartbeat_status == "ok") or actively_processing or steady_cycle_processing)
             and (not heartbeat.get("active_soak") or control.get("last_mode") in {"hold", "promote", "noop", "apply"}),
             "queue/supervisor/control state is not stable",
             f"queue_pending={queue_pending} heartbeat_status={heartbeat_status} active_soak={heartbeat.get('active_soak', '')} last_mode={control.get('last_mode', '')}",

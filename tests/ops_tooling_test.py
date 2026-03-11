@@ -58,6 +58,9 @@ def test_ops_tooling_executes_cleanly(tmp_path: Path):
     assert "rpg_network_content_runtime_event_join_avg" in text
     assert "rpg_network_gameplay_progression_total_score" in text
     assert "rpg_network_engagement_fatigue_gap_score" in text
+    assert "rpg_network_service_responsiveness_score" in text
+    assert "rpg_network_service_queue_immediacy_score" in text
+    assert "rpg_network_service_latency_confidence" in text
     assert "rpg_network_content_soak_recommended_repairs" in text
     assert "rpg_network_content_bundle_completed" in text
     assert "rpg_network_content_bundle_completion_percent" in text
@@ -79,6 +82,9 @@ def test_ops_tooling_executes_cleanly(tmp_path: Path):
     assert "rpg_network_player_experience_runtime_scale_confidence" in text
     assert "rpg_network_player_experience_social_concurrency_strength" in text
     assert "rpg_network_player_experience_party_concurrency_support" in text
+    assert "rpg_network_player_experience_responsiveness_score" in text
+    assert "rpg_network_player_experience_queue_immediacy_score" in text
+    assert "rpg_network_player_experience_latency_confidence" in text
     assert "rpg_network_player_experience_soak_stable" in text
     assert "rpg_network_economy_inflation_ratio" in text
     assert "rpg_network_anti_cheat_sandbox_cases" in text

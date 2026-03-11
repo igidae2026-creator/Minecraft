@@ -20,6 +20,7 @@ FATIGUE_SUMMARY_PATH = AUTONOMY / "engagement_fatigue_summary.yml"
 CONTENT_VOLUME_SUMMARY_PATH = AUTONOMY / "content_volume_summary.yml"
 PLAYER_EXPERIENCE_SOAK_SUMMARY_PATH = AUTONOMY / "player_experience_soak_summary.yml"
 RUNTIME_INTEGRITY_SUMMARY_PATH = AUTONOMY / "runtime_integrity_summary.yml"
+SERVICE_RESPONSIVENESS_SUMMARY_PATH = AUTONOMY / "service_responsiveness_summary.yml"
 
 
 def now_iso() -> str:
@@ -53,6 +54,7 @@ def main() -> int:
     content_volume = load_yaml(CONTENT_VOLUME_SUMMARY_PATH)
     player_experience_soak = load_yaml(PLAYER_EXPERIENCE_SOAK_SUMMARY_PATH)
     runtime_integrity = load_yaml(RUNTIME_INTEGRITY_SUMMARY_PATH)
+    service_responsiveness = load_yaml(SERVICE_RESPONSIVENESS_SUMMARY_PATH)
 
     totals = {
         "queue_size": 0.0,
@@ -107,6 +109,9 @@ def main() -> int:
     liveops_depth_strength = float(liveops.get("liveops_depth_strength", 0.0))
     long_soak_confidence = float(player_experience_soak.get("long_soak_confidence", 0.0))
     runtime_scale_confidence = float(runtime_integrity.get("runtime_scale_confidence", 0.0))
+    responsiveness_score = float(service_responsiveness.get("responsiveness_score", 0.0))
+    queue_immediacy_score = float(service_responsiveness.get("queue_immediacy_score", 0.0))
+    latency_confidence = float(service_responsiveness.get("latency_confidence", 0.0))
     fatigue_gap_score = float(fatigue.get("fatigue_gap_score", 0.0))
     thinness_score = float(fatigue.get("thinness_score", 0.0))
     repetition_score = float(fatigue.get("repetition_score", 0.0))
@@ -149,6 +154,9 @@ def main() -> int:
         + min(1.0, liveops_depth_strength / 3.0) * 0.05
         + long_soak_confidence * 0.06
         + runtime_scale_confidence * 0.05
+        + responsiveness_score * 0.08
+        + queue_immediacy_score * 0.04
+        + latency_confidence * 0.04
     )
     completeness_percent = round(
         clamp(
@@ -209,6 +217,9 @@ def main() -> int:
         "liveops_depth_strength": liveops_depth_strength,
         "long_soak_confidence": long_soak_confidence,
         "runtime_scale_confidence": runtime_scale_confidence,
+        "responsiveness_score": responsiveness_score,
+        "queue_immediacy_score": queue_immediacy_score,
+        "latency_confidence": latency_confidence,
         "thinness_score": thinness_score,
         "repetition_score": repetition_score,
         "novelty_gap_score": novelty_gap_score,

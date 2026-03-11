@@ -60,6 +60,7 @@ def main() -> int:
         "gameplay_progression_governor": ROOT / "ops" / "gameplay_progression_governor.py",
         "content_volume_governor": ROOT / "ops" / "content_volume_governor.py",
         "engagement_fatigue_governor": ROOT / "ops" / "engagement_fatigue_governor.py",
+        "service_responsiveness_governor": ROOT / "ops" / "service_responsiveness_governor.py",
         "material_inventory": ROOT / "ops" / "material_inventory.py",
         "runtime_partition_governor": ROOT / "ops" / "runtime_partition_governor.py",
         "content_strategy_governor": ROOT / "ops" / "content_strategy_governor.py",

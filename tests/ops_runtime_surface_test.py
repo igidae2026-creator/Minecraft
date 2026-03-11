@@ -231,6 +231,7 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         subprocess.run([sys.executable, str(ROOT / "ops" / "liveops_governor.py")], check=True, cwd=ROOT)
         subprocess.run([sys.executable, str(ROOT / "ops" / "gameplay_progression_governor.py")], check=True, cwd=ROOT)
         subprocess.run([sys.executable, str(ROOT / "ops" / "content_volume_governor.py")], check=True, cwd=ROOT)
+        subprocess.run([sys.executable, str(ROOT / "ops" / "service_responsiveness_governor.py")], check=True, cwd=ROOT)
         subprocess.run([sys.executable, str(ROOT / "ops" / "player_experience_governor.py")], check=True, cwd=ROOT)
         subprocess.run([sys.executable, str(ROOT / "ops" / "engagement_fatigue_governor.py")], check=True, cwd=ROOT)
         subprocess.run([sys.executable, str(ROOT / "ops" / "material_inventory.py")], check=True, cwd=ROOT)
@@ -268,6 +269,7 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         gameplay_progression_summary = yaml.safe_load((runtime_data / "autonomy" / "gameplay_progression_summary.yml").read_text(encoding="utf-8"))
         content_volume_summary = yaml.safe_load((runtime_data / "autonomy" / "content_volume_summary.yml").read_text(encoding="utf-8"))
         engagement_fatigue_summary = yaml.safe_load((runtime_data / "autonomy" / "engagement_fatigue_summary.yml").read_text(encoding="utf-8"))
+        service_responsiveness_summary = yaml.safe_load((runtime_data / "autonomy" / "service_responsiveness_summary.yml").read_text(encoding="utf-8"))
 
         assert content_summary["generated"] >= 14
         assert content_summary["by_type"]["onboarding"] >= 1
@@ -308,6 +310,8 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         assert gameplay_progression_summary["progression_state"] in {"early", "mid", "advanced"}
         assert float(engagement_fatigue_summary["fatigue_gap_score"]) >= 0
         assert engagement_fatigue_summary["fatigue_state"] in {"low", "watch", "high"}
+        assert float(service_responsiveness_summary["responsiveness_score"]) >= 0
+        assert service_responsiveness_summary["responsiveness_state"] in {"strained", "steady", "crisp"}
         assert material_summary["canonical_source_files"] > 0
         assert partition_summary["runtime_files"] >= partition_summary["canonical_snapshot_files"]
         assert partition_summary["volatile_runtime_files"] >= 1
@@ -342,6 +346,9 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         assert float(player_experience_summary["runtime_scale_confidence"]) >= 0
         assert float(player_experience_summary["social_concurrency_strength"]) >= 0
         assert float(player_experience_summary["party_concurrency_support"]) >= 0
+        assert float(player_experience_summary["responsiveness_score"]) >= 0
+        assert float(player_experience_summary["queue_immediacy_score"]) >= 0
+        assert float(player_experience_summary["latency_confidence"]) >= 0
         assert player_experience_soak_summary["player_experience_soak_state"] in {"tune", "observe", "stable"}
         assert float(player_experience_soak_summary["first_session_strength"]) >= 0
         assert float(player_experience_soak_summary["trust_pull"]) >= 0

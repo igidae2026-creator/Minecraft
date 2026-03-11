@@ -34,6 +34,7 @@ PLAYER_EXPERIENCE_SUMMARY = RUNTIME / "autonomy" / "player_experience_summary.ym
 PLAYER_EXPERIENCE_SOAK_SUMMARY = RUNTIME / "autonomy" / "player_experience_soak_summary.yml"
 GAMEPLAY_PROGRESSION_SUMMARY = RUNTIME / "autonomy" / "gameplay_progression_summary.yml"
 ENGAGEMENT_FATIGUE_SUMMARY = RUNTIME / "autonomy" / "engagement_fatigue_summary.yml"
+SERVICE_RESPONSIVENESS_SUMMARY = RUNTIME / "autonomy" / "service_responsiveness_summary.yml"
 
 
 def load_yaml(path: Path):
@@ -228,6 +229,7 @@ def main() -> int:
     player_experience_soak = load_yaml(PLAYER_EXPERIENCE_SOAK_SUMMARY)
     gameplay_progression = load_yaml(GAMEPLAY_PROGRESSION_SUMMARY)
     engagement_fatigue = load_yaml(ENGAGEMENT_FATIGUE_SUMMARY)
+    service_responsiveness = load_yaml(SERVICE_RESPONSIVENESS_SUMMARY)
     print("RUNTIME_SUMMARY")
     print(f"AUTONOMY_DECISIONS={autonomy_decisions}")
     print(f"AUTONOMY_LAST_MODE={control.get('last_mode', 'unknown')}")
@@ -277,6 +279,10 @@ def main() -> int:
     print(f"GAMEPLAY_PROGRESSION_STATE={gameplay_progression.get('progression_state', '')}")
     print(f"ENGAGEMENT_FATIGUE_GAP_SCORE={engagement_fatigue.get('fatigue_gap_score', 0)}")
     print(f"ENGAGEMENT_FATIGUE_STATE={engagement_fatigue.get('fatigue_state', '')}")
+    print(f"SERVICE_RESPONSIVENESS_SCORE={service_responsiveness.get('responsiveness_score', 0)}")
+    print(f"SERVICE_RESPONSIVENESS_STATE={service_responsiveness.get('responsiveness_state', '')}")
+    print(f"SERVICE_QUEUE_IMMEDIACY_SCORE={service_responsiveness.get('queue_immediacy_score', 0)}")
+    print(f"SERVICE_LATENCY_CONFIDENCE={service_responsiveness.get('latency_confidence', 0)}")
     print(f"CONTENT_SOAK_STATE={content_soak.get('content_soak_state', '')}")
     print(f"CONTENT_SOAK_RECOMMENDED_REPAIRS={int(content_soak.get('recommended_repairs_count', 0))}")
     print(f"CONTENT_BUNDLE_COMPLETED={int(content_bundle.get('bundle_completed', 0))}")
@@ -304,6 +310,9 @@ def main() -> int:
     print(f"PLAYER_EXPERIENCE_RUNTIME_SCALE_CONFIDENCE={player_experience.get('runtime_scale_confidence', 0)}")
     print(f"PLAYER_EXPERIENCE_SOCIAL_CONCURRENCY_STRENGTH={player_experience.get('social_concurrency_strength', 0)}")
     print(f"PLAYER_EXPERIENCE_PARTY_CONCURRENCY_SUPPORT={player_experience.get('party_concurrency_support', 0)}")
+    print(f"PLAYER_EXPERIENCE_RESPONSIVENESS_SCORE={player_experience.get('responsiveness_score', 0)}")
+    print(f"PLAYER_EXPERIENCE_QUEUE_IMMEDIACY_SCORE={player_experience.get('queue_immediacy_score', 0)}")
+    print(f"PLAYER_EXPERIENCE_LATENCY_CONFIDENCE={player_experience.get('latency_confidence', 0)}")
     print(f"PLAYER_EXPERIENCE_SOAK_STATE={player_experience_soak.get('player_experience_soak_state', '')}")
     print(f"ECONOMY_ACTION={economy_governor.get('action', '')}")
     print(f"ECONOMY_INFLATION_RATIO={economy_governor.get('inflation_ratio', 0)}")

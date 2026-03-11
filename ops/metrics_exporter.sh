@@ -165,6 +165,10 @@ engagement_fatigue_summary = {}
 engagement_fatigue_summary_path = root / "runtime_data" / "autonomy" / "engagement_fatigue_summary.yml"
 if engagement_fatigue_summary_path.exists():
     engagement_fatigue_summary = load_scalar_summary(engagement_fatigue_summary_path)
+service_responsiveness_summary = {}
+service_responsiveness_summary_path = root / "runtime_data" / "autonomy" / "service_responsiveness_summary.yml"
+if service_responsiveness_summary_path.exists():
+    service_responsiveness_summary = load_scalar_summary(service_responsiveness_summary_path)
 economy_governor_summary = {}
 economy_governor_summary_path = root / "runtime_data" / "autonomy" / "economy_governor_summary.yml"
 if economy_governor_summary_path.exists():
@@ -256,6 +260,9 @@ metrics.append(f"rpg_network_content_runtime_return_player_reward_avg {content_s
 metrics.append(f"rpg_network_gameplay_progression_total_score {gameplay_progression_summary.get('progression_total_score', 0)}")
 metrics.append(f"rpg_network_engagement_fatigue_gap_score {engagement_fatigue_summary.get('fatigue_gap_score', 0)}")
 metrics.append(f"rpg_network_engagement_fatigue_high {1 if engagement_fatigue_summary.get('fatigue_state', '') == 'high' else 0}")
+metrics.append(f"rpg_network_service_responsiveness_score {service_responsiveness_summary.get('responsiveness_score', 0)}")
+metrics.append(f"rpg_network_service_queue_immediacy_score {service_responsiveness_summary.get('queue_immediacy_score', 0)}")
+metrics.append(f"rpg_network_service_latency_confidence {service_responsiveness_summary.get('latency_confidence', 0)}")
 metrics.append(f"rpg_network_content_soak_recommended_repairs {content_soak_summary.get('recommended_repairs_count', 0)}")
 metrics.append(f"rpg_network_content_soak_stable {1 if content_soak_summary.get('content_soak_state', '') == 'stable' else 0}")
 metrics.append(f"rpg_network_content_bundle_completed {content_bundle_summary.get('bundle_completed', 0)}")
@@ -281,6 +288,9 @@ metrics.append(f"rpg_network_player_experience_long_soak_confidence {player_expe
 metrics.append(f"rpg_network_player_experience_runtime_scale_confidence {player_experience_summary.get('runtime_scale_confidence', 0)}")
 metrics.append(f"rpg_network_player_experience_social_concurrency_strength {player_experience_summary.get('social_concurrency_strength', 0)}")
 metrics.append(f"rpg_network_player_experience_party_concurrency_support {player_experience_summary.get('party_concurrency_support', 0)}")
+metrics.append(f"rpg_network_player_experience_responsiveness_score {player_experience_summary.get('responsiveness_score', 0)}")
+metrics.append(f"rpg_network_player_experience_queue_immediacy_score {player_experience_summary.get('queue_immediacy_score', 0)}")
+metrics.append(f"rpg_network_player_experience_latency_confidence {player_experience_summary.get('latency_confidence', 0)}")
 metrics.append(f"rpg_network_player_experience_soak_stable {1 if player_experience_soak_summary.get('player_experience_soak_state', '') == 'stable' else 0}")
 metrics.append(f"rpg_network_economy_action_adjust {1 if economy_governor_summary.get('action', '') == 'adjust' else 0}")
 metrics.append(f"rpg_network_economy_inflation_ratio {economy_governor_summary.get('inflation_ratio', 0)}")
