@@ -281,6 +281,7 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         assert float(content_summary["replayable_loop_score"]) >= 1.5
         assert float(content_summary["advanced_loop_strength"]) >= 1.0
         assert float(content_summary["prestige_loop_strength"]) >= 1.0
+        assert float(content_summary["mastery_arc_strength"]) >= 1.0
         assert float(content_summary["social_persistence_strength"]) >= 1.0
         assert float(content_summary["spectacle_variety_strength"]) >= 1.0
         assert float(content_summary["starter_reward_strength"]) >= 1.0

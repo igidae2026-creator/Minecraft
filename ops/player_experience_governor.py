@@ -83,6 +83,7 @@ def main() -> int:
     prestige_loop_strength = float(content.get("prestige_loop_strength", 0.0))
     social_persistence_strength = float(content.get("social_persistence_strength", 0.0))
     spectacle_variety_strength = float(content.get("spectacle_variety_strength", 0.0))
+    mastery_arc_strength = float(content.get("mastery_arc_strength", 0.0))
     starter_reward_strength = float(content.get("starter_reward_strength", 0.0))
     rivalry_reward_pull = float(content.get("rivalry_reward_pull", 0.0))
     held_actions = int(liveops.get("held_actions", 0))
@@ -120,6 +121,7 @@ def main() -> int:
         + min(1.0, prestige_loop_strength / 3.0) * 0.08
         + min(1.0, social_persistence_strength / 3.0) * 0.07
         + min(1.0, spectacle_variety_strength / 3.0) * 0.07
+        + min(1.0, mastery_arc_strength / 3.0) * 0.07
     )
     completeness_percent = round(
         clamp(
@@ -158,6 +160,7 @@ def main() -> int:
         "prestige_loop_strength": prestige_loop_strength,
         "social_persistence_strength": social_persistence_strength,
         "spectacle_variety_strength": spectacle_variety_strength,
+        "mastery_arc_strength": mastery_arc_strength,
         "starter_reward_strength": starter_reward_strength,
         "rivalry_reward_pull": rivalry_reward_pull,
         "progression_protection_score": progression_protection_score,

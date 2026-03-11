@@ -50,6 +50,7 @@ def main() -> int:
     avg_depth = float(content.get("average_depth_score", 0.0))
     replayable_loop_score = float(content.get("replayable_loop_score", 0.0))
     first_loop_coverage = float(content.get("first_loop_coverage_score", 0.0))
+    mastery_arc_strength = float(content.get("mastery_arc_strength", 0.0))
     trust_pull = float(player_experience.get("trust_pull", 0.0))
 
     totals = {
@@ -57,6 +58,7 @@ def main() -> int:
         "bosses_killed": 0.0,
         "progression_level_up": 0.0,
         "streak_progress": 0.0,
+        "prestige_gain": 0.0,
         "status_files": 0.0,
     }
     for path in sorted(STATUS_DIR.glob("*.yml")):
@@ -66,12 +68,14 @@ def main() -> int:
         totals["bosses_killed"] += float(payload.get("boss_killed", 0) or 0)
         totals["progression_level_up"] += float(payload.get("progression_level_up", 0) or 0)
         totals["streak_progress"] += float(payload.get("streak_progress", 0) or 0)
+        totals["prestige_gain"] += float(payload.get("prestige_gain", 0) or 0)
 
     divisor = max(1.0, totals["status_files"])
     dungeon_completion_avg = round(totals["dungeons_completed"] / divisor, 2)
     boss_kill_avg = round(totals["bosses_killed"] / divisor, 2)
     level_up_avg = round(totals["progression_level_up"] / divisor, 2)
     streak_progress_avg = round(totals["streak_progress"] / divisor, 2)
+    prestige_gain_avg = round(totals["prestige_gain"] / divisor, 2)
 
     progression_spine_score = round(
         clamp(
@@ -87,15 +91,17 @@ def main() -> int:
         ),
         2,
     )
+    progression_spine_score = round(clamp(progression_spine_score + mastery_arc_strength / 3.0, 0.0, 8.0), 2)
     progression_runtime_score = round(
         clamp(
             (dungeon_completion_avg / 220.0)
             + (boss_kill_avg / 60.0)
             + (level_up_avg / 45.0)
             + (streak_progress_avg / 120.0)
+            + (prestige_gain_avg / 35.0)
             + trust_pull,
             0.0,
-            6.0,
+            7.0,
         ),
         2,
     )
@@ -111,10 +117,12 @@ def main() -> int:
         "average_depth_score": avg_depth,
         "replayable_loop_score": replayable_loop_score,
         "first_loop_coverage_score": first_loop_coverage,
+        "mastery_arc_strength": mastery_arc_strength,
         "dungeon_completion_avg": dungeon_completion_avg,
         "boss_kill_avg": boss_kill_avg,
         "progression_level_up_avg": level_up_avg,
         "streak_progress_avg": streak_progress_avg,
+        "prestige_gain_avg": prestige_gain_avg,
         "trust_pull": trust_pull,
         "progression_spine_score": progression_spine_score,
         "progression_runtime_score": progression_runtime_score,

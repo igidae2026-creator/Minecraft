@@ -1080,6 +1080,7 @@ def main() -> int:
         "replayable_loop_score": round(min(3.0, by_type.get("dungeon_variation", 0) * 0.8 + by_type.get("season", 0) * 0.6 + by_type.get("event", 0) * 0.4), 2),
         "advanced_loop_strength": round(min(3.0, by_type.get("quest_chain", 0) * 0.7 + by_type.get("dungeon_variation", 0) * 0.75 + by_type.get("season", 0) * 0.55 + by_type.get("social", 0) * 0.35), 2),
         "prestige_loop_strength": round(min(3.0, by_type.get("event", 0) * 0.35 + by_type.get("social", 0) * 0.5 + by_type.get("season", 0) * 0.75 + by_type.get("quest_chain", 0) * 0.45), 2),
+        "mastery_arc_strength": round(min(3.0, by_type.get("quest_chain", 0) * 0.85 + by_type.get("dungeon_variation", 0) * 0.8 + by_type.get("season", 0) * 0.65), 2),
         "social_persistence_strength": round(min(3.0, social_persistence_strength), 2),
         "spectacle_variety_strength": round(min(3.0, spectacle_variety_strength), 2),
         "starter_reward_strength": round(min(3.0, starter_reward_strength), 2),
