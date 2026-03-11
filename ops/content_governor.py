@@ -641,6 +641,7 @@ def main() -> int:
     total_depth_score = 0.0
     total_retention_proxy = 0.0
     total_quality_score = 0.0
+    starter_reward_strength = 0.0
 
     for candidate in candidates:
         quality = score_candidate(
@@ -684,6 +685,18 @@ def main() -> int:
         total_depth_score += quality["depth_score"]
         total_retention_proxy += quality["retention_proxy"]
         total_quality_score += quality["total_score"]
+        generated_payload = candidate["generated_payload"]
+        artifact_type = candidate["artifact_type"]
+        if artifact_type == "onboarding":
+            starter_reward_strength += 0.9 if generated_payload.get("idempotent_reward", False) else 0.4
+            starter_reward_strength += 0.5 if generated_payload.get("tempo_bias") == "fast" else 0.0
+        elif artifact_type == "event":
+            starter_reward_strength += 0.5 if generated_payload.get("reward_pool") == "starter" else 0.1
+            starter_reward_strength += 0.35 if generated_payload.get("returner_bonus", False) else 0.0
+        elif artifact_type == "quest_chain":
+            starter_reward_strength += 0.45 if generated_payload.get("branching_rewards", False) else 0.1
+        elif artifact_type == "season":
+            starter_reward_strength += 0.3 if generated_payload.get("returner_catchup", False) else 0.0
         if candidate["verdict"] == "promote":
             promoted += 1
         else:
@@ -702,6 +715,7 @@ def main() -> int:
         "first_loop_coverage_score": round(min(3.0, by_type.get("onboarding", 0) * 0.9 + by_type.get("event", 0) * 0.6 + by_type.get("quest_chain", 0) * 0.5), 2),
         "social_loop_density": round(min(3.0, by_type.get("social", 0) * 1.0 + by_type.get("season", 0) * 0.6), 2),
         "replayable_loop_score": round(min(3.0, by_type.get("dungeon_variation", 0) * 0.8 + by_type.get("season", 0) * 0.6 + by_type.get("event", 0) * 0.4), 2),
+        "starter_reward_strength": round(min(3.0, starter_reward_strength), 2),
         "depth_floor": MIN_DEPTH_SCORE,
         "execution_threshold_ready": execution_threshold_ready,
         "autonomy_threshold_ready": bool(control.get("autonomy_threshold_ready", False)),

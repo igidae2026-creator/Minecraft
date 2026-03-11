@@ -71,10 +71,11 @@ def main() -> int:
             "evidence": f"avg_quality={content.get('average_quality_score', 0)} canonical={canonical_registry_contains(canonical_registry, 'content_quality_profile')}",
         },
         "player_facing_depth": {
-            "ready": float(content.get("first_loop_coverage_score", 0.0)) >= 2.0 and float(content.get("social_loop_density", 0.0)) >= 1.5,
+            "ready": float(content.get("first_loop_coverage_score", 0.0)) >= 2.0 and float(content.get("social_loop_density", 0.0)) >= 1.5 and float(content.get("starter_reward_strength", 0.0)) >= 1.4,
             "evidence": (
                 f"first_loop_coverage={content.get('first_loop_coverage_score', 0)} "
-                f"social_loop_density={content.get('social_loop_density', 0)}"
+                f"social_loop_density={content.get('social_loop_density', 0)} "
+                f"starter_reward_strength={content.get('starter_reward_strength', 0)}"
             ),
         },
         "portfolio_strategy": {

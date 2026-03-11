@@ -38,6 +38,7 @@ def test_ops_tooling_executes_cleanly(tmp_path: Path):
     assert "rpg_network_content_average_quality_score" in text
     assert "rpg_network_content_first_loop_coverage_score" in text
     assert "rpg_network_content_social_loop_density" in text
+    assert "rpg_network_content_starter_reward_strength" in text
     assert "rpg_network_content_recommended_repairs" in text
     assert "rpg_network_content_focus_families" in text
     assert "rpg_network_content_runtime_queue_avg" in text
