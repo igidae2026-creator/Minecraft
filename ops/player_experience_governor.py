@@ -85,6 +85,7 @@ def main() -> int:
     spectacle_variety_strength = float(content.get("spectacle_variety_strength", 0.0))
     mastery_arc_strength = float(content.get("mastery_arc_strength", 0.0))
     prestige_clarity_strength = float(content.get("prestige_clarity_strength", 0.0))
+    endgame_breadth_strength = float(content.get("endgame_breadth_strength", 0.0))
     returner_retention_strength = float(content.get("returner_retention_strength", 0.0))
     starter_reward_strength = float(content.get("starter_reward_strength", 0.0))
     rivalry_reward_pull = float(content.get("rivalry_reward_pull", 0.0))
@@ -126,6 +127,7 @@ def main() -> int:
         + min(1.0, spectacle_variety_strength / 3.0) * 0.07
         + min(1.0, mastery_arc_strength / 3.0) * 0.07
         + min(1.0, prestige_clarity_strength / 3.0) * 0.06
+        + min(1.0, endgame_breadth_strength / 3.0) * 0.06
         + min(1.0, returner_retention_strength / 3.0) * 0.07
         + min(1.0, returner_reactivation_depth / 2.0) * 0.05
     )
@@ -168,6 +170,7 @@ def main() -> int:
         "spectacle_variety_strength": spectacle_variety_strength,
         "mastery_arc_strength": mastery_arc_strength,
         "prestige_clarity_strength": prestige_clarity_strength,
+        "endgame_breadth_strength": endgame_breadth_strength,
         "returner_retention_strength": returner_retention_strength,
         "starter_reward_strength": starter_reward_strength,
         "rivalry_reward_pull": rivalry_reward_pull,

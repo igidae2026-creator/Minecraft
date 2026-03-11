@@ -229,6 +229,7 @@ metrics.append(f"rpg_network_content_advanced_loop_strength {content_governor_su
 metrics.append(f"rpg_network_content_prestige_loop_strength {content_governor_summary.get('prestige_loop_strength', 0)}")
 metrics.append(f"rpg_network_content_mastery_arc_strength {content_governor_summary.get('mastery_arc_strength', 0)}")
 metrics.append(f"rpg_network_content_prestige_clarity_strength {content_governor_summary.get('prestige_clarity_strength', 0)}")
+metrics.append(f"rpg_network_content_endgame_breadth_strength {content_governor_summary.get('endgame_breadth_strength', 0)}")
 metrics.append(f"rpg_network_content_social_persistence_strength {content_governor_summary.get('social_persistence_strength', 0)}")
 metrics.append(f"rpg_network_content_spectacle_variety_strength {content_governor_summary.get('spectacle_variety_strength', 0)}")
 metrics.append(f"rpg_network_content_returner_retention_strength {content_governor_summary.get('returner_retention_strength', 0)}")
