@@ -10,7 +10,7 @@ from helpers import ROOT, dump_yaml
 
 
 def test_ops_tooling_executes_cleanly(tmp_path: Path):
-    for relative in ("runtime_data/live_ops", "runtime_data/anti_cheat", "runtime_data/economy_operations", "runtime_data/content_pipeline"):
+    for relative in ("runtime_data/live_ops", "runtime_data/anti_cheat", "runtime_data/economy_operations", "runtime_data/content_pipeline", "runtime_data/content_volume"):
         (ROOT / relative).mkdir(parents=True, exist_ok=True)
     subprocess.run([sys.executable, str(ROOT / "ops" / "render_network.py")], check=True, cwd=ROOT)
     subprocess.run([sys.executable, str(ROOT / "ops" / "validate_rpg.py")], check=True, cwd=ROOT)
@@ -40,6 +40,7 @@ def test_ops_tooling_executes_cleanly(tmp_path: Path):
     assert "rpg_network_content_social_loop_density" in text
     assert "rpg_network_content_starter_reward_strength" in text
     assert "rpg_network_content_rivalry_reward_pull" in text
+    assert "rpg_network_content_volume_score" in text
     assert "rpg_network_content_recommended_repairs" in text
     assert "rpg_network_content_focus_families" in text
     assert "rpg_network_content_runtime_queue_avg" in text
@@ -59,6 +60,7 @@ def test_ops_tooling_executes_cleanly(tmp_path: Path):
     assert "rpg_network_player_experience_percent" in text
     assert "rpg_network_player_experience_first_session_strength" in text
     assert "rpg_network_player_experience_trust_pull" in text
+    assert "rpg_network_player_experience_volume_pull" in text
     assert "rpg_network_player_experience_soak_stable" in text
     assert "rpg_network_economy_inflation_ratio" in text
     assert "rpg_network_anti_cheat_sandbox_cases" in text

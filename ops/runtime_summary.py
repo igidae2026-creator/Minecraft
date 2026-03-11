@@ -23,6 +23,7 @@ MATERIAL_INVENTORY_SUMMARY = RUNTIME / "autonomy" / "material_inventory_summary.
 RUNTIME_PARTITION_SUMMARY = RUNTIME / "autonomy" / "runtime_partition_summary.yml"
 CONTENT_STRATEGY_SUMMARY = RUNTIME / "autonomy" / "content_strategy_summary.yml"
 CONTENT_SOAK_SUMMARY = RUNTIME / "autonomy" / "content_soak_summary.yml"
+CONTENT_VOLUME_SUMMARY = RUNTIME / "autonomy" / "content_volume_summary.yml"
 CONTENT_BUNDLE_SUMMARY = RUNTIME / "autonomy" / "content_bundle_summary.yml"
 REPO_BUNDLE_SUMMARY = RUNTIME / "autonomy" / "repo_bundle_summary.yml"
 MINECRAFT_BUNDLE_SUMMARY = RUNTIME / "autonomy" / "minecraft_bundle_summary.yml"
@@ -215,6 +216,7 @@ def main() -> int:
     runtime_partition = load_yaml(RUNTIME_PARTITION_SUMMARY)
     content_strategy = load_yaml(CONTENT_STRATEGY_SUMMARY)
     content_soak = load_yaml(CONTENT_SOAK_SUMMARY)
+    content_volume = load_yaml(CONTENT_VOLUME_SUMMARY)
     content_bundle = load_yaml(CONTENT_BUNDLE_SUMMARY)
     repo_bundle = load_yaml(REPO_BUNDLE_SUMMARY)
     minecraft_bundle = load_yaml(MINECRAFT_BUNDLE_SUMMARY)
@@ -251,6 +253,8 @@ def main() -> int:
     print(f"CONTENT_REPLAYABLE_LOOP_SCORE={content_governor.get('replayable_loop_score', 0)}")
     print(f"CONTENT_STARTER_REWARD_STRENGTH={content_governor.get('starter_reward_strength', 0)}")
     print(f"CONTENT_RIVALRY_REWARD_PULL={content_governor.get('rivalry_reward_pull', 0)}")
+    print(f"CONTENT_VOLUME_SCORE={content_volume.get('content_volume_score', 0)}")
+    print(f"CONTENT_VOLUME_STATE={content_volume.get('content_volume_state', '')}")
     print(f"CONTENT_NEXT_FOCUS={content_strategy.get('next_focus_csv', '')}")
     print(f"CONTENT_RECOMMENDED_REPAIRS={int(content_strategy.get('recommended_repairs_count', 0))}")
     print(f"CONTENT_RUNTIME_QUEUE_AVG={content_strategy.get('runtime_queue_avg', 0)}")
@@ -280,6 +284,7 @@ def main() -> int:
     print(f"PLAYER_EXPERIENCE_STATE={player_experience.get('experience_state', '')}")
     print(f"PLAYER_EXPERIENCE_FIRST_SESSION_STRENGTH={player_experience.get('first_session_strength', 0)}")
     print(f"PLAYER_EXPERIENCE_TRUST_PULL={player_experience.get('trust_pull', 0)}")
+    print(f"PLAYER_EXPERIENCE_VOLUME_PULL={player_experience.get('volume_pull', 0)}")
     print(f"PLAYER_EXPERIENCE_SOAK_STATE={player_experience_soak.get('player_experience_soak_state', '')}")
     print(f"ECONOMY_ACTION={economy_governor.get('action', '')}")
     print(f"ECONOMY_INFLATION_RATIO={economy_governor.get('inflation_ratio', 0)}")

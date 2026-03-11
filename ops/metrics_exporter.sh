@@ -125,6 +125,10 @@ content_soak_summary = {}
 content_soak_summary_path = root / "runtime_data" / "autonomy" / "content_soak_summary.yml"
 if content_soak_summary_path.exists():
     content_soak_summary = load_scalar_summary(content_soak_summary_path)
+content_volume_summary = {}
+content_volume_summary_path = root / "runtime_data" / "autonomy" / "content_volume_summary.yml"
+if content_volume_summary_path.exists():
+    content_volume_summary = load_scalar_summary(content_volume_summary_path)
 content_bundle_summary = {}
 content_bundle_summary_path = root / "runtime_data" / "autonomy" / "content_bundle_summary.yml"
 if content_bundle_summary_path.exists():
@@ -223,6 +227,8 @@ metrics.append(f"rpg_network_content_social_loop_density {content_governor_summa
 metrics.append(f"rpg_network_content_replayable_loop_score {content_governor_summary.get('replayable_loop_score', 0)}")
 metrics.append(f"rpg_network_content_starter_reward_strength {content_governor_summary.get('starter_reward_strength', 0)}")
 metrics.append(f"rpg_network_content_rivalry_reward_pull {content_governor_summary.get('rivalry_reward_pull', 0)}")
+metrics.append(f"rpg_network_content_volume_score {content_volume_summary.get('content_volume_score', 0)}")
+metrics.append(f"rpg_network_content_volume_core_family_coverage {content_volume_summary.get('core_family_coverage', 0)}")
 focus_csv = str(content_strategy_summary.get("next_focus_csv", ""))
 repair_csv = str(content_strategy_summary.get("recommended_repairs_csv", ""))
 focus_count = len([item for item in focus_csv.split(",") if item])
@@ -252,6 +258,7 @@ metrics.append(f"rpg_network_minecraft_soak_stable {1 if minecraft_soak_summary.
 metrics.append(f"rpg_network_player_experience_percent {player_experience_summary.get('estimated_completeness_percent', 0)}")
 metrics.append(f"rpg_network_player_experience_first_session_strength {player_experience_summary.get('first_session_strength', 0)}")
 metrics.append(f"rpg_network_player_experience_trust_pull {player_experience_summary.get('trust_pull', 0)}")
+metrics.append(f"rpg_network_player_experience_volume_pull {player_experience_summary.get('volume_pull', 0)}")
 metrics.append(f"rpg_network_player_experience_soak_stable {1 if player_experience_soak_summary.get('player_experience_soak_state', '') == 'stable' else 0}")
 metrics.append(f"rpg_network_economy_action_adjust {1 if economy_governor_summary.get('action', '') == 'adjust' else 0}")
 metrics.append(f"rpg_network_economy_inflation_ratio {economy_governor_summary.get('inflation_ratio', 0)}")

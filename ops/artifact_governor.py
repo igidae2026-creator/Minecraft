@@ -18,6 +18,7 @@ SUMMARY_PATH = RUNTIME / "autonomy" / "artifact_governor_summary.yml"
 CONTENT_SUMMARY_PATH = RUNTIME / "autonomy" / "content_governor_summary.yml"
 CONTENT_STRATEGY_PATH = RUNTIME / "autonomy" / "content_strategy_summary.yml"
 CONTENT_SOAK_PATH = RUNTIME / "autonomy" / "content_soak_summary.yml"
+CONTENT_VOLUME_PATH = RUNTIME / "autonomy" / "content_volume_summary.yml"
 REPO_BUNDLE_PATH = RUNTIME / "autonomy" / "repo_bundle_summary.yml"
 MINECRAFT_BUNDLE_PATH = RUNTIME / "autonomy" / "minecraft_bundle_summary.yml"
 MINECRAFT_STRATEGY_PATH = RUNTIME / "autonomy" / "minecraft_strategy_summary.yml"
@@ -63,6 +64,7 @@ def canonical_candidates(control: dict[str, Any]) -> list[dict[str, Any]]:
     content = load_yaml(CONTENT_SUMMARY_PATH)
     content_strategy = load_yaml(CONTENT_STRATEGY_PATH)
     content_soak = load_yaml(CONTENT_SOAK_PATH)
+    content_volume = load_yaml(CONTENT_VOLUME_PATH)
     repo_bundle = load_yaml(REPO_BUNDLE_PATH)
     minecraft_bundle = load_yaml(MINECRAFT_BUNDLE_PATH)
     minecraft_strategy = load_yaml(MINECRAFT_STRATEGY_PATH)
@@ -176,6 +178,27 @@ def canonical_candidates(control: dict[str, Any]) -> list[dict[str, Any]]:
                     "runtime_queue_avg": float(content_strategy.get("runtime_queue_avg", 0.0)),
                     "runtime_event_join_avg": float(content_strategy.get("runtime_event_join_avg", 0.0)),
                     "runtime_return_player_reward_avg": float(content_strategy.get("runtime_return_player_reward_avg", 0.0)),
+                },
+            }
+        )
+        proposals.append(
+            {
+                "artifact_class": "content_volume_profile",
+                "scope": "minecraft_runtime",
+                "reason": "content volume and spectacle density should be governed as a canonical player-facing completeness input",
+                "source": "content_volume_governor",
+                "criteria": {
+                    "scope_fit": float(content_volume.get("content_volume_score", 0.0)) >= 0.0,
+                    "authority_fit": thresholds["autonomy"],
+                    "upgrade_value": bool(content_volume.get("content_volume_state", "")),
+                    "exploration_os_compatibility": True,
+                },
+                "payload": {
+                    "content_volume_score": float(content_volume.get("content_volume_score", 0.0)),
+                    "content_volume_state": str(content_volume.get("content_volume_state", "")),
+                    "core_family_coverage": int(content_volume.get("core_family_coverage", 0)),
+                    "progression_span": int(content_volume.get("progression_span", 0)),
+                    "spectacle_density": int(content_volume.get("spectacle_density", 0)),
                 },
             }
         )

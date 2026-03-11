@@ -139,6 +139,10 @@ def test_artifact_governor_creates_canonical_operating_artifacts(tmp_path: Path)
             "next_focus_csv: social,event,onboarding\nrecommended_repairs_csv: content_governor,liveops_governor,economy_governor,anti_cheat_governor\nrecommended_repairs_count: 4\nruntime_queue_avg: 5.2\nruntime_event_join_avg: 808.4\nruntime_return_player_reward_avg: 47.0\n",
             encoding="utf-8",
         )
+        (autonomy_dir / "content_volume_summary.yml").write_text(
+            "content_volume_score: 7.8\ncontent_volume_state: growing\ncore_family_coverage: 8\nprogression_span: 5\nspectacle_density: 7\n",
+            encoding="utf-8",
+        )
         (autonomy_dir / "repo_bundle_summary.yml").write_text(
             "bundle_total: 7\nbundle_completed: 7\nbundle_completion_percent: 100.0\ngovernance_bundle_state: complete\nautonomy_bundle_state: complete\ndocs_information_architecture_bundle_state: complete\n",
             encoding="utf-8",
@@ -175,6 +179,7 @@ def test_artifact_governor_creates_canonical_operating_artifacts(tmp_path: Path)
         assert len(list(proposal_dir.glob("*.yml"))) >= 4
         assert len(list(canonical_dir.glob("*.yml"))) >= 4
         assert "CANONICAL=minecraft_runtime:content_quality_profile" in result.stdout
+        assert "CANONICAL=minecraft_runtime:content_volume_profile" in result.stdout
         assert "CANONICAL=minecraft_runtime:content_portfolio_strategy" in result.stdout
         assert "CANONICAL=minecraft_runtime:repo_bundle_profile" in result.stdout
         assert "CANONICAL=minecraft_runtime:minecraft_domain_bundle_profile" in result.stdout
@@ -224,8 +229,9 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         subprocess.run([sys.executable, str(ROOT / "ops" / "economy_governor.py")], check=True, cwd=ROOT)
         subprocess.run([sys.executable, str(ROOT / "ops" / "anti_cheat_governor.py")], check=True, cwd=ROOT)
         subprocess.run([sys.executable, str(ROOT / "ops" / "liveops_governor.py")], check=True, cwd=ROOT)
-        subprocess.run([sys.executable, str(ROOT / "ops" / "player_experience_governor.py")], check=True, cwd=ROOT)
         subprocess.run([sys.executable, str(ROOT / "ops" / "gameplay_progression_governor.py")], check=True, cwd=ROOT)
+        subprocess.run([sys.executable, str(ROOT / "ops" / "content_volume_governor.py")], check=True, cwd=ROOT)
+        subprocess.run([sys.executable, str(ROOT / "ops" / "player_experience_governor.py")], check=True, cwd=ROOT)
         subprocess.run([sys.executable, str(ROOT / "ops" / "engagement_fatigue_governor.py")], check=True, cwd=ROOT)
         subprocess.run([sys.executable, str(ROOT / "ops" / "material_inventory.py")], check=True, cwd=ROOT)
         subprocess.run([sys.executable, str(ROOT / "ops" / "runtime_partition_governor.py")], check=True, cwd=ROOT)
@@ -259,6 +265,7 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         player_experience_summary = yaml.safe_load((runtime_data / "autonomy" / "player_experience_summary.yml").read_text(encoding="utf-8"))
         player_experience_soak_summary = yaml.safe_load((runtime_data / "autonomy" / "player_experience_soak_summary.yml").read_text(encoding="utf-8"))
         gameplay_progression_summary = yaml.safe_load((runtime_data / "autonomy" / "gameplay_progression_summary.yml").read_text(encoding="utf-8"))
+        content_volume_summary = yaml.safe_load((runtime_data / "autonomy" / "content_volume_summary.yml").read_text(encoding="utf-8"))
         engagement_fatigue_summary = yaml.safe_load((runtime_data / "autonomy" / "engagement_fatigue_summary.yml").read_text(encoding="utf-8"))
 
         assert content_summary["generated"] >= 14
@@ -274,6 +281,8 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         assert float(content_summary["replayable_loop_score"]) >= 1.5
         assert float(content_summary["starter_reward_strength"]) >= 1.0
         assert float(content_summary["rivalry_reward_pull"]) >= 1.0
+        assert float(content_volume_summary["content_volume_score"]) > 0
+        assert content_volume_summary["content_volume_state"] in {"thin", "growing", "mature"}
         assert economy_summary["action"] in {"adjust", "observe"}
         assert anti_cheat_summary["sandbox_cases"] >= 1
         assert float(anti_cheat_summary["progression_protection_score"]) >= 0
@@ -292,9 +301,10 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         assert float(strategy_summary["runtime_event_join_avg"]) >= 0
         assert float(strategy_summary["runtime_queue_avg"]) >= 0
         assert soak_summary["content_soak_state"] in {"active", "observe", "tune", "stable"}
-        assert int(bundle_summary["bundle_total"]) == 7
+        assert int(bundle_summary["bundle_total"]) == 8
         assert int(bundle_summary["bundle_completed"]) >= 1
         assert bundle_summary["player_facing_depth_state"] in {"partial", "complete"}
+        assert bundle_summary["content_volume_state"] in {"partial", "complete"}
         assert int(repo_bundle_summary["bundle_total"]) == 7
         assert int(repo_bundle_summary["bundle_completed"]) >= 1
         assert int(minecraft_bundle_summary["bundle_total"]) == 6
@@ -309,6 +319,7 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         assert player_experience_summary["experience_state"] in {"early", "mid", "advanced"}
         assert float(player_experience_summary["first_session_strength"]) >= 0
         assert float(player_experience_summary["trust_pull"]) >= 0
+        assert float(player_experience_summary["volume_pull"]) >= 0
         assert player_experience_soak_summary["player_experience_soak_state"] in {"tune", "observe", "stable"}
         assert float(player_experience_soak_summary["first_session_strength"]) >= 0
         assert float(player_experience_soak_summary["trust_pull"]) >= 0

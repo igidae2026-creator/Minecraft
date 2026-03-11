@@ -16,6 +16,7 @@ CONTROL_PATH = AUTONOMY / "control" / "state.yml"
 CONTENT_SUMMARY_PATH = AUTONOMY / "content_governor_summary.yml"
 CONTENT_STRATEGY_PATH = AUTONOMY / "content_strategy_summary.yml"
 CONTENT_SOAK_PATH = AUTONOMY / "content_soak_summary.yml"
+CONTENT_VOLUME_PATH = AUTONOMY / "content_volume_summary.yml"
 ARTIFACT_SUMMARY_PATH = AUTONOMY / "artifact_governor_summary.yml"
 FINAL_EVAL_PATH = AUTONOMY / "final_threshold_eval.json"
 SUMMARY_PATH = AUTONOMY / "content_bundle_summary.yml"
@@ -58,6 +59,7 @@ def main() -> int:
     content = load_yaml(CONTENT_SUMMARY_PATH)
     strategy = load_yaml(CONTENT_STRATEGY_PATH)
     soak = load_yaml(CONTENT_SOAK_PATH)
+    volume = load_yaml(CONTENT_VOLUME_PATH)
     artifact = load_yaml(ARTIFACT_SUMMARY_PATH)
 
     canonical_registry = artifact.get("canonical_registry", []) or []
@@ -77,6 +79,10 @@ def main() -> int:
                 f"social_loop_density={content.get('social_loop_density', 0)} "
                 f"starter_reward_strength={content.get('starter_reward_strength', 0)}"
             ),
+        },
+        "content_volume": {
+            "ready": float(volume.get("content_volume_score", 0.0)) >= 7.5 and canonical_registry_contains(canonical_registry, "content_volume_profile"),
+            "evidence": f"content_volume_score={volume.get('content_volume_score', 0)} canonical={canonical_registry_contains(canonical_registry, 'content_volume_profile')}",
         },
         "portfolio_strategy": {
             "ready": bool(strategy.get("next_focus_csv", "")) and canonical_registry_contains(canonical_registry, "content_portfolio_strategy"),
@@ -124,6 +130,7 @@ def main() -> int:
         "content_depth_state": payload["bundles"]["content_depth"]["state"],
         "content_evaluation_state": payload["bundles"]["content_evaluation"]["state"],
         "player_facing_depth_state": payload["bundles"]["player_facing_depth"]["state"],
+        "content_volume_state": payload["bundles"]["content_volume"]["state"],
         "portfolio_strategy_state": payload["bundles"]["portfolio_strategy"]["state"],
         "live_data_absorption_state": payload["bundles"]["live_data_absorption"]["state"],
         "recovery_coupling_state": payload["bundles"]["recovery_coupling"]["state"],

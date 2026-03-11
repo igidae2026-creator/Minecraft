@@ -23,9 +23,10 @@ For layer positioning and higher-order design constraints, read [EXPLORATION_OS_
 - The current uplift path is:
   1. deepen gameplay progression through longer quest chains, denser dungeon variations, and stronger seasonal arcs
   2. strengthen onboarding, social, and live-ops re-entry loops
-  3. reduce thinness, repetition fatigue, and novelty gap while completeness rises
-  4. keep anti-cheat, recovery, and progression trust coupled so completeness gains do not rely on unsafe shortcuts
-  5. preserve bundle, soak, artifact, and final-threshold closure while the player-facing layer grows
+  3. raise content volume, spectacle density, and progression span so completeness does not plateau on a thin catalog
+  4. reduce thinness, repetition fatigue, and novelty gap while completeness rises
+  5. keep anti-cheat, recovery, and progression trust coupled so completeness gains do not rely on unsafe shortcuts
+  6. preserve bundle, soak, artifact, and final-threshold closure while the player-facing layer grows
 - A content or gameplay increase that lowers governance quality or breaks replayable operating truth does not count as progress.
 - A governance surface that stays green while player-facing completeness stalls also does not count as success.
 

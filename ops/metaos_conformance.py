@@ -58,6 +58,7 @@ def main() -> int:
         "anti_cheat_governor": ROOT / "ops" / "anti_cheat_governor.py",
         "liveops_governor": ROOT / "ops" / "liveops_governor.py",
         "gameplay_progression_governor": ROOT / "ops" / "gameplay_progression_governor.py",
+        "content_volume_governor": ROOT / "ops" / "content_volume_governor.py",
         "engagement_fatigue_governor": ROOT / "ops" / "engagement_fatigue_governor.py",
         "material_inventory": ROOT / "ops" / "material_inventory.py",
         "runtime_partition_governor": ROOT / "ops" / "runtime_partition_governor.py",

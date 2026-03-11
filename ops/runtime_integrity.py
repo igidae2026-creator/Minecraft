@@ -42,13 +42,14 @@ def main() -> int:
     economy_operations = RUNTIME / "economy_operations"
     anti_cheat = RUNTIME / "anti_cheat"
     live_ops = RUNTIME / "live_ops"
+    content_volume = RUNTIME / "content_volume"
     item_authority = RUNTIME / "item_authority" / "owners"
     status_dir = RUNTIME / "status"
     control = load_yaml(CONTROL_STATE) or {}
 
     required_surfaces = [artifacts, policies, experiments, incidents, coordination, knowledge, artifact_proposals, canonical_artifacts, audit, item_authority, status_dir]
     if bool(control.get("autonomy_threshold_ready", False)):
-        required_surfaces.extend([content_pipeline, economy_operations, anti_cheat, live_ops])
+        required_surfaces.extend([content_pipeline, economy_operations, anti_cheat, live_ops, content_volume])
 
     for required in required_surfaces:
         if not required.exists():
@@ -112,6 +113,7 @@ def main() -> int:
     print(f"ECONOMY_ARTIFACTS={len(list(economy_operations.glob('*.yml'))) if economy_operations.exists() else 0}")
     print(f"ANTI_CHEAT_ARTIFACTS={len(list(anti_cheat.glob('*.yml'))) if anti_cheat.exists() else 0}")
     print(f"LIVEOPS_ARTIFACTS={len(list(live_ops.glob('*.yml'))) if live_ops.exists() else 0}")
+    print(f"CONTENT_VOLUME_ARTIFACTS={len(list(content_volume.glob('*.json'))) if content_volume.exists() else 0}")
     return 0
 
 

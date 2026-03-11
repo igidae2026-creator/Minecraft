@@ -17,6 +17,7 @@ SUMMARY_PATH = AUTONOMY / "player_experience_summary.yml"
 OUTPUT_DIR = RUNTIME / "player_experience"
 ANTI_CHEAT_SUMMARY_PATH = AUTONOMY / "anti_cheat_governor_summary.yml"
 FATIGUE_SUMMARY_PATH = AUTONOMY / "engagement_fatigue_summary.yml"
+CONTENT_VOLUME_SUMMARY_PATH = AUTONOMY / "content_volume_summary.yml"
 
 
 def now_iso() -> str:
@@ -47,6 +48,7 @@ def main() -> int:
     liveops = load_yaml(AUTONOMY / "liveops_governor_summary.yml")
     anti_cheat = load_yaml(ANTI_CHEAT_SUMMARY_PATH)
     fatigue = load_yaml(FATIGUE_SUMMARY_PATH)
+    content_volume = load_yaml(CONTENT_VOLUME_SUMMARY_PATH)
 
     totals = {
         "queue_size": 0.0,
@@ -88,6 +90,8 @@ def main() -> int:
     repetition_score = float(fatigue.get("repetition_score", 0.0))
     novelty_gap_score = float(fatigue.get("novelty_gap_score", 0.0))
     fatigue_state = str(fatigue.get("fatigue_state", ""))
+    content_volume_score = float(content_volume.get("content_volume_score", 0.0))
+    volume_pull = round(clamp(content_volume_score / 10.0, 0.0, 1.0), 2)
 
     onboarding_tempo = round(clamp((return_reward_avg / 120.0) + ((12.0 - queue_avg) / 18.0), 0.0, 1.0), 2)
     reward_tempo = round(clamp((return_reward_avg / 110.0) + (quality_score / 20.0) + (starter_reward_strength / 4.0), 0.0, 1.0), 2)
@@ -104,6 +108,7 @@ def main() -> int:
         + replay_pull * 0.19
         + onboarding_tempo * 0.08
         + trust_pull * 0.1
+        + volume_pull * 0.1
     )
     completeness_percent = round(
         clamp(
@@ -143,6 +148,8 @@ def main() -> int:
         "progression_protection_score": progression_protection_score,
         "trusted_progression_window": trusted_progression_window,
         "trust_pull": trust_pull,
+        "volume_pull": volume_pull,
+        "content_volume_score": content_volume_score,
         "cadence_diversity_score": cadence_diversity_score,
         "thinness_score": thinness_score,
         "repetition_score": repetition_score,
