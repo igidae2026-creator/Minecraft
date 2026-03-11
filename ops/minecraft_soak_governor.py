@@ -41,6 +41,7 @@ def main() -> int:
     economy = load_yaml(AUTONOMY / "economy_governor_summary.yml")
     anti_cheat = load_yaml(AUTONOMY / "anti_cheat_governor_summary.yml")
     liveops = load_yaml(AUTONOMY / "liveops_governor_summary.yml")
+    fatigue = load_yaml(AUTONOMY / "engagement_fatigue_summary.yml")
 
     steady_noop_streak = int(control.get("steady_noop_streak", 0))
     final_ready = bool(control.get("final_threshold_ready", False))
@@ -49,12 +50,16 @@ def main() -> int:
     sandbox_cases = int(anti_cheat.get("sandbox_cases", 0))
     inflation_ratio = float(economy.get("inflation_ratio", 0.0))
     held_actions = int(liveops.get("held_actions", 0))
+    fatigue_gap_score = float(fatigue.get("fatigue_gap_score", 0.0))
+    fatigue_state = str(fatigue.get("fatigue_state", ""))
 
-    if final_ready and steady_noop_streak >= 24 and repairs == 0 and held_actions == 0:
+    if final_ready and steady_noop_streak >= 24 and repairs == 0 and held_actions == 0 and fatigue_gap_score <= 0.3:
         soak_state = "stable"
     elif final_ready and bundle_completion >= 100.0 and steady_noop_streak >= 12:
         soak_state = "observe"
     else:
+        soak_state = "tune"
+    if fatigue_state == "high":
         soak_state = "tune"
 
     payload = {
@@ -67,6 +72,8 @@ def main() -> int:
         "anti_cheat_sandbox_cases": sandbox_cases,
         "economy_inflation_ratio": inflation_ratio,
         "liveops_held_actions": held_actions,
+        "fatigue_gap_score": fatigue_gap_score,
+        "fatigue_state": fatigue_state,
         "minecraft_soak_state": soak_state,
     }
     SOAK_DIR.mkdir(parents=True, exist_ok=True)

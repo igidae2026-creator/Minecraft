@@ -33,6 +33,7 @@ KNOWN_REPAIRS = {
     "minecraft_soak_governor",
     "player_experience_governor",
     "player_experience_soak_governor",
+    "engagement_fatigue_governor",
     "runtime_summary",
 }
 

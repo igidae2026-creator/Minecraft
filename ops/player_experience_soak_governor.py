@@ -37,6 +37,7 @@ def main() -> int:
     created_at = now_iso()
     control = load_yaml(AUTONOMY / "control" / "state.yml")
     player_experience = load_yaml(AUTONOMY / "player_experience_summary.yml")
+    fatigue = load_yaml(AUTONOMY / "engagement_fatigue_summary.yml")
     content_strategy = load_yaml(AUTONOMY / "content_strategy_summary.yml")
     minecraft_strategy = load_yaml(AUTONOMY / "minecraft_strategy_summary.yml")
     liveops = load_yaml(AUTONOMY / "liveops_governor_summary.yml")
@@ -48,16 +49,21 @@ def main() -> int:
     friction_penalty = float(player_experience.get("friction_penalty", 0.0))
     first_session_strength = float(player_experience.get("first_session_strength", 0.0))
     trust_pull = float(player_experience.get("trust_pull", 0.0))
+    fatigue_gap_score = float(fatigue.get("fatigue_gap_score", 0.0))
+    fatigue_state = str(fatigue.get("fatigue_state", ""))
     content_repairs = int(content_strategy.get("recommended_repairs_count", 0))
     minecraft_repairs = int(minecraft_strategy.get("recommended_repairs_count", 0))
     boost_reentry = bool(liveops.get("boost_reentry", False))
+    boost_novelty = bool(liveops.get("boost_novelty", False))
     combined_repairs = content_repairs + minecraft_repairs
 
-    if final_ready and steady_noop_streak >= 24 and experience_percent >= 46.0 and first_session_strength >= 0.95 and trust_pull >= 0.7 and friction_penalty <= 0.2 and combined_repairs <= 4 and not boost_reentry:
+    if final_ready and steady_noop_streak >= 24 and experience_percent >= 46.0 and first_session_strength >= 0.95 and trust_pull >= 0.7 and friction_penalty <= 0.2 and combined_repairs <= 4 and not boost_reentry and fatigue_gap_score <= 0.3:
         soak_state = "stable"
     elif final_ready and steady_noop_streak >= 12 and experience_percent >= 25.0:
         soak_state = "observe"
     else:
+        soak_state = "tune"
+    if fatigue_state == "high":
         soak_state = "tune"
 
     payload = {
@@ -69,10 +75,13 @@ def main() -> int:
         "friction_penalty": friction_penalty,
         "first_session_strength": first_session_strength,
         "trust_pull": trust_pull,
+        "fatigue_gap_score": fatigue_gap_score,
+        "fatigue_state": fatigue_state,
         "content_recommended_repairs_count": content_repairs,
         "minecraft_recommended_repairs_count": minecraft_repairs,
         "combined_recommended_repairs_count": combined_repairs,
         "boost_reentry": boost_reentry,
+        "boost_novelty": boost_novelty,
         "player_experience_soak_state": soak_state,
     }
     SOAK_DIR.mkdir(parents=True, exist_ok=True)
