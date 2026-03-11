@@ -52,6 +52,8 @@ def main() -> int:
     return_player_reward_avg = float(content_strategy.get("runtime_return_player_reward_avg", 0.0))
     inflation_ratio = float(economy.get("inflation_ratio", 0.0))
     sandbox_cases = int(anti_cheat.get("sandbox_cases", 0))
+    anti_cheat_mode = str(anti_cheat.get("mode", ""))
+    progression_protection_score = float(anti_cheat.get("progression_protection_score", 0.0))
     held_actions = int(liveops.get("held_actions", 0))
     content_soak_state = str(content_soak.get("content_soak_state", ""))
     experience_percent = float(player_experience.get("estimated_completeness_percent", 0.0))
@@ -63,27 +65,27 @@ def main() -> int:
     candidates = [
         {
             "domain": "gameplay_progression",
-            "priority_score": round((2.4 - avg_depth) + (0.6 if content_soak_state != "stable" else 0.0) + (0.7 if experience_percent < 40 else 0.1) + (0.7 if progression_total_score < 9.0 else 0.1) + (0.6 if fatigue_gap_score >= 0.45 else 0.0), 2),
+            "priority_score": round((2.2 - avg_depth) + (0.4 if content_soak_state != "stable" else 0.0) + (0.5 if experience_percent < 45 else 0.0) + (0.6 if progression_total_score < 9.0 else 0.0) + (0.4 if fatigue_gap_score >= 0.45 else 0.0), 2),
             "reason": f"avg_depth={avg_depth} content_soak_state={content_soak_state} experience_percent={experience_percent} progression_total_score={progression_total_score} fatigue_gap_score={fatigue_gap_score}",
-            "repairs": ["content_governor", "player_experience_governor", "player_experience_soak_governor"],
+            "repairs": ["content_governor", "player_experience_governor", "player_experience_soak_governor"] if (avg_depth < 2.1 or experience_percent < 48 or progression_total_score < 11.0 or fatigue_gap_score >= 0.4) else [],
         },
         {
             "domain": "economy_market",
             "priority_score": round(abs(1.0 - inflation_ratio) + (0.4 if return_player_reward_avg < 60 else 0.0), 2),
             "reason": f"inflation_ratio={inflation_ratio} return_player_reward_avg={return_player_reward_avg}",
-            "repairs": ["economy_governor"],
+            "repairs": ["economy_governor"] if abs(1.0 - inflation_ratio) >= 0.1 or return_player_reward_avg < 60 else [],
         },
         {
             "domain": "social_liveops",
-            "priority_score": round((1.0 if event_join_avg < 950 else 0.2) + (0.7 if held_actions > 0 else 0.0) + (0.5 if return_player_reward_avg < 60 else 0.0) + (0.9 if experience_percent < 40 else 0.1) + (0.4 if experience_soak_state != "stable" else 0.0) + (0.8 if fatigue_gap_score >= 0.45 else 0.0), 2),
+            "priority_score": round((0.8 if event_join_avg < 950 else 0.0) + (0.6 if held_actions > 0 else 0.0) + (0.4 if return_player_reward_avg < 80 else 0.0) + (0.7 if experience_percent < 45 else 0.0) + (0.4 if experience_soak_state == "tune" else 0.0) + (0.6 if fatigue_gap_score >= 0.45 else 0.0), 2),
             "reason": f"event_join_avg={event_join_avg} held_actions={held_actions} return_player_reward_avg={return_player_reward_avg} experience_percent={experience_percent} experience_soak_state={experience_soak_state} fatigue_state={fatigue_state}",
             "repairs": ["liveops_governor", "content_governor", "player_experience_governor", "player_experience_soak_governor"],
         },
         {
             "domain": "anti_cheat_recovery",
-            "priority_score": round((0.9 if sandbox_cases > 0 else 0.2) + (0.5 if content_soak_state == "tune" else 0.0), 2),
-            "reason": f"sandbox_cases={sandbox_cases} content_soak_state={content_soak_state}",
-            "repairs": ["anti_cheat_governor"],
+            "priority_score": round((0.7 if sandbox_cases > 0 and anti_cheat_mode != 'observe_and_replay' else 0.0) + (0.4 if progression_protection_score < 0.9 else 0.0) + (0.3 if content_soak_state == 'tune' else 0.0), 2),
+            "reason": f"sandbox_cases={sandbox_cases} anti_cheat_mode={anti_cheat_mode} progression_protection_score={progression_protection_score} content_soak_state={content_soak_state}",
+            "repairs": ["anti_cheat_governor"] if anti_cheat_mode != "observe_and_replay" or progression_protection_score < 0.9 else [],
         },
         {
             "domain": "governance_autonomy",
@@ -94,9 +96,11 @@ def main() -> int:
     ]
 
     ranked = sorted(candidates, key=lambda item: (-item["priority_score"], item["domain"]))
-    next_focus = [item["domain"] for item in ranked[:3]]
+    next_focus = [item["domain"] for item in ranked if item["priority_score"] > 0][:3]
     recommended_repairs: list[str] = []
     for item in ranked[:3]:
+        if item["priority_score"] <= 0.2:
+            continue
         for repair in item["repairs"]:
             if repair not in recommended_repairs:
                 recommended_repairs.append(repair)

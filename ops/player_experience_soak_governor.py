@@ -57,7 +57,7 @@ def main() -> int:
     boost_novelty = bool(liveops.get("boost_novelty", False))
     combined_repairs = content_repairs + minecraft_repairs
 
-    if final_ready and steady_noop_streak >= 24 and experience_percent >= 46.0 and first_session_strength >= 0.95 and trust_pull >= 0.7 and friction_penalty <= 0.2 and combined_repairs <= 4 and not boost_reentry and fatigue_gap_score <= 0.3:
+    if final_ready and steady_noop_streak >= 24 and experience_percent >= 46.0 and first_session_strength >= 0.95 and trust_pull >= 0.7 and friction_penalty <= 0.25 and combined_repairs <= 4 and not boost_reentry and fatigue_gap_score <= 0.35:
         soak_state = "stable"
     elif final_ready and steady_noop_streak >= 12 and experience_percent >= 25.0:
         soak_state = "observe"

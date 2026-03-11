@@ -128,6 +128,7 @@ def main() -> int:
     inflation_ratio = float(economy.get("inflation_ratio", 1.0))
     held_liveops = int(liveops.get("held_actions", 0))
     sandbox_cases = int(anti_cheat.get("sandbox_cases", 0))
+    anti_cheat_mode = str(anti_cheat.get("mode", ""))
     experience_percent = float(player_experience.get("estimated_completeness_percent", 0.0))
     experience_state = str(player_experience.get("experience_state", ""))
     trust_pull = float(player_experience.get("trust_pull", 0.0))
@@ -195,25 +196,25 @@ def main() -> int:
     ranked = sorted(expansion_candidates, key=lambda item: (-item["leverage_score"], -item["coverage_gap"], -item["held"], item["family"]))
     next_focus = [item["family"] for item in ranked[:3]]
     repair_jobs = []
-    if avg_depth < 2.2:
+    if avg_depth < 2.1:
         repair_jobs.append("content_governor")
     if first_loop_coverage < 2.2 and "content_governor" not in repair_jobs:
         repair_jobs.append("content_governor")
-    if avg_retention < 1.8:
+    if avg_retention < 1.7:
         repair_jobs.append("liveops_governor")
     if avg_quality < 8.2:
         repair_jobs.append("economy_governor")
     if event_join_avg < 900 and "liveops_governor" not in repair_jobs:
         repair_jobs.append("liveops_governor")
-    if sandbox_cases > 0 and "anti_cheat_governor" not in repair_jobs:
+    if sandbox_cases > 0 and anti_cheat_mode != "observe_and_replay" and "anti_cheat_governor" not in repair_jobs:
         repair_jobs.append("anti_cheat_governor")
     if trust_pull < 0.7 and "anti_cheat_governor" not in repair_jobs:
         repair_jobs.append("anti_cheat_governor")
-    if experience_percent < 45 and "player_experience_governor" not in repair_jobs:
+    if experience_percent < 47 and experience_state != "advanced" and "player_experience_governor" not in repair_jobs:
         repair_jobs.append("player_experience_governor")
     if fatigue_gap_score >= 0.35 and "content_governor" not in repair_jobs:
         repair_jobs.append("content_governor")
-    if fatigue_gap_score >= 0.35 and "player_experience_governor" not in repair_jobs:
+    if fatigue_gap_score >= 0.38 and "player_experience_governor" not in repair_jobs:
         repair_jobs.append("player_experience_governor")
 
     detailed_payload = {
