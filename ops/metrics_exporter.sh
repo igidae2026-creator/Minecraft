@@ -226,6 +226,7 @@ metrics.append(f"rpg_network_content_first_loop_coverage_score {content_governor
 metrics.append(f"rpg_network_content_social_loop_density {content_governor_summary.get('social_loop_density', 0)}")
 metrics.append(f"rpg_network_content_replayable_loop_score {content_governor_summary.get('replayable_loop_score', 0)}")
 metrics.append(f"rpg_network_content_advanced_loop_strength {content_governor_summary.get('advanced_loop_strength', 0)}")
+metrics.append(f"rpg_network_content_prestige_loop_strength {content_governor_summary.get('prestige_loop_strength', 0)}")
 metrics.append(f"rpg_network_content_starter_reward_strength {content_governor_summary.get('starter_reward_strength', 0)}")
 metrics.append(f"rpg_network_content_rivalry_reward_pull {content_governor_summary.get('rivalry_reward_pull', 0)}")
 metrics.append(f"rpg_network_content_volume_score {content_volume_summary.get('content_volume_score', 0)}")

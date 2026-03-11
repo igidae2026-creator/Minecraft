@@ -80,6 +80,7 @@ def main() -> int:
     social_loop_density = float(content.get("social_loop_density", 0.0))
     replayable_loop_score = float(content.get("replayable_loop_score", 0.0))
     advanced_loop_strength = float(content.get("advanced_loop_strength", 0.0))
+    prestige_loop_strength = float(content.get("prestige_loop_strength", 0.0))
     starter_reward_strength = float(content.get("starter_reward_strength", 0.0))
     rivalry_reward_pull = float(content.get("rivalry_reward_pull", 0.0))
     held_actions = int(liveops.get("held_actions", 0))
@@ -111,6 +112,7 @@ def main() -> int:
         + trust_pull * 0.1
         + volume_pull * 0.1
         + min(1.0, advanced_loop_strength / 3.0) * 0.08
+        + min(1.0, prestige_loop_strength / 3.0) * 0.08
     )
     completeness_percent = round(
         clamp(
@@ -146,6 +148,7 @@ def main() -> int:
         "social_loop_density": social_loop_density,
         "replayable_loop_score": replayable_loop_score,
         "advanced_loop_strength": advanced_loop_strength,
+        "prestige_loop_strength": prestige_loop_strength,
         "starter_reward_strength": starter_reward_strength,
         "rivalry_reward_pull": rivalry_reward_pull,
         "progression_protection_score": progression_protection_score,

@@ -850,6 +850,29 @@ def content_candidates() -> list[dict[str, Any]]:
                     "reason": "mature volume triggers an extra prestige boss gauntlet variation",
                 },
                 {
+                    "artifact_type": "event",
+                    "artifact_id": "prestige_showdown_week",
+                    "scaffold": {
+                        "event_type": "prestige_showdown",
+                        "reward_pool": "elite",
+                    },
+                    "generated_payload": {
+                        "type": "prestige_showdown",
+                        "reward_pool": "elite",
+                        "cooldown_minutes": 50,
+                        "broadcast_emphasis": "high",
+                        "challenge_steps": ["group_rally", "boss_preview_chain", "showdown_clear", "prestige_cache"],
+                        "returner_bonus": True,
+                    },
+                    "validation": {
+                        "scope_fit": True,
+                        "reward_pool_known": "elite" in reward_pools,
+                        "cooldown_governed": True,
+                    },
+                    "verdict": "promote",
+                    "reason": "mature volume triggers an advanced prestige showdown event",
+                },
+                {
                     "artifact_type": "social",
                     "artifact_id": "prestige_rivalry_circuit",
                     "scaffold": {
@@ -871,6 +894,29 @@ def content_candidates() -> list[dict[str, Any]]:
                     },
                     "verdict": "promote",
                     "reason": "mature volume triggers a denser prestige rivalry circuit",
+                },
+                {
+                    "artifact_type": "social",
+                    "artifact_id": "prestige_guild_gauntlet",
+                    "scaffold": {
+                        "guild_progression_levels": len((guilds.get("progression", {}) or {}).get("level_thresholds", {})),
+                        "rivalry_threshold": int((guilds.get("rivalry", {}) or {}).get("created_threshold", 0)),
+                    },
+                    "generated_payload": {
+                        "reward_every": int((guilds.get("rivalry", {}) or {}).get("reward_every", 0)),
+                        "broadcast_poll_seconds": int(guilds.get("broadcast_poll_seconds", 0)),
+                        "points": (guilds.get("progression", {}) or {}).get("points", {}),
+                        "returner_bonus": True,
+                        "shared_objectives": ["guild_gauntlet_chain", "prestige_relay", "boss_vote_unlock", "showcase_finish"],
+                        "async_competition": True,
+                    },
+                    "validation": {
+                        "scope_fit": bool(guilds),
+                        "rivalry_threshold_valid": int((guilds.get("rivalry", {}) or {}).get("created_threshold", 0)) >= 2,
+                        "progression_defined": bool((guilds.get("progression", {}) or {}).get("level_thresholds", {})),
+                    },
+                    "verdict": "promote",
+                    "reason": "mature volume triggers a guild gauntlet prestige loop",
                 },
                 {
                     "artifact_type": "season",
@@ -996,6 +1042,7 @@ def main() -> int:
         "social_loop_density": round(min(3.0, by_type.get("social", 0) * 1.0 + by_type.get("season", 0) * 0.6), 2),
         "replayable_loop_score": round(min(3.0, by_type.get("dungeon_variation", 0) * 0.8 + by_type.get("season", 0) * 0.6 + by_type.get("event", 0) * 0.4), 2),
         "advanced_loop_strength": round(min(3.0, by_type.get("quest_chain", 0) * 0.7 + by_type.get("dungeon_variation", 0) * 0.75 + by_type.get("season", 0) * 0.55 + by_type.get("social", 0) * 0.35), 2),
+        "prestige_loop_strength": round(min(3.0, by_type.get("event", 0) * 0.35 + by_type.get("social", 0) * 0.5 + by_type.get("season", 0) * 0.75 + by_type.get("quest_chain", 0) * 0.45), 2),
         "starter_reward_strength": round(min(3.0, starter_reward_strength), 2),
         "rivalry_reward_pull": round(min(3.0, rivalry_reward_pull), 2),
         "depth_floor": MIN_DEPTH_SCORE,
