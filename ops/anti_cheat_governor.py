@@ -96,6 +96,20 @@ def main() -> int:
         ),
         2,
     )
+    exploit_resilience_score = round(
+        max(
+            0.0,
+            min(
+                1.0,
+                0.5
+                + (0.2 if incidents == 0 else 0.0)
+                + (0.1 if exploit_flags == 0 else 0.0)
+                + (0.1 if len(sandbox_cases) >= 1 else 0.0)
+                + (0.1 if experience_percent >= 70.0 else 0.0),
+            ),
+        ),
+        2,
+    )
     trusted_progression_window = bool(incidents == 0 and exploit_flags == 0 and experience_percent >= 40.0)
 
     plan_id = f"ac-{uuid.uuid4().hex[:12]}"
@@ -115,6 +129,7 @@ def main() -> int:
         "progression_protection": {
             "progression_protection_score": progression_protection_score,
             "trusted_progression_window": trusted_progression_window,
+            "exploit_resilience_score": exploit_resilience_score,
         },
     }
     payload["signature"] = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
@@ -138,6 +153,7 @@ def main() -> int:
         "mode": payload["rule_change"]["mode"],
         "progression_protection_score": progression_protection_score,
         "trusted_progression_window": trusted_progression_window,
+        "exploit_resilience_score": exploit_resilience_score,
         "autonomy_threshold_ready": bool(control.get("autonomy_threshold_ready", False)),
     }
     write_yaml(SUMMARY_PATH, summary)

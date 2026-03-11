@@ -294,6 +294,7 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         assert economy_summary["action"] in {"adjust", "observe"}
         assert anti_cheat_summary["sandbox_cases"] >= 1
         assert float(anti_cheat_summary["progression_protection_score"]) >= 0
+        assert float(anti_cheat_summary["exploit_resilience_score"]) >= 0
         assert liveops_summary["promoted_actions"] >= 1
         assert isinstance(liveops_summary["boost_reentry"], bool)
         assert float(liveops_summary["cadence_diversity_score"]) >= 0
@@ -328,6 +329,7 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         assert player_experience_summary["experience_state"] in {"early", "mid", "advanced"}
         assert float(player_experience_summary["first_session_strength"]) >= 0
         assert float(player_experience_summary["trust_pull"]) >= 0
+        assert float(player_experience_summary["exploit_resilience_score"]) >= 0
         assert float(player_experience_summary["volume_pull"]) >= 0
         assert float(player_experience_summary["long_soak_confidence"]) >= 0
         assert player_experience_soak_summary["player_experience_soak_state"] in {"tune", "observe", "stable"}

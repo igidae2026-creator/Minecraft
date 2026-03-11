@@ -93,6 +93,7 @@ def main() -> int:
     rivalry_reward_pull = float(content.get("rivalry_reward_pull", 0.0))
     held_actions = int(liveops.get("held_actions", 0))
     progression_protection_score = float(anti_cheat.get("progression_protection_score", 0.0))
+    exploit_resilience_score = float(anti_cheat.get("exploit_resilience_score", 0.0))
     trusted_progression_window = bool(anti_cheat.get("trusted_progression_window", False))
     cadence_diversity_score = float(liveops.get("cadence_diversity_score", 0.0))
     sustain_social = bool(liveops.get("sustain_social", False))
@@ -123,6 +124,7 @@ def main() -> int:
         + replay_pull * 0.19
         + onboarding_tempo * 0.08
         + trust_pull * 0.1
+        + exploit_resilience_score * 0.05
         + volume_pull * 0.1
         + min(1.0, advanced_loop_strength / 3.0) * 0.08
         + min(1.0, prestige_loop_strength / 3.0) * 0.08
@@ -179,6 +181,7 @@ def main() -> int:
         "starter_reward_strength": starter_reward_strength,
         "rivalry_reward_pull": rivalry_reward_pull,
         "progression_protection_score": progression_protection_score,
+        "exploit_resilience_score": exploit_resilience_score,
         "trusted_progression_window": trusted_progression_window,
         "trust_pull": trust_pull,
         "volume_pull": volume_pull,

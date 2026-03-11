@@ -69,12 +69,14 @@ def test_ops_tooling_executes_cleanly(tmp_path: Path):
     assert "rpg_network_player_experience_percent" in text
     assert "rpg_network_player_experience_first_session_strength" in text
     assert "rpg_network_player_experience_trust_pull" in text
+    assert "rpg_network_player_experience_exploit_resilience" in text
     assert "rpg_network_player_experience_volume_pull" in text
     assert "rpg_network_player_experience_long_soak_confidence" in text
     assert "rpg_network_player_experience_soak_stable" in text
     assert "rpg_network_economy_inflation_ratio" in text
     assert "rpg_network_anti_cheat_sandbox_cases" in text
     assert "rpg_network_anti_cheat_progression_protection_score" in text
+    assert "rpg_network_anti_cheat_exploit_resilience_score" in text
     assert "rpg_network_liveops_promoted_actions" in text
     assert "rpg_network_liveops_boost_reentry" in text
     assert "rpg_network_liveops_sustain_social" in text
