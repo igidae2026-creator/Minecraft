@@ -72,10 +72,14 @@ def main() -> int:
     first_loop_coverage = float(content.get("first_loop_coverage_score", 0.0))
     social_loop_density = float(content.get("social_loop_density", 0.0))
     replayable_loop_score = float(content.get("replayable_loop_score", 0.0))
+    starter_reward_strength = float(content.get("starter_reward_strength", 0.0))
+    rivalry_reward_pull = float(content.get("rivalry_reward_pull", 0.0))
     retention_proxy = float(content.get("average_retention_proxy", 0.0))
     completeness_percent = float(player_experience.get("estimated_completeness_percent", 0.0))
     progression_total_score = float(gameplay_progression.get("progression_total_score", 0.0))
     boost_reentry = bool(liveops.get("boost_reentry", False))
+    boost_novelty = bool(liveops.get("boost_novelty", False))
+    cadence_diversity_score = float(liveops.get("cadence_diversity_score", 0.0))
     recommended_repairs = int(strategy.get("recommended_repairs_count", 0))
 
     thinness_score = round(
@@ -85,9 +89,11 @@ def main() -> int:
                 first_loop_coverage / 4.0
                 + social_loop_density / 4.5
                 + replayable_loop_score / 4.5
+                + starter_reward_strength / 4.5
+                + rivalry_reward_pull / 4.5
                 + progression_total_score / 18.0
             )
-            / 4.0,
+            / 6.0,
             0.0,
             1.0,
         ),
@@ -105,6 +111,17 @@ def main() -> int:
         ),
         2,
     )
+    repetition_score = round(
+        clamp(
+            repetition_score
+            - cadence_diversity_score * 0.18
+            - (0.1 if boost_novelty else 0.0)
+            - min(0.12, rivalry_reward_pull / 20.0),
+            0.0,
+            1.0,
+        ),
+        2,
+    )
     novelty_gap_score = round(
         clamp(
             0.9
@@ -115,6 +132,9 @@ def main() -> int:
                 + rivalry_avg / 18.0
                 + return_reward_avg / 180.0
                 + completeness_percent / 120.0
+                + cadence_diversity_score * 0.18
+                + starter_reward_strength / 12.0
+                + rivalry_reward_pull / 12.0
             ),
             0.0,
             1.0,
@@ -149,6 +169,9 @@ def main() -> int:
         "recommended_repairs_count": recommended_repairs,
         "progression_total_score": progression_total_score,
         "estimated_completeness_percent": completeness_percent,
+        "starter_reward_strength": starter_reward_strength,
+        "rivalry_reward_pull": rivalry_reward_pull,
+        "cadence_diversity_score": cadence_diversity_score,
         "thinness_score": thinness_score,
         "repetition_score": repetition_score,
         "novelty_gap_score": novelty_gap_score,
