@@ -4,6 +4,7 @@ from pathlib import Path
 import subprocess
 import sys
 import shutil
+import json
 import yaml
 
 from helpers import ROOT, dump_yaml
@@ -17,7 +18,9 @@ def test_ops_tooling_executes_cleanly(tmp_path: Path):
     subprocess.run([sys.executable, str(ROOT / "ops" / "rebuild_runtime_status.py")], check=True, cwd=ROOT)
     subprocess.run([sys.executable, str(ROOT / "ops" / "runtime_integrity.py")], check=True, cwd=ROOT)
     subprocess.run([sys.executable, str(ROOT / "ops" / "runtime_summary.py")], check=True, cwd=ROOT)
+    subprocess.run([sys.executable, str(ROOT / "ops" / "parallel_workstream_governor.py")], check=True, cwd=ROOT)
     subprocess.run(["bash", str(ROOT / "ops" / "healthcheck.sh")], check=True, cwd=ROOT)
+    subprocess.run(["bash", str(ROOT / "ops" / "parallel_command_center.sh"), "plan"], check=True, cwd=ROOT)
 
     metrics_path = tmp_path / "metrics.prom"
     subprocess.run(["bash", str(ROOT / "ops" / "metrics_exporter.sh"), str(metrics_path)], check=True, cwd=ROOT)
@@ -122,6 +125,9 @@ def test_ops_tooling_executes_cleanly(tmp_path: Path):
     assert "rpg_network_runtime_partition_canonical_snapshot_files" in text
     assert "rpg_network_final_threshold_bundle_ready" in text
     assert "rpg_network_final_threshold_bundle_failed_criteria" in text
+    assignments = json.loads((ROOT / "runtime_data" / "autonomy" / "parallel" / "parallel_assignments.json").read_text(encoding="utf-8"))
+    assert assignments["workstream_count"] >= 4
+    assert (ROOT / "runtime_data" / "autonomy" / "parallel" / "packets" / "lane_01_content_density.md").is_file()
 
     for script in (ROOT / "ops").glob("*.sh"):
         subprocess.run(["bash", "-n", str(script)], check=True, cwd=ROOT)

@@ -9,6 +9,14 @@ Detailed command and recovery material now lives in:
 - [AUTONOMY_SURFACES.md](/home/meta_os/Minecraft/ops/AUTONOMY_SURFACES.md)
 - [RECOVERY_PLAYBOOK.md](/home/meta_os/Minecraft/ops/RECOVERY_PLAYBOOK.md)
 
+Parallel command surface:
+- `python3 ops/parallel_workstream_governor.py`
+- `bash ops/parallel_command_center.sh plan`
+- `bash ops/parallel_command_center.sh status`
+- `bash ops/parallel_command_center.sh launch`
+- `bash ops/parallel_command_center.sh stop`
+- Workstream packets are emitted under `runtime_data/autonomy/parallel/packets`.
+
 Autonomy target:
 - The operating goal is 24-hour unattended, high-quality automation where human intervention yields little or no meaningful quality gain.
 - Repository-internal closed loops are necessary but insufficient; the outer automation layer must also classify newly arriving material, decide whether it belongs in scope, and automatically reject, sandbox, defer, or promote it.
