@@ -798,6 +798,58 @@ def content_candidates() -> list[dict[str, Any]]:
                     "reason": "mature volume triggers an advanced returner fastlane branch",
                 },
                 {
+                    "artifact_type": "quest_chain",
+                    "artifact_id": "prestige_mastery_chain",
+                    "scaffold": {
+                        "step_count": 5,
+                        "finale_gate": "prestige_boss_unlock",
+                    },
+                    "generated_payload": {
+                        "steps": [
+                            {"quest_id": "slime_cleanup", "objective": "defeat_slimes", "amount": 5, "repeatable": False},
+                            {"quest_id": "goblin_raider", "objective": "defeat_goblins", "amount": 6, "repeatable": False},
+                            {"quest_id": "skeleton_archer", "objective": "defeat_skeletons", "amount": 8, "repeatable": True},
+                            {"quest_id": "guild_support", "objective": "party_clear", "amount": 3, "repeatable": True},
+                            {"quest_id": "boss_preview", "objective": "boss_preview_clear", "amount": 1, "repeatable": False},
+                        ],
+                        "branching_rewards": True,
+                        "total_gold": 420,
+                        "total_xp": 980,
+                        "finale_gate": "prestige_boss_unlock",
+                        "returner_bonus": True,
+                    },
+                    "validation": {
+                        "scope_fit": True,
+                        "progression_curve_present": True,
+                        "economy_budget_governed": True,
+                    },
+                    "verdict": "promote",
+                    "reason": "mature volume triggers a longer prestige mastery chain",
+                },
+                {
+                    "artifact_type": "dungeon_variation",
+                    "artifact_id": "prestige_boss_gauntlet_variation",
+                    "scaffold": {
+                        "base_template": "advanced_gauntlet",
+                        "layout_type": "gauntlet",
+                    },
+                    "generated_payload": {
+                        "base_template": "advanced_gauntlet",
+                        "modifiers": ["elite_pack_rotation", "boss_enrage_window", "returner_bonus_window", "prestige_cache"],
+                        "weekly_rotation": True,
+                        "reward_tier": "elite",
+                        "boss_rotation": True,
+                        "returner_bonus": True,
+                    },
+                    "validation": {
+                        "scope_fit": True,
+                        "modifier_count_valid": True,
+                        "difficulty_governed": True,
+                    },
+                    "verdict": "promote",
+                    "reason": "mature volume triggers an extra prestige boss gauntlet variation",
+                },
+                {
                     "artifact_type": "social",
                     "artifact_id": "prestige_rivalry_circuit",
                     "scaffold": {
