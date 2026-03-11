@@ -84,6 +84,7 @@ def main() -> int:
     social_persistence_strength = float(content.get("social_persistence_strength", 0.0))
     spectacle_variety_strength = float(content.get("spectacle_variety_strength", 0.0))
     mastery_arc_strength = float(content.get("mastery_arc_strength", 0.0))
+    returner_retention_strength = float(content.get("returner_retention_strength", 0.0))
     starter_reward_strength = float(content.get("starter_reward_strength", 0.0))
     rivalry_reward_pull = float(content.get("rivalry_reward_pull", 0.0))
     held_actions = int(liveops.get("held_actions", 0))
@@ -91,6 +92,7 @@ def main() -> int:
     trusted_progression_window = bool(anti_cheat.get("trusted_progression_window", False))
     cadence_diversity_score = float(liveops.get("cadence_diversity_score", 0.0))
     sustain_social = bool(liveops.get("sustain_social", False))
+    returner_reactivation_depth = float(liveops.get("returner_reactivation_depth", 0.0))
     fatigue_gap_score = float(fatigue.get("fatigue_gap_score", 0.0))
     thinness_score = float(fatigue.get("thinness_score", 0.0))
     repetition_score = float(fatigue.get("repetition_score", 0.0))
@@ -122,6 +124,8 @@ def main() -> int:
         + min(1.0, social_persistence_strength / 3.0) * 0.07
         + min(1.0, spectacle_variety_strength / 3.0) * 0.07
         + min(1.0, mastery_arc_strength / 3.0) * 0.07
+        + min(1.0, returner_retention_strength / 3.0) * 0.07
+        + min(1.0, returner_reactivation_depth / 2.0) * 0.05
     )
     completeness_percent = round(
         clamp(
@@ -161,6 +165,7 @@ def main() -> int:
         "social_persistence_strength": social_persistence_strength,
         "spectacle_variety_strength": spectacle_variety_strength,
         "mastery_arc_strength": mastery_arc_strength,
+        "returner_retention_strength": returner_retention_strength,
         "starter_reward_strength": starter_reward_strength,
         "rivalry_reward_pull": rivalry_reward_pull,
         "progression_protection_score": progression_protection_score,
@@ -170,6 +175,7 @@ def main() -> int:
         "content_volume_score": content_volume_score,
         "cadence_diversity_score": cadence_diversity_score,
         "sustain_social": sustain_social,
+        "returner_reactivation_depth": returner_reactivation_depth,
         "thinness_score": thinness_score,
         "repetition_score": repetition_score,
         "novelty_gap_score": novelty_gap_score,

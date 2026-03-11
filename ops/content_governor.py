@@ -986,6 +986,7 @@ def main() -> int:
     rivalry_reward_pull = 0.0
     social_persistence_strength = 0.0
     spectacle_variety_strength = 0.0
+    returner_retention_strength = 0.0
 
     for candidate in candidates:
         quality = score_candidate(
@@ -1042,9 +1043,11 @@ def main() -> int:
         elif artifact_type == "quest_chain":
             starter_reward_strength += 0.45 if generated_payload.get("branching_rewards", False) else 0.1
             spectacle_variety_strength += 0.18 if generated_payload.get("finale_gate") else 0.0
+            returner_retention_strength += 0.3 if generated_payload.get("returner_bonus", False) else 0.0
         elif artifact_type == "season":
             starter_reward_strength += 0.3 if generated_payload.get("returner_catchup", False) else 0.0
             spectacle_variety_strength += min(0.75, len(generated_payload.get("seasonal_axes", []) or []) * 0.14)
+            returner_retention_strength += 0.55 if generated_payload.get("returner_catchup", False) else 0.15
         if artifact_type == "social":
             shared_objectives = generated_payload.get("shared_objectives", []) or []
             rivalry_reward_pull += min(1.0, len(shared_objectives) * 0.28)
@@ -1054,12 +1057,14 @@ def main() -> int:
             social_persistence_strength += 0.45 if generated_payload.get("async_competition", False) else 0.0
             social_persistence_strength += 0.35 if generated_payload.get("returner_bonus", False) else 0.0
             spectacle_variety_strength += min(0.55, len(shared_objectives) * 0.1)
+            returner_retention_strength += 0.45 if generated_payload.get("returner_bonus", False) else 0.15
         elif artifact_type == "season":
             rivalry_reward_pull += 0.3 if generated_payload.get("returner_catchup", False) else 0.0
             social_persistence_strength += 0.25 if generated_payload.get("returner_catchup", False) else 0.0
         elif artifact_type == "onboarding":
             social_persistence_strength += 0.25 if generated_payload.get("party_prompt", False) else 0.0
             spectacle_variety_strength += 0.2 if generated_payload.get("party_prompt", False) else 0.0
+            returner_retention_strength += 0.3 if generated_payload.get("party_prompt", False) else 0.0
         if candidate["verdict"] == "promote":
             promoted += 1
         else:
@@ -1083,6 +1088,7 @@ def main() -> int:
         "mastery_arc_strength": round(min(3.0, by_type.get("quest_chain", 0) * 0.85 + by_type.get("dungeon_variation", 0) * 0.8 + by_type.get("season", 0) * 0.65), 2),
         "social_persistence_strength": round(min(3.0, social_persistence_strength), 2),
         "spectacle_variety_strength": round(min(3.0, spectacle_variety_strength), 2),
+        "returner_retention_strength": round(min(3.0, returner_retention_strength), 2),
         "starter_reward_strength": round(min(3.0, starter_reward_strength), 2),
         "rivalry_reward_pull": round(min(3.0, rivalry_reward_pull), 2),
         "depth_floor": MIN_DEPTH_SCORE,

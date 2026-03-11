@@ -123,6 +123,12 @@ def main() -> int:
                     "cohort": "advanced_returners",
                     "objective": "long_tail_party_rejoin",
                 },
+                {
+                    "action": "returner_legend_week",
+                    "mode": "promote",
+                    "cohort": "advanced_returners",
+                    "objective": "persistent_mastery_reactivation",
+                },
             ]
         )
     payload = {
@@ -167,6 +173,7 @@ def main() -> int:
         "boost_reentry": boost_reentry,
         "sustain_social": sustain_social,
         "boost_novelty": boost_novelty,
+        "returner_reactivation_depth": 1 if sustain_social else (1 if boost_reentry else 0),
         "cadence_diversity_score": cadence_diversity_score,
         "distinct_event_types": distinct_event_types,
         "distinct_reward_pools": distinct_reward_pools,
