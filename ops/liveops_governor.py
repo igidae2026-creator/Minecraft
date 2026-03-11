@@ -66,6 +66,7 @@ def main() -> int:
     distinct_reward_pools = len({str(event.get("reward_pool", "")) for event in scheduled_events.values() if event.get("reward_pool")})
     distinct_event_types = len({str(event.get("type", "")) for event in scheduled_events.values() if event.get("type")})
     cadence_diversity_score = round(min(1.0, distinct_event_types / 4.0 + distinct_reward_pools / 4.0), 2)
+    party_concurrency_support = 0.0
 
     action_id = f"liveops-{uuid.uuid4().hex[:12]}"
     scaffolded_actions = [
@@ -135,8 +136,19 @@ def main() -> int:
                     "cohort": "advanced_all",
                     "objective": "multi_week_campaign_arc",
                 },
+                {
+                    "action": "party_raid_marathon",
+                    "mode": "promote",
+                    "cohort": "advanced_parties",
+                    "objective": "sustain_group_concurrency",
+                },
             ]
         )
+        party_concurrency_support += 0.8
+    if boost_reentry:
+        party_concurrency_support += 0.35
+    if boost_novelty:
+        party_concurrency_support += 0.2
     payload = {
         "action_id": action_id,
         "created_at": created_at,
@@ -191,6 +203,7 @@ def main() -> int:
             2,
         ),
         "cadence_diversity_score": cadence_diversity_score,
+        "party_concurrency_support": round(min(1.0, party_concurrency_support), 2),
         "distinct_event_types": distinct_event_types,
         "distinct_reward_pools": distinct_reward_pools,
         "promoted_actions": sum(1 for action in payload["scaffolded_actions"] if action["mode"] == "promote"),

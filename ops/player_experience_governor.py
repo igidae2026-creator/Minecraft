@@ -86,6 +86,7 @@ def main() -> int:
     advanced_loop_strength = float(content.get("advanced_loop_strength", 0.0))
     prestige_loop_strength = float(content.get("prestige_loop_strength", 0.0))
     social_persistence_strength = float(content.get("social_persistence_strength", 0.0))
+    social_concurrency_strength = float(content.get("social_concurrency_strength", 0.0))
     spectacle_variety_strength = float(content.get("spectacle_variety_strength", 0.0))
     mastery_arc_strength = float(content.get("mastery_arc_strength", 0.0))
     prestige_clarity_strength = float(content.get("prestige_clarity_strength", 0.0))
@@ -100,6 +101,7 @@ def main() -> int:
     exploit_resilience_score = float(anti_cheat.get("exploit_resilience_score", 0.0))
     trusted_progression_window = bool(anti_cheat.get("trusted_progression_window", False))
     cadence_diversity_score = float(liveops.get("cadence_diversity_score", 0.0))
+    party_concurrency_support = float(liveops.get("party_concurrency_support", 0.0))
     sustain_social = bool(liveops.get("sustain_social", False))
     returner_reactivation_depth = float(liveops.get("returner_reactivation_depth", 0.0))
     liveops_depth_strength = float(liveops.get("liveops_depth_strength", 0.0))
@@ -115,7 +117,7 @@ def main() -> int:
 
     onboarding_tempo = round(clamp((return_reward_avg / 120.0) + ((12.0 - queue_avg) / 18.0), 0.0, 1.0), 2)
     reward_tempo = round(clamp((return_reward_avg / 110.0) + (quality_score / 20.0) + (starter_reward_strength / 4.0), 0.0, 1.0), 2)
-    social_stickiness = round(clamp((social_pressure / 24.0) + (event_join_avg / 2200.0) + (social_loop_density / 5.0) + (rivalry_reward_pull / 4.0) + cadence_diversity_score * 0.25, 0.0, 1.0), 2)
+    social_stickiness = round(clamp((social_pressure / 24.0) + (event_join_avg / 2200.0) + (social_loop_density / 5.0) + (rivalry_reward_pull / 4.0) + cadence_diversity_score * 0.25 + min(1.0, social_concurrency_strength / 3.0) * 0.35 + party_concurrency_support * 0.18, 0.0, 1.0), 2)
     if sustain_social:
         social_stickiness = round(clamp(social_stickiness + 0.08, 0.0, 1.0), 2)
     replay_pull = round(clamp((event_join_avg / 1800.0) + (retention_proxy / 3.5) + (replayable_loop_score / 5.0) + cadence_diversity_score * 0.3, 0.0, 1.0), 2)
@@ -135,6 +137,7 @@ def main() -> int:
         + min(1.0, advanced_loop_strength / 3.0) * 0.08
         + min(1.0, prestige_loop_strength / 3.0) * 0.08
         + min(1.0, social_persistence_strength / 3.0) * 0.07
+        + min(1.0, social_concurrency_strength / 3.0) * 0.07
         + min(1.0, spectacle_variety_strength / 3.0) * 0.07
         + min(1.0, mastery_arc_strength / 3.0) * 0.07
         + min(1.0, prestige_clarity_strength / 3.0) * 0.06
@@ -183,6 +186,7 @@ def main() -> int:
         "advanced_loop_strength": advanced_loop_strength,
         "prestige_loop_strength": prestige_loop_strength,
         "social_persistence_strength": social_persistence_strength,
+        "social_concurrency_strength": social_concurrency_strength,
         "spectacle_variety_strength": spectacle_variety_strength,
         "mastery_arc_strength": mastery_arc_strength,
         "prestige_clarity_strength": prestige_clarity_strength,
@@ -199,6 +203,7 @@ def main() -> int:
         "volume_pull": volume_pull,
         "content_volume_score": content_volume_score,
         "cadence_diversity_score": cadence_diversity_score,
+        "party_concurrency_support": party_concurrency_support,
         "sustain_social": sustain_social,
         "returner_reactivation_depth": returner_reactivation_depth,
         "liveops_depth_strength": liveops_depth_strength,

@@ -288,6 +288,7 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         assert float(content_summary["content_catalog_strength"]) >= 1.0
         assert float(content_summary["onboarding_polish_strength"]) >= 1.0
         assert float(content_summary["social_persistence_strength"]) >= 1.0
+        assert float(content_summary["social_concurrency_strength"]) >= 1.0
         assert float(content_summary["spectacle_variety_strength"]) >= 1.0
         assert float(content_summary["returner_retention_strength"]) >= 1.0
         assert float(content_summary["starter_reward_strength"]) >= 1.0
@@ -302,6 +303,7 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         assert isinstance(liveops_summary["boost_reentry"], bool)
         assert float(liveops_summary["liveops_depth_strength"]) >= 0
         assert float(liveops_summary["cadence_diversity_score"]) >= 0
+        assert float(liveops_summary["party_concurrency_support"]) >= 0
         assert float(gameplay_progression_summary["progression_total_score"]) >= 0
         assert gameplay_progression_summary["progression_state"] in {"early", "mid", "advanced"}
         assert float(engagement_fatigue_summary["fatigue_gap_score"]) >= 0
@@ -338,6 +340,8 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         assert float(player_experience_summary["volume_pull"]) >= 0
         assert float(player_experience_summary["long_soak_confidence"]) >= 0
         assert float(player_experience_summary["runtime_scale_confidence"]) >= 0
+        assert float(player_experience_summary["social_concurrency_strength"]) >= 0
+        assert float(player_experience_summary["party_concurrency_support"]) >= 0
         assert player_experience_soak_summary["player_experience_soak_state"] in {"tune", "observe", "stable"}
         assert float(player_experience_soak_summary["first_session_strength"]) >= 0
         assert float(player_experience_soak_summary["trust_pull"]) >= 0

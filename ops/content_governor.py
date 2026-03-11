@@ -942,6 +942,29 @@ def content_candidates() -> list[dict[str, Any]]:
                     "reason": "mature volume triggers a longer-lived guild legacy cohort loop",
                 },
                 {
+                    "artifact_type": "social",
+                    "artifact_id": "party_raid_marathon",
+                    "scaffold": {
+                        "guild_progression_levels": len((guilds.get("progression", {}) or {}).get("level_thresholds", {})),
+                        "rivalry_threshold": int((guilds.get("rivalry", {}) or {}).get("created_threshold", 0)),
+                    },
+                    "generated_payload": {
+                        "reward_every": int((guilds.get("rivalry", {}) or {}).get("reward_every", 0)),
+                        "broadcast_poll_seconds": int(guilds.get("broadcast_poll_seconds", 0)),
+                        "points": (guilds.get("progression", {}) or {}).get("points", {}),
+                        "returner_bonus": True,
+                        "shared_objectives": ["party_raid_chain", "guild_relay_clear", "mentor_party_bonus", "boss_support_rotation", "cohort_raid_vote"],
+                        "async_competition": True,
+                    },
+                    "validation": {
+                        "scope_fit": bool(guilds),
+                        "rivalry_threshold_valid": int((guilds.get("rivalry", {}) or {}).get("created_threshold", 0)) >= 2,
+                        "progression_defined": bool((guilds.get("progression", {}) or {}).get("level_thresholds", {})),
+                    },
+                    "verdict": "promote",
+                    "reason": "mature volume triggers a party-heavy raid marathon loop",
+                },
+                {
                     "artifact_type": "season",
                     "artifact_id": "prestige_rotation_season",
                     "scaffold": {
@@ -985,6 +1008,7 @@ def main() -> int:
     starter_reward_strength = 0.0
     rivalry_reward_pull = 0.0
     social_persistence_strength = 0.0
+    social_concurrency_strength = 0.0
     spectacle_variety_strength = 0.0
     returner_retention_strength = 0.0
     onboarding_polish_strength = 0.0
@@ -1054,19 +1078,32 @@ def main() -> int:
             returner_retention_strength += 0.55 if generated_payload.get("returner_catchup", False) else 0.15
         if artifact_type == "social":
             shared_objectives = generated_payload.get("shared_objectives", []) or []
+            party_objectives = [
+                objective
+                for objective in shared_objectives
+                if any(token in str(objective) for token in ("party", "guild", "relay", "assist", "cohort", "mentor", "raid"))
+            ]
             rivalry_reward_pull += min(1.0, len(shared_objectives) * 0.28)
             rivalry_reward_pull += 0.5 if generated_payload.get("async_competition", False) else 0.0
             rivalry_reward_pull += 0.4 if generated_payload.get("returner_bonus", False) else 0.0
             social_persistence_strength += min(1.2, len(shared_objectives) * 0.24)
             social_persistence_strength += 0.45 if generated_payload.get("async_competition", False) else 0.0
             social_persistence_strength += 0.35 if generated_payload.get("returner_bonus", False) else 0.0
+            social_concurrency_strength += min(1.4, len(party_objectives) * 0.32)
+            social_concurrency_strength += 0.35 if generated_payload.get("async_competition", False) else 0.0
             spectacle_variety_strength += min(0.55, len(shared_objectives) * 0.1)
             returner_retention_strength += 0.45 if generated_payload.get("returner_bonus", False) else 0.15
         elif artifact_type == "season":
             rivalry_reward_pull += 0.3 if generated_payload.get("returner_catchup", False) else 0.0
             social_persistence_strength += 0.25 if generated_payload.get("returner_catchup", False) else 0.0
+            seasonal_axes = generated_payload.get("seasonal_axes", []) or []
+            social_concurrency_strength += min(
+                0.6,
+                sum(0.18 for axis in seasonal_axes if any(token in str(axis) for token in ("guild", "party", "raid", "cohort", "mentor"))),
+            )
         elif artifact_type == "onboarding":
             social_persistence_strength += 0.25 if generated_payload.get("party_prompt", False) else 0.0
+            social_concurrency_strength += 0.45 if generated_payload.get("party_prompt", False) else 0.0
             spectacle_variety_strength += 0.2 if generated_payload.get("party_prompt", False) else 0.0
             returner_retention_strength += 0.3 if generated_payload.get("party_prompt", False) else 0.0
         if candidate["verdict"] == "promote":
@@ -1094,6 +1131,7 @@ def main() -> int:
         "endgame_breadth_strength": round(min(3.0, by_type.get("season", 0) * 0.7 + by_type.get("social", 0) * 0.6 + by_type.get("event", 0) * 0.45 + by_type.get("dungeon_variation", 0) * 0.55), 2),
         "content_catalog_strength": round(min(3.0, by_type.get("event", 0) * 0.45 + by_type.get("social", 0) * 0.4 + by_type.get("quest", 0) * 0.28 + by_type.get("quest_chain", 0) * 0.45 + by_type.get("dungeon_variation", 0) * 0.42 + by_type.get("season", 0) * 0.45), 2),
         "social_persistence_strength": round(min(3.0, social_persistence_strength), 2),
+        "social_concurrency_strength": round(min(3.0, social_concurrency_strength), 2),
         "spectacle_variety_strength": round(min(3.0, spectacle_variety_strength), 2),
         "returner_retention_strength": round(min(3.0, returner_retention_strength), 2),
         "onboarding_polish_strength": round(min(3.0, onboarding_polish_strength), 2),

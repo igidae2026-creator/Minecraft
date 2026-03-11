@@ -46,6 +46,7 @@ def test_ops_tooling_executes_cleanly(tmp_path: Path):
     assert "rpg_network_content_catalog_strength" in text
     assert "rpg_network_content_onboarding_polish_strength" in text
     assert "rpg_network_content_social_persistence_strength" in text
+    assert "rpg_network_content_social_concurrency_strength" in text
     assert "rpg_network_content_spectacle_variety_strength" in text
     assert "rpg_network_content_returner_retention_strength" in text
     assert "rpg_network_content_starter_reward_strength" in text
@@ -76,6 +77,8 @@ def test_ops_tooling_executes_cleanly(tmp_path: Path):
     assert "rpg_network_player_experience_volume_pull" in text
     assert "rpg_network_player_experience_long_soak_confidence" in text
     assert "rpg_network_player_experience_runtime_scale_confidence" in text
+    assert "rpg_network_player_experience_social_concurrency_strength" in text
+    assert "rpg_network_player_experience_party_concurrency_support" in text
     assert "rpg_network_player_experience_soak_stable" in text
     assert "rpg_network_economy_inflation_ratio" in text
     assert "rpg_network_anti_cheat_sandbox_cases" in text
@@ -88,6 +91,7 @@ def test_ops_tooling_executes_cleanly(tmp_path: Path):
     assert "rpg_network_liveops_returner_reactivation_depth" in text
     assert "rpg_network_liveops_depth_strength" in text
     assert "rpg_network_liveops_cadence_diversity_score" in text
+    assert "rpg_network_liveops_party_concurrency_support" in text
     assert "rpg_network_material_total_files" in text
     assert "rpg_network_material_canonical_source_files" in text
     assert "rpg_network_runtime_partition_files" in text
