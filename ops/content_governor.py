@@ -919,6 +919,29 @@ def content_candidates() -> list[dict[str, Any]]:
                     "reason": "mature volume triggers a guild gauntlet prestige loop",
                 },
                 {
+                    "artifact_type": "social",
+                    "artifact_id": "guild_legacy_cohort",
+                    "scaffold": {
+                        "guild_progression_levels": len((guilds.get("progression", {}) or {}).get("level_thresholds", {})),
+                        "rivalry_threshold": int((guilds.get("rivalry", {}) or {}).get("created_threshold", 0)),
+                    },
+                    "generated_payload": {
+                        "reward_every": int((guilds.get("rivalry", {}) or {}).get("reward_every", 0)),
+                        "broadcast_poll_seconds": int(guilds.get("broadcast_poll_seconds", 0)),
+                        "points": (guilds.get("progression", {}) or {}).get("points", {}),
+                        "returner_bonus": True,
+                        "shared_objectives": ["legacy_party_chain", "guild_assist_streak", "cohort_reentry_bonus", "mentor_clear"],
+                        "async_competition": True,
+                    },
+                    "validation": {
+                        "scope_fit": bool(guilds),
+                        "rivalry_threshold_valid": int((guilds.get("rivalry", {}) or {}).get("created_threshold", 0)) >= 2,
+                        "progression_defined": bool((guilds.get("progression", {}) or {}).get("level_thresholds", {})),
+                    },
+                    "verdict": "promote",
+                    "reason": "mature volume triggers a longer-lived guild legacy cohort loop",
+                },
+                {
                     "artifact_type": "season",
                     "artifact_id": "prestige_rotation_season",
                     "scaffold": {
@@ -961,6 +984,7 @@ def main() -> int:
     total_quality_score = 0.0
     starter_reward_strength = 0.0
     rivalry_reward_pull = 0.0
+    social_persistence_strength = 0.0
 
     for candidate in candidates:
         quality = score_candidate(
@@ -1021,8 +1045,14 @@ def main() -> int:
             rivalry_reward_pull += min(1.0, len(shared_objectives) * 0.28)
             rivalry_reward_pull += 0.5 if generated_payload.get("async_competition", False) else 0.0
             rivalry_reward_pull += 0.4 if generated_payload.get("returner_bonus", False) else 0.0
+            social_persistence_strength += min(1.2, len(shared_objectives) * 0.24)
+            social_persistence_strength += 0.45 if generated_payload.get("async_competition", False) else 0.0
+            social_persistence_strength += 0.35 if generated_payload.get("returner_bonus", False) else 0.0
         elif artifact_type == "season":
             rivalry_reward_pull += 0.3 if generated_payload.get("returner_catchup", False) else 0.0
+            social_persistence_strength += 0.25 if generated_payload.get("returner_catchup", False) else 0.0
+        elif artifact_type == "onboarding":
+            social_persistence_strength += 0.25 if generated_payload.get("party_prompt", False) else 0.0
         if candidate["verdict"] == "promote":
             promoted += 1
         else:
@@ -1043,6 +1073,7 @@ def main() -> int:
         "replayable_loop_score": round(min(3.0, by_type.get("dungeon_variation", 0) * 0.8 + by_type.get("season", 0) * 0.6 + by_type.get("event", 0) * 0.4), 2),
         "advanced_loop_strength": round(min(3.0, by_type.get("quest_chain", 0) * 0.7 + by_type.get("dungeon_variation", 0) * 0.75 + by_type.get("season", 0) * 0.55 + by_type.get("social", 0) * 0.35), 2),
         "prestige_loop_strength": round(min(3.0, by_type.get("event", 0) * 0.35 + by_type.get("social", 0) * 0.5 + by_type.get("season", 0) * 0.75 + by_type.get("quest_chain", 0) * 0.45), 2),
+        "social_persistence_strength": round(min(3.0, social_persistence_strength), 2),
         "starter_reward_strength": round(min(3.0, starter_reward_strength), 2),
         "rivalry_reward_pull": round(min(3.0, rivalry_reward_pull), 2),
         "depth_floor": MIN_DEPTH_SCORE,

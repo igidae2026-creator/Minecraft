@@ -59,6 +59,7 @@ def main() -> int:
     experience_percent = float(player_experience.get("estimated_completeness_percent", 0.0))
     experience_state = str(player_experience.get("experience_state", ""))
     boost_reentry = experience_percent < 50.0 or experience_state in {"early", "mid"}
+    sustain_social = experience_percent >= 60.0 and experience_state == "advanced"
     fatigue_gap_score = float(fatigue.get("fatigue_gap_score", 0.0))
     fatigue_state = str(fatigue.get("fatigue_state", ""))
     boost_novelty = fatigue_gap_score >= 0.38 or fatigue_state in {"watch", "high"}
@@ -107,6 +108,23 @@ def main() -> int:
                 },
             ]
         )
+    if sustain_social:
+        scaffolded_actions.extend(
+            [
+                {
+                    "action": "guild_legacy_cycle",
+                    "mode": "promote",
+                    "cohort": "advanced_guilds",
+                    "objective": "maintain_social_reentry",
+                },
+                {
+                    "action": "mentor_returner_night",
+                    "mode": "promote",
+                    "cohort": "advanced_returners",
+                    "objective": "long_tail_party_rejoin",
+                },
+            ]
+        )
     payload = {
         "action_id": action_id,
         "created_at": created_at,
@@ -147,6 +165,7 @@ def main() -> int:
         "scheduled_events": len(scheduled_events),
         "live_events_defined": len(events),
         "boost_reentry": boost_reentry,
+        "sustain_social": sustain_social,
         "boost_novelty": boost_novelty,
         "cadence_diversity_score": cadence_diversity_score,
         "distinct_event_types": distinct_event_types,
