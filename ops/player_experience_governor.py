@@ -98,14 +98,24 @@ def main() -> int:
     trust_pull = round(clamp(progression_protection_score + (0.1 if trusted_progression_window else 0.0), 0.0, 1.0), 2)
 
     weighted_score = (
-        first_session_strength * 0.22
-        + reward_tempo * 0.18
+        first_session_strength * 0.24
+        + reward_tempo * 0.19
         + social_stickiness * 0.2
-        + replay_pull * 0.2
-        + onboarding_tempo * 0.1
+        + replay_pull * 0.19
+        + onboarding_tempo * 0.08
         + trust_pull * 0.1
     )
-    completeness_percent = round(clamp(10.0 + weighted_score * 36.0 - friction_penalty * 10.0, 0.0, 100.0), 1)
+    completeness_percent = round(
+        clamp(
+            12.0
+            + weighted_score * 38.0
+            - friction_penalty * 8.0
+            + (2.0 if fatigue_gap_score <= 0.32 else 0.0),
+            0.0,
+            100.0,
+        ),
+        1,
+    )
     if completeness_percent < 25.0:
         state = "early"
     elif completeness_percent < 45.0:
