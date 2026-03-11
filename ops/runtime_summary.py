@@ -21,6 +21,7 @@ LIVEOPS_GOVERNOR_SUMMARY = RUNTIME / "autonomy" / "liveops_governor_summary.yml"
 FINAL_THRESHOLD_EVAL = RUNTIME / "autonomy" / "final_threshold_eval.json"
 MATERIAL_INVENTORY_SUMMARY = RUNTIME / "autonomy" / "material_inventory_summary.yml"
 RUNTIME_PARTITION_SUMMARY = RUNTIME / "autonomy" / "runtime_partition_summary.yml"
+RUNTIME_INTEGRITY_SUMMARY = RUNTIME / "autonomy" / "runtime_integrity_summary.yml"
 CONTENT_STRATEGY_SUMMARY = RUNTIME / "autonomy" / "content_strategy_summary.yml"
 CONTENT_SOAK_SUMMARY = RUNTIME / "autonomy" / "content_soak_summary.yml"
 CONTENT_VOLUME_SUMMARY = RUNTIME / "autonomy" / "content_volume_summary.yml"
@@ -214,6 +215,7 @@ def main() -> int:
     final_threshold_eval = load_eval_bundle(refresh_if_stale=True)
     material_inventory = load_yaml(MATERIAL_INVENTORY_SUMMARY)
     runtime_partition = load_yaml(RUNTIME_PARTITION_SUMMARY)
+    runtime_integrity = load_yaml(RUNTIME_INTEGRITY_SUMMARY)
     content_strategy = load_yaml(CONTENT_STRATEGY_SUMMARY)
     content_soak = load_yaml(CONTENT_SOAK_SUMMARY)
     content_volume = load_yaml(CONTENT_VOLUME_SUMMARY)
@@ -298,6 +300,7 @@ def main() -> int:
     print(f"PLAYER_EXPERIENCE_EXPLOIT_RESILIENCE={player_experience.get('exploit_resilience_score', 0)}")
     print(f"PLAYER_EXPERIENCE_VOLUME_PULL={player_experience.get('volume_pull', 0)}")
     print(f"PLAYER_EXPERIENCE_LONG_SOAK_CONFIDENCE={player_experience.get('long_soak_confidence', 0)}")
+    print(f"PLAYER_EXPERIENCE_RUNTIME_SCALE_CONFIDENCE={player_experience.get('runtime_scale_confidence', 0)}")
     print(f"PLAYER_EXPERIENCE_SOAK_STATE={player_experience_soak.get('player_experience_soak_state', '')}")
     print(f"ECONOMY_ACTION={economy_governor.get('action', '')}")
     print(f"ECONOMY_INFLATION_RATIO={economy_governor.get('inflation_ratio', 0)}")
@@ -320,6 +323,7 @@ def main() -> int:
     print(f"RUNTIME_VOLATILE_FILES={int(runtime_partition.get('volatile_runtime_files', 0))}")
     print(f"RUNTIME_CANONICAL_SNAPSHOT_FILES={int(runtime_partition.get('canonical_snapshot_files', 0))}")
     print(f"RUNTIME_ARCHIVE_CANDIDATE_FILES={int(runtime_partition.get('archive_candidate_files', 0))}")
+    print(f"RUNTIME_SCALE_CONFIDENCE={runtime_integrity.get('runtime_scale_confidence', 0)}")
     print(f"FINAL_THRESHOLD_BUNDLE_READY={1 if final_threshold_eval.get('final_threshold_ready', False) else 0}")
     print(f"FINAL_THRESHOLD_BUNDLE_FAILED_CRITERIA={len(final_threshold_eval.get('failed_criteria', []))}")
     print(f"FINAL_THRESHOLD_BUNDLE_HUMAN_LIFT={final_threshold_eval.get('quality_lift_if_human_intervenes', 0)}")

@@ -255,6 +255,7 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         liveops_summary = yaml.safe_load((runtime_data / "autonomy" / "liveops_governor_summary.yml").read_text(encoding="utf-8"))
         material_summary = yaml.safe_load((runtime_data / "autonomy" / "material_inventory_summary.yml").read_text(encoding="utf-8"))
         partition_summary = yaml.safe_load((runtime_data / "autonomy" / "runtime_partition_summary.yml").read_text(encoding="utf-8"))
+        runtime_integrity_summary = yaml.safe_load((runtime_data / "autonomy" / "runtime_integrity_summary.yml").read_text(encoding="utf-8"))
         strategy_summary = yaml.safe_load((runtime_data / "autonomy" / "content_strategy_summary.yml").read_text(encoding="utf-8"))
         soak_summary = yaml.safe_load((runtime_data / "autonomy" / "content_soak_summary.yml").read_text(encoding="utf-8"))
         bundle_summary = yaml.safe_load((runtime_data / "autonomy" / "content_bundle_summary.yml").read_text(encoding="utf-8"))
@@ -308,6 +309,7 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         assert material_summary["canonical_source_files"] > 0
         assert partition_summary["runtime_files"] >= partition_summary["canonical_snapshot_files"]
         assert partition_summary["volatile_runtime_files"] >= 1
+        assert float(runtime_integrity_summary["runtime_scale_confidence"]) >= 0
         assert len([item for item in strategy_summary["next_focus_csv"].split(",") if item]) == 3
         assert strategy_summary["candidate_count"] >= 8
         assert float(strategy_summary["runtime_event_join_avg"]) >= 0
@@ -335,6 +337,7 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         assert float(player_experience_summary["exploit_resilience_score"]) >= 0
         assert float(player_experience_summary["volume_pull"]) >= 0
         assert float(player_experience_summary["long_soak_confidence"]) >= 0
+        assert float(player_experience_summary["runtime_scale_confidence"]) >= 0
         assert player_experience_soak_summary["player_experience_soak_state"] in {"tune", "observe", "stable"}
         assert float(player_experience_soak_summary["first_session_strength"]) >= 0
         assert float(player_experience_soak_summary["trust_pull"]) >= 0

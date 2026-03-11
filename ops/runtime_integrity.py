@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNTIME = ROOT / "runtime_data"
 CONFIG = ROOT / "configs"
 CONTROL_STATE = RUNTIME / "autonomy" / "control" / "state.yml"
+SUMMARY_PATH = RUNTIME / "autonomy" / "runtime_integrity_summary.yml"
 DEGRADED_DB_FALLBACK_REASONS = {
     "MySQL backend unavailable",
     "Unsafe degraded local-authority mode is disabled in production",
@@ -21,6 +22,12 @@ def load_yaml(path: Path):
         return None
     with path.open("r", encoding="utf-8") as handle:
         return yaml.safe_load(handle)
+
+
+def write_yaml(path: Path, payload) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(payload, handle, sort_keys=False, allow_unicode=True)
 
 
 def main() -> int:
@@ -98,22 +105,60 @@ def main() -> int:
                 errors.append(f"pressure_saturated:{status_path.stem}")
 
     if errors:
+        write_yaml(
+            SUMMARY_PATH,
+            {
+                "integrity_ok": False,
+                "error_count": len(errors),
+                "runtime_scale_confidence": 0.0,
+                "status_file_count": len(list(status_dir.glob("*.yml"))) if status_dir.exists() else 0,
+                "content_artifacts": len(list(content_pipeline.rglob('*.yml'))) if content_pipeline.exists() else 0,
+                "liveops_artifacts": len(list(live_ops.glob('*.yml'))) if live_ops.exists() else 0,
+            },
+        )
         for error in errors:
             print(f"ERROR: {error}")
         return 1
 
+    status_count = len(list(status_dir.glob("*.yml"))) if status_dir.exists() else 0
+    content_count = len(list(content_pipeline.rglob('*.yml'))) if content_pipeline.exists() else 0
+    liveops_count = len(list(live_ops.glob('*.yml'))) if live_ops.exists() else 0
+    canonical_count = len(list(canonical_artifacts.glob('*.yml'))) if canonical_artifacts.exists() else 0
+    scale_readiness = round(
+        min(
+            1.0,
+            (status_count / 5.0) * 0.25
+            + min(1.0, content_count / 20.0) * 0.3
+            + min(1.0, liveops_count / 6.0) * 0.2
+            + min(1.0, canonical_count / 16.0) * 0.25,
+        ),
+        2,
+    )
+    write_yaml(
+        SUMMARY_PATH,
+        {
+            "integrity_ok": True,
+            "error_count": 0,
+            "runtime_scale_confidence": scale_readiness,
+            "status_file_count": status_count,
+            "content_artifacts": content_count,
+            "liveops_artifacts": liveops_count,
+            "canonical_artifacts": canonical_count,
+        },
+    )
     print("RUNTIME_INTEGRITY_OK")
     print(f"ARTIFACTS={len(list(artifacts.glob('*.yml'))) if artifacts.exists() else 0}")
     print(f"ITEM_MANIFESTS={len(list(item_authority.glob('*.yml'))) if item_authority.exists() else 0}")
     print(f"EXPERIMENTS={len(list(experiments.glob('*.yml'))) if experiments.exists() else 0}")
     print(f"KNOWLEDGE={len(list(knowledge.glob('*.yml'))) if knowledge.exists() else 0}")
     print(f"ARTIFACT_PROPOSALS={len(list(artifact_proposals.glob('*.yml'))) if artifact_proposals.exists() else 0}")
-    print(f"CANONICAL_ARTIFACTS={len(list(canonical_artifacts.glob('*.yml'))) if canonical_artifacts.exists() else 0}")
-    print(f"CONTENT_ARTIFACTS={len(list(content_pipeline.rglob('*.yml'))) if content_pipeline.exists() else 0}")
+    print(f"CANONICAL_ARTIFACTS={canonical_count}")
+    print(f"CONTENT_ARTIFACTS={content_count}")
     print(f"ECONOMY_ARTIFACTS={len(list(economy_operations.glob('*.yml'))) if economy_operations.exists() else 0}")
     print(f"ANTI_CHEAT_ARTIFACTS={len(list(anti_cheat.glob('*.yml'))) if anti_cheat.exists() else 0}")
-    print(f"LIVEOPS_ARTIFACTS={len(list(live_ops.glob('*.yml'))) if live_ops.exists() else 0}")
+    print(f"LIVEOPS_ARTIFACTS={liveops_count}")
     print(f"CONTENT_VOLUME_ARTIFACTS={len(list(content_volume.glob('*.json'))) if content_volume.exists() else 0}")
+    print(f"RUNTIME_SCALE_CONFIDENCE={scale_readiness}")
     return 0
 
 

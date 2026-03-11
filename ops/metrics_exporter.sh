@@ -185,6 +185,10 @@ runtime_partition_summary = {}
 runtime_partition_summary_path = root / "runtime_data" / "autonomy" / "runtime_partition_summary.yml"
 if runtime_partition_summary_path.exists():
     runtime_partition_summary = load_scalar_summary(runtime_partition_summary_path)
+runtime_integrity_summary = {}
+runtime_integrity_summary_path = root / "runtime_data" / "autonomy" / "runtime_integrity_summary.yml"
+if runtime_integrity_summary_path.exists():
+    runtime_integrity_summary = load_scalar_summary(runtime_integrity_summary_path)
 final_threshold_eval = load_eval_bundle(refresh_if_stale=True)
 
 servers = network["servers"]
@@ -266,12 +270,14 @@ metrics.append(f"rpg_network_minecraft_bundle_completion_percent {minecraft_bund
 metrics.append(f"rpg_network_minecraft_recommended_repairs {minecraft_strategy_summary.get('recommended_repairs_count', 0)}")
 metrics.append(f"rpg_network_minecraft_soak_stable {1 if minecraft_soak_summary.get('minecraft_soak_state', '') == 'stable' else 0}")
 metrics.append(f"rpg_network_minecraft_long_soak_confidence {minecraft_soak_summary.get('long_soak_confidence', 0)}")
+metrics.append(f"rpg_network_runtime_scale_confidence {runtime_integrity_summary.get('runtime_scale_confidence', 0)}")
 metrics.append(f"rpg_network_player_experience_percent {player_experience_summary.get('estimated_completeness_percent', 0)}")
 metrics.append(f"rpg_network_player_experience_first_session_strength {player_experience_summary.get('first_session_strength', 0)}")
 metrics.append(f"rpg_network_player_experience_trust_pull {player_experience_summary.get('trust_pull', 0)}")
 metrics.append(f"rpg_network_player_experience_exploit_resilience {player_experience_summary.get('exploit_resilience_score', 0)}")
 metrics.append(f"rpg_network_player_experience_volume_pull {player_experience_summary.get('volume_pull', 0)}")
 metrics.append(f"rpg_network_player_experience_long_soak_confidence {player_experience_summary.get('long_soak_confidence', 0)}")
+metrics.append(f"rpg_network_player_experience_runtime_scale_confidence {player_experience_summary.get('runtime_scale_confidence', 0)}")
 metrics.append(f"rpg_network_player_experience_soak_stable {1 if player_experience_soak_summary.get('player_experience_soak_state', '') == 'stable' else 0}")
 metrics.append(f"rpg_network_economy_action_adjust {1 if economy_governor_summary.get('action', '') == 'adjust' else 0}")
 metrics.append(f"rpg_network_economy_inflation_ratio {economy_governor_summary.get('inflation_ratio', 0)}")

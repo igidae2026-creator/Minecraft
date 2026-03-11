@@ -19,6 +19,7 @@ ANTI_CHEAT_SUMMARY_PATH = AUTONOMY / "anti_cheat_governor_summary.yml"
 FATIGUE_SUMMARY_PATH = AUTONOMY / "engagement_fatigue_summary.yml"
 CONTENT_VOLUME_SUMMARY_PATH = AUTONOMY / "content_volume_summary.yml"
 PLAYER_EXPERIENCE_SOAK_SUMMARY_PATH = AUTONOMY / "player_experience_soak_summary.yml"
+RUNTIME_INTEGRITY_SUMMARY_PATH = AUTONOMY / "runtime_integrity_summary.yml"
 
 
 def now_iso() -> str:
@@ -51,6 +52,7 @@ def main() -> int:
     fatigue = load_yaml(FATIGUE_SUMMARY_PATH)
     content_volume = load_yaml(CONTENT_VOLUME_SUMMARY_PATH)
     player_experience_soak = load_yaml(PLAYER_EXPERIENCE_SOAK_SUMMARY_PATH)
+    runtime_integrity = load_yaml(RUNTIME_INTEGRITY_SUMMARY_PATH)
 
     totals = {
         "queue_size": 0.0,
@@ -102,6 +104,7 @@ def main() -> int:
     returner_reactivation_depth = float(liveops.get("returner_reactivation_depth", 0.0))
     liveops_depth_strength = float(liveops.get("liveops_depth_strength", 0.0))
     long_soak_confidence = float(player_experience_soak.get("long_soak_confidence", 0.0))
+    runtime_scale_confidence = float(runtime_integrity.get("runtime_scale_confidence", 0.0))
     fatigue_gap_score = float(fatigue.get("fatigue_gap_score", 0.0))
     thinness_score = float(fatigue.get("thinness_score", 0.0))
     repetition_score = float(fatigue.get("repetition_score", 0.0))
@@ -142,6 +145,7 @@ def main() -> int:
         + min(1.0, returner_reactivation_depth / 2.0) * 0.05
         + min(1.0, liveops_depth_strength / 3.0) * 0.05
         + long_soak_confidence * 0.06
+        + runtime_scale_confidence * 0.05
     )
     completeness_percent = round(
         clamp(
@@ -199,6 +203,7 @@ def main() -> int:
         "returner_reactivation_depth": returner_reactivation_depth,
         "liveops_depth_strength": liveops_depth_strength,
         "long_soak_confidence": long_soak_confidence,
+        "runtime_scale_confidence": runtime_scale_confidence,
         "thinness_score": thinness_score,
         "repetition_score": repetition_score,
         "novelty_gap_score": novelty_gap_score,
