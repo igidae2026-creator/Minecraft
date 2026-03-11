@@ -18,6 +18,7 @@ OUTPUT_DIR = RUNTIME / "player_experience"
 ANTI_CHEAT_SUMMARY_PATH = AUTONOMY / "anti_cheat_governor_summary.yml"
 FATIGUE_SUMMARY_PATH = AUTONOMY / "engagement_fatigue_summary.yml"
 CONTENT_VOLUME_SUMMARY_PATH = AUTONOMY / "content_volume_summary.yml"
+PLAYER_EXPERIENCE_SOAK_SUMMARY_PATH = AUTONOMY / "player_experience_soak_summary.yml"
 
 
 def now_iso() -> str:
@@ -49,6 +50,7 @@ def main() -> int:
     anti_cheat = load_yaml(ANTI_CHEAT_SUMMARY_PATH)
     fatigue = load_yaml(FATIGUE_SUMMARY_PATH)
     content_volume = load_yaml(CONTENT_VOLUME_SUMMARY_PATH)
+    player_experience_soak = load_yaml(PLAYER_EXPERIENCE_SOAK_SUMMARY_PATH)
 
     totals = {
         "queue_size": 0.0,
@@ -95,6 +97,7 @@ def main() -> int:
     cadence_diversity_score = float(liveops.get("cadence_diversity_score", 0.0))
     sustain_social = bool(liveops.get("sustain_social", False))
     returner_reactivation_depth = float(liveops.get("returner_reactivation_depth", 0.0))
+    long_soak_confidence = float(player_experience_soak.get("long_soak_confidence", 0.0))
     fatigue_gap_score = float(fatigue.get("fatigue_gap_score", 0.0))
     thinness_score = float(fatigue.get("thinness_score", 0.0))
     repetition_score = float(fatigue.get("repetition_score", 0.0))
@@ -130,6 +133,7 @@ def main() -> int:
         + min(1.0, endgame_breadth_strength / 3.0) * 0.06
         + min(1.0, returner_retention_strength / 3.0) * 0.07
         + min(1.0, returner_reactivation_depth / 2.0) * 0.05
+        + long_soak_confidence * 0.06
     )
     completeness_percent = round(
         clamp(
@@ -182,6 +186,7 @@ def main() -> int:
         "cadence_diversity_score": cadence_diversity_score,
         "sustain_social": sustain_social,
         "returner_reactivation_depth": returner_reactivation_depth,
+        "long_soak_confidence": long_soak_confidence,
         "thinness_score": thinness_score,
         "repetition_score": repetition_score,
         "novelty_gap_score": novelty_gap_score,

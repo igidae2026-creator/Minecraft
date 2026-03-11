@@ -323,14 +323,17 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         assert float(minecraft_strategy_summary["estimated_completeness_percent"]) >= 0
         assert minecraft_strategy_summary["experience_state"] in {"early", "mid", "advanced"}
         assert minecraft_soak_summary["minecraft_soak_state"] in {"tune", "observe", "stable"}
+        assert float(minecraft_soak_summary["long_soak_confidence"]) >= 0
         assert float(player_experience_summary["estimated_completeness_percent"]) >= 0
         assert player_experience_summary["experience_state"] in {"early", "mid", "advanced"}
         assert float(player_experience_summary["first_session_strength"]) >= 0
         assert float(player_experience_summary["trust_pull"]) >= 0
         assert float(player_experience_summary["volume_pull"]) >= 0
+        assert float(player_experience_summary["long_soak_confidence"]) >= 0
         assert player_experience_soak_summary["player_experience_soak_state"] in {"tune", "observe", "stable"}
         assert float(player_experience_soak_summary["first_session_strength"]) >= 0
         assert float(player_experience_soak_summary["trust_pull"]) >= 0
+        assert float(player_experience_soak_summary["long_soak_confidence"]) >= 0
     finally:
         if runtime_data.exists():
             shutil.rmtree(runtime_data, ignore_errors=True)

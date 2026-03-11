@@ -65,10 +65,12 @@ def test_ops_tooling_executes_cleanly(tmp_path: Path):
     assert "rpg_network_minecraft_bundle_completion_percent" in text
     assert "rpg_network_minecraft_recommended_repairs" in text
     assert "rpg_network_minecraft_soak_stable" in text
+    assert "rpg_network_minecraft_long_soak_confidence" in text
     assert "rpg_network_player_experience_percent" in text
     assert "rpg_network_player_experience_first_session_strength" in text
     assert "rpg_network_player_experience_trust_pull" in text
     assert "rpg_network_player_experience_volume_pull" in text
+    assert "rpg_network_player_experience_long_soak_confidence" in text
     assert "rpg_network_player_experience_soak_stable" in text
     assert "rpg_network_economy_inflation_ratio" in text
     assert "rpg_network_anti_cheat_sandbox_cases" in text

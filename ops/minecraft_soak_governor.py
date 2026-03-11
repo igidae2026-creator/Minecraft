@@ -52,6 +52,17 @@ def main() -> int:
     held_actions = int(liveops.get("held_actions", 0))
     fatigue_gap_score = float(fatigue.get("fatigue_gap_score", 0.0))
     fatigue_state = str(fatigue.get("fatigue_state", ""))
+    long_soak_confidence = round(
+        min(
+            1.0,
+            (steady_noop_streak / 96.0)
+            + (0.18 if final_ready else 0.0)
+            + (0.14 if repairs == 0 else 0.0)
+            + (0.08 if held_actions == 0 else 0.0)
+            + (0.08 if fatigue_gap_score <= 0.2 else 0.0),
+        ),
+        2,
+    )
 
     if final_ready and steady_noop_streak >= 24 and repairs <= 1 and held_actions == 0 and fatigue_gap_score <= 0.35:
         soak_state = "stable"
@@ -74,6 +85,7 @@ def main() -> int:
         "liveops_held_actions": held_actions,
         "fatigue_gap_score": fatigue_gap_score,
         "fatigue_state": fatigue_state,
+        "long_soak_confidence": long_soak_confidence,
         "minecraft_soak_state": soak_state,
     }
     SOAK_DIR.mkdir(parents=True, exist_ok=True)

@@ -56,6 +56,17 @@ def main() -> int:
     boost_reentry = bool(liveops.get("boost_reentry", False))
     boost_novelty = bool(liveops.get("boost_novelty", False))
     combined_repairs = content_repairs + minecraft_repairs
+    long_soak_confidence = round(
+        min(
+            1.0,
+            (steady_noop_streak / 96.0)
+            + (0.18 if final_ready else 0.0)
+            + (0.14 if combined_repairs == 0 else 0.0)
+            + (0.1 if fatigue_gap_score <= 0.2 else 0.0)
+            + (0.08 if not boost_reentry and not boost_novelty else 0.0),
+        ),
+        2,
+    )
 
     if final_ready and steady_noop_streak >= 24 and experience_percent >= 46.0 and first_session_strength >= 0.95 and trust_pull >= 0.7 and friction_penalty <= 0.25 and combined_repairs <= 4 and not boost_reentry and fatigue_gap_score <= 0.35:
         soak_state = "stable"
@@ -82,6 +93,7 @@ def main() -> int:
         "combined_recommended_repairs_count": combined_repairs,
         "boost_reentry": boost_reentry,
         "boost_novelty": boost_novelty,
+        "long_soak_confidence": long_soak_confidence,
         "player_experience_soak_state": soak_state,
     }
     SOAK_DIR.mkdir(parents=True, exist_ok=True)
