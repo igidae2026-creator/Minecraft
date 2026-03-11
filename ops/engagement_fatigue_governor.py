@@ -45,6 +45,7 @@ def main() -> int:
     player_experience = load_yaml(AUTONOMY / "player_experience_summary.yml")
     gameplay_progression = load_yaml(AUTONOMY / "gameplay_progression_summary.yml")
     liveops = load_yaml(AUTONOMY / "liveops_governor_summary.yml")
+    content_volume = load_yaml(AUTONOMY / "content_volume_summary.yml")
 
     status_count = 0
     queue_total = 0.0
@@ -80,6 +81,9 @@ def main() -> int:
     boost_reentry = bool(liveops.get("boost_reentry", False))
     boost_novelty = bool(liveops.get("boost_novelty", False))
     cadence_diversity_score = float(liveops.get("cadence_diversity_score", 0.0))
+    promoted_actions = int(liveops.get("promoted_actions", 0))
+    content_volume_score = float(content_volume.get("content_volume_score", 0.0))
+    content_volume_state = str(content_volume.get("content_volume_state", ""))
     recommended_repairs = int(strategy.get("recommended_repairs_count", 0))
 
     thinness_score = round(
@@ -116,6 +120,10 @@ def main() -> int:
             repetition_score
             - cadence_diversity_score * 0.18
             - (0.1 if boost_novelty else 0.0)
+            - (0.08 if content_volume_state == "mature" else 0.0)
+            - min(0.08, content_volume_score / 100.0)
+            - min(0.08, promoted_actions / 40.0)
+            - (0.06 if event_join_avg >= 2200 else 0.0)
             - min(0.12, rivalry_reward_pull / 20.0),
             0.0,
             1.0,
@@ -172,6 +180,9 @@ def main() -> int:
         "starter_reward_strength": starter_reward_strength,
         "rivalry_reward_pull": rivalry_reward_pull,
         "cadence_diversity_score": cadence_diversity_score,
+        "promoted_actions": promoted_actions,
+        "content_volume_score": content_volume_score,
+        "content_volume_state": content_volume_state,
         "thinness_score": thinness_score,
         "repetition_score": repetition_score,
         "novelty_gap_score": novelty_gap_score,

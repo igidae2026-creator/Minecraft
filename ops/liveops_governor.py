@@ -61,7 +61,7 @@ def main() -> int:
     boost_reentry = experience_percent < 50.0 or experience_state in {"early", "mid"}
     fatigue_gap_score = float(fatigue.get("fatigue_gap_score", 0.0))
     fatigue_state = str(fatigue.get("fatigue_state", ""))
-    boost_novelty = fatigue_gap_score >= 0.45 or fatigue_state == "high"
+    boost_novelty = fatigue_gap_score >= 0.38 or fatigue_state in {"watch", "high"}
     distinct_reward_pools = len({str(event.get("reward_pool", "")) for event in scheduled_events.values() if event.get("reward_pool")})
     distinct_event_types = len({str(event.get("type", "")) for event in scheduled_events.values() if event.get("type")})
     cadence_diversity_score = round(min(1.0, distinct_event_types / 4.0 + distinct_reward_pools / 4.0), 2)
