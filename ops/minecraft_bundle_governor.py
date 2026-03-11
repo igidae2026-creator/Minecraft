@@ -78,6 +78,20 @@ def main() -> int:
     first_session_strength = float(player_experience.get("first_session_strength", 0.0))
     trust_pull = float(player_experience.get("trust_pull", 0.0))
     player_experience_soak_state = str(player_experience_soak.get("player_experience_soak_state", ""))
+    boost_reentry = bool(liveops.get("boost_reentry", False))
+    cadence_diversity_score = float(liveops.get("cadence_diversity_score", 0.0))
+    promoted_actions = int(liveops.get("promoted_actions", 0))
+    social_liveops_ready = (
+        promoted_actions >= 3
+        and float(strategy.get("runtime_event_join_avg", 0.0)) >= 1200.0
+        and experience_percent >= 45.0
+        and (
+            boost_reentry
+            or cadence_diversity_score >= 0.9
+            or status.get("guild_joined", 0) > 0
+            or status.get("rivalry_match", 0) > 0
+        )
+    )
 
     bundles = {
         "gameplay_progression_bundle": {
@@ -103,18 +117,11 @@ def main() -> int:
             ),
         },
         "social_liveops_bundle": {
-            "ready": int(liveops.get("promoted_actions", 0)) >= 1
-            and float(strategy.get("runtime_event_join_avg", 0.0)) > 0
-            and experience_percent >= 25.0
-            and bool(liveops.get("boost_reentry", False))
-            and (
-                "social" in str(strategy.get("next_focus_csv", ""))
-                or status.get("guild_joined", 0) > 0
-                or status.get("rivalry_match", 0) > 0
-            ),
+            "ready": social_liveops_ready,
             "evidence": (
-                f"liveops_promoted={liveops.get('promoted_actions', 0)} "
-                f"boost_reentry={liveops.get('boost_reentry', False)} "
+                f"liveops_promoted={promoted_actions} "
+                f"boost_reentry={boost_reentry} "
+                f"cadence_diversity_score={cadence_diversity_score} "
                 f"event_join_avg={strategy.get('runtime_event_join_avg', 0)} "
                 f"experience_percent={experience_percent} "
                 f"next_focus={strategy.get('next_focus_csv', '')}"
