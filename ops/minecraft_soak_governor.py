@@ -53,7 +53,7 @@ def main() -> int:
     fatigue_gap_score = float(fatigue.get("fatigue_gap_score", 0.0))
     fatigue_state = str(fatigue.get("fatigue_state", ""))
 
-    if final_ready and steady_noop_streak >= 24 and repairs == 0 and held_actions == 0 and fatigue_gap_score <= 0.35:
+    if final_ready and steady_noop_streak >= 24 and repairs <= 1 and held_actions == 0 and fatigue_gap_score <= 0.35:
         soak_state = "stable"
     elif final_ready and bundle_completion >= 100.0 and steady_noop_streak >= 12:
         soak_state = "observe"

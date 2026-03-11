@@ -67,7 +67,7 @@ def main() -> int:
             "domain": "gameplay_progression",
             "priority_score": round((2.2 - avg_depth) + (0.4 if content_soak_state != "stable" else 0.0) + (0.5 if experience_percent < 45 else 0.0) + (0.6 if progression_total_score < 9.0 else 0.0) + (0.4 if fatigue_gap_score >= 0.45 else 0.0), 2),
             "reason": f"avg_depth={avg_depth} content_soak_state={content_soak_state} experience_percent={experience_percent} progression_total_score={progression_total_score} fatigue_gap_score={fatigue_gap_score}",
-            "repairs": ["content_governor", "player_experience_governor", "player_experience_soak_governor"] if (avg_depth < 2.1 or experience_percent < 48 or progression_total_score < 11.0 or fatigue_gap_score >= 0.4) else [],
+            "repairs": ["content_governor", "player_experience_governor", "player_experience_soak_governor"] if (avg_depth < 1.85 or experience_percent < 50 or progression_total_score < 10.5 or fatigue_gap_score >= 0.38) else [],
         },
         {
             "domain": "economy_market",

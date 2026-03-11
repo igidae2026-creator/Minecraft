@@ -54,7 +54,7 @@ def main() -> int:
     fatigue_state = str(fatigue.get("fatigue_state", ""))
 
     soak_state = "stable" if final_ready and not active_soak and steady_noop_streak >= 12 else "observe"
-    if recommended_repairs > 0 or avg_depth < 2.0 or avg_retention < 1.7 or fatigue_gap_score > 0.35:
+    if recommended_repairs > 1 or avg_depth < 1.85 or avg_retention < 1.5 or fatigue_gap_score > 0.35:
         soak_state = "tune"
     if active_soak:
         soak_state = "active"

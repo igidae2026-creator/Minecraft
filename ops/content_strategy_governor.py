@@ -199,16 +199,17 @@ def main() -> int:
 
     ranked = sorted(expansion_candidates, key=lambda item: (-item["leverage_score"], -item["coverage_gap"], -item["held"], item["family"]))
     next_focus = [item["family"] for item in ranked[:3]]
+    mature_surface = content_volume_state == "mature" and experience_state == "advanced" and fatigue_gap_score <= 0.3
     repair_jobs = []
-    if avg_depth < 2.1:
+    if avg_depth < (1.85 if mature_surface else 2.1):
         repair_jobs.append("content_governor")
     if first_loop_coverage < 2.2 and "content_governor" not in repair_jobs:
         repair_jobs.append("content_governor")
-    if avg_retention < 1.7:
+    if avg_retention < (1.5 if mature_surface else 1.7):
         repair_jobs.append("liveops_governor")
-    if avg_quality < 8.2:
+    if avg_quality < (7.8 if mature_surface else 8.2):
         repair_jobs.append("economy_governor")
-    if event_join_avg < 900 and "liveops_governor" not in repair_jobs:
+    if event_join_avg < 1200 and "liveops_governor" not in repair_jobs:
         repair_jobs.append("liveops_governor")
     if sandbox_cases > 0 and anti_cheat_mode != "observe_and_replay" and "anti_cheat_governor" not in repair_jobs:
         repair_jobs.append("anti_cheat_governor")
@@ -216,7 +217,7 @@ def main() -> int:
         repair_jobs.append("anti_cheat_governor")
     if experience_percent < 47 and experience_state != "advanced" and "player_experience_governor" not in repair_jobs:
         repair_jobs.append("player_experience_governor")
-    if fatigue_gap_score >= 0.35 and "content_governor" not in repair_jobs:
+    if fatigue_gap_score >= 0.4 and "content_governor" not in repair_jobs:
         repair_jobs.append("content_governor")
     if content_volume_score < 7.5 and "content_governor" not in repair_jobs:
         repair_jobs.append("content_governor")
