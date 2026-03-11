@@ -771,6 +771,81 @@ def content_candidates() -> list[dict[str, Any]]:
                     "reason": "low content volume triggers a broader showcase quest chain" if all(showcase_validation.values()) else "showcase quest chain exceeds governed economy or progression bounds",
                 }
             )
+    if experience_state == "advanced" and fatigue_gap_score <= 0.3:
+        candidates.extend(
+            [
+                {
+                    "artifact_type": "onboarding",
+                    "artifact_id": "advanced_returner_fastlane",
+                    "scaffold": {
+                        "route_family": "returner_fastlane",
+                        "target_servers": ["lobby", "events", "dungeons", "boss_world"],
+                    },
+                    "generated_payload": {
+                        "phases": ["returner_reward", "group_queue", "boss_preview", "season_track_pick", "party_rejoin"],
+                        "reward_pool": "starter",
+                        "idempotent_reward": True,
+                        "tempo_bias": "fast",
+                        "party_prompt": True,
+                        "returner_bonus": True,
+                    },
+                    "validation": {
+                        "scope_fit": True,
+                        "reward_pool_known": "starter" in reward_pools,
+                        "exploration_os_compatible": True,
+                    },
+                    "verdict": "promote",
+                    "reason": "mature volume triggers an advanced returner fastlane branch",
+                },
+                {
+                    "artifact_type": "social",
+                    "artifact_id": "prestige_rivalry_circuit",
+                    "scaffold": {
+                        "guild_progression_levels": len((guilds.get("progression", {}) or {}).get("level_thresholds", {})),
+                        "rivalry_threshold": int((guilds.get("rivalry", {}) or {}).get("created_threshold", 0)),
+                    },
+                    "generated_payload": {
+                        "reward_every": int((guilds.get("rivalry", {}) or {}).get("reward_every", 0)),
+                        "broadcast_poll_seconds": int(guilds.get("broadcast_poll_seconds", 0)),
+                        "points": (guilds.get("progression", {}) or {}).get("points", {}),
+                        "returner_bonus": True,
+                        "shared_objectives": ["prestige_race", "boss_support_chain", "guild_showcase_vote", "rivalry_streak_bonus"],
+                        "async_competition": True,
+                    },
+                    "validation": {
+                        "scope_fit": bool(guilds),
+                        "rivalry_threshold_valid": int((guilds.get("rivalry", {}) or {}).get("created_threshold", 0)) >= 2,
+                        "progression_defined": bool((guilds.get("progression", {}) or {}).get("level_thresholds", {})),
+                    },
+                    "verdict": "promote",
+                    "reason": "mature volume triggers a denser prestige rivalry circuit",
+                },
+                {
+                    "artifact_type": "season",
+                    "artifact_id": "prestige_rotation_season",
+                    "scaffold": {
+                        "scheduled_events": sorted(scheduler.keys()),
+                        "content_sources": sorted(events.keys()),
+                    },
+                    "generated_payload": {
+                        "season_objective": "rotate prestige, rivalry, and boss-preview loops under a denser advanced season frame",
+                        "cadence_minutes": int(load_yaml(CONFIG / "event_scheduler.yml").get("rotation", {}).get("event_window_minutes", 0)),
+                        "seasonal_axes": ["prestige_race", "boss_preview", "guild_showcase", "returner_fastlane", "event_remix"],
+                        "seasonal_progression": True,
+                        "seasonal_progression_arc": ["fastlane", "rivalry_peak", "boss_gauntlet", "prestige_bridge"],
+                        "returner_catchup": True,
+                        "badge_targets": sorted(((load_yaml(CONFIG / "prestige.yml").get("prestige", {}) or {}).get("badges", {}) or {}).keys()),
+                    },
+                    "validation": {
+                        "scope_fit": bool(scheduler) and bool(events),
+                        "scheduled_matches_source_events": all(event_id in events for event_id in scheduler),
+                        "exploration_os_compatible": True,
+                    },
+                    "verdict": "promote",
+                    "reason": "mature volume triggers a denser prestige season frame",
+                },
+            ]
+        )
     return candidates
 
 
