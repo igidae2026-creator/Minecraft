@@ -16,6 +16,7 @@ Parallel command surface:
 - `bash ops/parallel_command_center.sh launch`
 - `bash ops/parallel_command_center.sh stop`
 - Workstream packets are emitted under `runtime_data/autonomy/parallel/packets`.
+- Parallel expansion is constrained to the active Minecraft target boundary only; out-of-scope expansion must be deferred or rejected, not executed.
 
 Autonomy target:
 - The operating goal is 24-hour unattended, high-quality automation where human intervention yields little or no meaningful quality gain.

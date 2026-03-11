@@ -15,6 +15,13 @@ AUTONOMY = RUNTIME / "autonomy"
 PARALLEL_DIR = AUTONOMY / "parallel"
 PACKETS_DIR = PARALLEL_DIR / "packets"
 SUMMARY_PATH = PARALLEL_DIR / "parallel_assignments.yml"
+SCOPE_BOUNDARY = {
+    "content_density",
+    "social_liveops_retention",
+    "security_economy_hardening",
+    "scale_and_service_quality",
+    "threshold_and_canonical_integrity",
+}
 
 
 def now_iso() -> str:
@@ -49,6 +56,7 @@ def to_int(payload: dict[str, Any], key: str, default: int = 0) -> int:
 
 def packet_text(
     lane: str,
+    scope_key: str,
     objective: str,
     why_now: str,
     success_signals: list[str],
@@ -58,6 +66,8 @@ def packet_text(
 ) -> str:
     lines = [
         f"# {lane}",
+        "",
+        f"Scope key: {scope_key}",
         "",
         f"Objective: {objective}",
         "",
@@ -78,6 +88,11 @@ def packet_text(
         lines.append(f"- {item}")
     lines.extend(
         [
+            "",
+            "Boundary rule:",
+            "- Generate, enqueue, and expand work only inside the approved Minecraft target boundary.",
+            "- Do not create out-of-scope workstreams, domains, or expansion surfaces.",
+            "- If a possible improvement sits outside the approved boundary, record it as blocked or deferred instead of executing it.",
             "",
             "Delivery rule:",
             "- Keep MetaOS constraints above Minecraft convenience.",
@@ -121,6 +136,7 @@ def main() -> int:
     assignments = [
         {
             "lane": "lane_01_content_density",
+            "scope_key": "content_density",
             "objective": "Increase absolute content density and progression breadth without regressing final-threshold stability.",
             "priority": 1,
             "why_now": f"Player experience is {experience_percent:.1f}% and content depth/quality are {content_depth:.2f}/{content_quality:.2f}.",
@@ -147,6 +163,7 @@ def main() -> int:
         },
         {
             "lane": "lane_02_social_liveops_retention",
+            "scope_key": "social_liveops_retention",
             "objective": "Increase returner retention, party stickiness, and social concurrency under stable soak.",
             "priority": 2,
             "why_now": f"Liveops depth is {liveops_depth:.2f} with {promoted_actions} promoted actions and event join avg {event_join_avg:.1f}.",
@@ -173,6 +190,7 @@ def main() -> int:
         },
         {
             "lane": "lane_03_security_economy_hardening",
+            "scope_key": "security_economy_hardening",
             "objective": "Tighten anti-cheat and market maturity so player trust stays maxed under load.",
             "priority": 3,
             "why_now": f"Exploit resilience is {exploit_resilience:.2f} and market maturity is {market_maturity:.2f}.",
@@ -198,6 +216,7 @@ def main() -> int:
         },
         {
             "lane": "lane_04_scale_and_service_quality",
+            "scope_key": "scale_and_service_quality",
             "objective": "Improve service responsiveness, matchmaking clarity, and live-scale confidence as a single service-quality bundle.",
             "priority": 4,
             "why_now": "Large-server parity depends on responsiveness, fairness, and credible scale confidence moving together.",
@@ -223,6 +242,7 @@ def main() -> int:
         },
         {
             "lane": "lane_05_threshold_and_canonical_integrity",
+            "scope_key": "threshold_and_canonical_integrity",
             "objective": "Keep final threshold, bundle governance, artifact canonicalization, and MetaOS conformance closed while other lanes move fast.",
             "priority": 5,
             "why_now": "Parallel work only helps if canonical operating truth stays coherent.",
@@ -251,12 +271,15 @@ def main() -> int:
 
     PACKETS_DIR.mkdir(parents=True, exist_ok=True)
     for assignment in assignments:
+        if assignment["scope_key"] not in SCOPE_BOUNDARY:
+            raise ValueError(f"Out-of-scope parallel lane: {assignment['scope_key']}")
         packet_path = PACKETS_DIR / f"{assignment['lane']}.md"
         assignment["packet_path"] = str(packet_path.relative_to(ROOT))
         write_text(
             packet_path,
             packet_text(
                 lane=assignment["lane"],
+                scope_key=assignment["scope_key"],
                 objective=assignment["objective"],
                 why_now=assignment["why_now"],
                 success_signals=assignment["success_signals"],
@@ -269,6 +292,8 @@ def main() -> int:
     summary = {
         "created_at": created_at,
         "server_completion_target": "hypixel_100_equivalent",
+        "boundary_mode": "minecraft_target_only",
+        "scope_boundary": sorted(SCOPE_BOUNDARY),
         "player_experience_percent": round(experience_percent, 1),
         "fatigue_gap_score": round(fatigue_gap, 2),
         "quality_lift_if_human_intervenes": round(human_lift, 2),
@@ -276,6 +301,7 @@ def main() -> int:
         "workstreams": [
             {
                 "lane": item["lane"],
+                "scope_key": item["scope_key"],
                 "priority": item["priority"],
                 "objective": item["objective"],
                 "packet_path": item["packet_path"],

@@ -45,7 +45,7 @@ for workstream in payload.get("workstreams", []):
     if worker_cmd:
         command = f"cd '{root}' && printf 'Packet: {packet_path}\\n' && {worker_cmd} '{packet_path}' || bash"
     else:
-        command = f"cd '{root}' && printf 'Packet: {packet_path}\\nSet PARALLEL_WORKER_CMD to auto-run a worker.\\n' && cat '{packet_path}' && bash"
+        command = f\"cd '{root}' && printf 'Packet: {packet_path}\\nBoundary: minecraft target only; out-of-scope expansion is forbidden.\\nSet PARALLEL_WORKER_CMD to auto-run a worker.\\n' && cat '{packet_path}' && bash\"
     subprocess.run(
         ["tmux", "new-window", "-t", session, "-n", lane, command],
         check=True,

@@ -19,6 +19,8 @@ For layer positioning and higher-order design constraints, read [EXPLORATION_OS_
 
 - The active repository goal is not only runtime steadiness.
 - The current direct target is to push Minecraft service completeness upward while keeping Final Threshold closure intact.
+- Inside this target, the system should self-generate work, place it in parallel lanes, execute it, record failures, and add the next in-scope surface without waiting for manual orchestration.
+- Outside this target, autonomous expansion is forbidden. Out-of-scope ideas must be recorded as deferred or rejected rather than promoted into execution.
 - Progress is counted only if player-facing completeness rises without breaking append-only truth, lineage, replayability, or fail-closed governance.
 - The current uplift path is:
   1. deepen gameplay progression through longer quest chains, denser dungeon variations, and stronger seasonal arcs

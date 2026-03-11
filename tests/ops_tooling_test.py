@@ -127,7 +127,11 @@ def test_ops_tooling_executes_cleanly(tmp_path: Path):
     assert "rpg_network_final_threshold_bundle_failed_criteria" in text
     assignments = json.loads((ROOT / "runtime_data" / "autonomy" / "parallel" / "parallel_assignments.json").read_text(encoding="utf-8"))
     assert assignments["workstream_count"] >= 4
+    assert assignments["boundary_mode"] == "minecraft_target_only"
+    assert "content_density" in assignments["scope_boundary"]
     assert (ROOT / "runtime_data" / "autonomy" / "parallel" / "packets" / "lane_01_content_density.md").is_file()
+    packet_text = (ROOT / "runtime_data" / "autonomy" / "parallel" / "packets" / "lane_01_content_density.md").read_text(encoding="utf-8")
+    assert "out-of-scope workstreams" in packet_text
 
     for script in (ROOT / "ops").glob("*.sh"):
         subprocess.run(["bash", "-n", str(script)], check=True, cwd=ROOT)
