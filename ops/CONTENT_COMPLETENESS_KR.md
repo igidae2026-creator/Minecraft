@@ -50,6 +50,7 @@ It is the player-facing completeness a Korean user is likely to feel after joini
 - Increase replay depth without breaking quality gates
 - Improve return-player reward pressure and event join rate
 - Convert more held content into promoted content without lowering quality
+- Reduce `fatigue_gap_score` through novelty bursts, remix social loops, and stronger returner season frames
 
 ## Current Runtime Signals
 
@@ -63,4 +64,5 @@ It is the player-facing completeness a Korean user is likely to feel after joini
 - `PLAYER_EXPERIENCE_PERCENT=44.7`
 - `PLAYER_EXPERIENCE_TRUST_PULL=1.0`
 - `ENGAGEMENT_FATIGUE_GAP_SCORE` is now part of the conservative bar and should keep shrinking as completeness rises
+- `LIVEOPS_BOOST_NOVELTY` should remain available while fatigue stays above the conservative target
 - `CONTENT_NEXT_FOCUS=event,quest,dungeon`

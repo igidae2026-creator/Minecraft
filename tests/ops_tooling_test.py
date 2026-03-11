@@ -63,6 +63,7 @@ def test_ops_tooling_executes_cleanly(tmp_path: Path):
     assert "rpg_network_anti_cheat_progression_protection_score" in text
     assert "rpg_network_liveops_promoted_actions" in text
     assert "rpg_network_liveops_boost_reentry" in text
+    assert "rpg_network_liveops_boost_novelty" in text
     assert "rpg_network_material_total_files" in text
     assert "rpg_network_material_canonical_source_files" in text
     assert "rpg_network_runtime_partition_files" in text

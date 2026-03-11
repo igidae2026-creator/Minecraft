@@ -145,11 +145,61 @@ def test_runtime_summary_refreshes_stale_final_threshold_bundle(tmp_path: Path):
             '{"final_threshold_ready": false, "failed_criteria": ["stale"]}',
             encoding="utf-8",
         )
-        (autonomy_dir / "artifact_governor_summary.yml").write_text("canonical_registry:\n- minecraft_runtime:consumer_health_rollup\n", encoding="utf-8")
-        (autonomy_dir / "content_governor_summary.yml").write_text("generated: 3\npromoted: 3\nheld: 0\n", encoding="utf-8")
+        (autonomy_dir / "artifact_governor_summary.yml").write_text(
+            "canonical_registry:\n"
+            "- minecraft_runtime:consumer_health_rollup\n"
+            "- minecraft_runtime:content_portfolio_strategy\n"
+            "- minecraft_runtime:content_soak_report\n"
+            "- minecraft_runtime:minecraft_domain_strategy\n"
+            "- minecraft_runtime:minecraft_domain_soak_report\n"
+            "- minecraft_runtime:player_experience_profile\n"
+            "- minecraft_runtime:player_experience_soak_report\n"
+            "- minecraft_runtime:engagement_fatigue_profile\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "content_governor_summary.yml").write_text(
+            "generated: 16\npromoted: 12\nheld: 4\naverage_depth_score: 2.3\naverage_retention_proxy: 1.9\naverage_quality_score: 8.4\nfirst_loop_coverage_score: 3.0\nsocial_loop_density: 2.0\nreplayable_loop_score: 3.0\n",
+            encoding="utf-8",
+        )
         (autonomy_dir / "economy_governor_summary.yml").write_text("action: observe\ninflation_ratio: 1.1\n", encoding="utf-8")
-        (autonomy_dir / "anti_cheat_governor_summary.yml").write_text("sandbox_cases: 1\nmode: observe_and_replay\n", encoding="utf-8")
-        (autonomy_dir / "liveops_governor_summary.yml").write_text("promoted_actions: 2\nheld_actions: 0\n", encoding="utf-8")
+        (autonomy_dir / "anti_cheat_governor_summary.yml").write_text("sandbox_cases: 1\nmode: observe_and_replay\nprogression_protection_score: 1.0\n", encoding="utf-8")
+        (autonomy_dir / "liveops_governor_summary.yml").write_text("promoted_actions: 5\nheld_actions: 0\nboost_reentry: true\nboost_novelty: true\n", encoding="utf-8")
+        (autonomy_dir / "content_strategy_summary.yml").write_text(
+            "next_focus_csv: social,event,onboarding\nrecommended_repairs_csv: content_governor,liveops_governor\nrecommended_repairs_count: 2\nruntime_queue_avg: 1.0\nruntime_event_join_avg: 1100.0\nruntime_return_player_reward_avg: 90.0\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "content_soak_summary.yml").write_text(
+            "content_soak_state: stable\nsteady_noop_streak: 12\nrecommended_repairs_count: 0\ncontent_next_focus_csv: social,event,onboarding\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "repo_bundle_summary.yml").write_text(
+            "bundle_total: 7\nbundle_completed: 7\nbundle_completion_percent: 100.0\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "minecraft_bundle_summary.yml").write_text(
+            "bundle_total: 6\nbundle_completed: 6\nbundle_completion_percent: 100.0\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "minecraft_strategy_summary.yml").write_text(
+            "next_focus_csv: gameplay_progression,social_liveops,anti_cheat_recovery\nrecommended_repairs_csv: content_governor,player_experience_governor\nrecommended_repairs_count: 2\ncontent_soak_state: stable\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "minecraft_soak_summary.yml").write_text(
+            "minecraft_soak_state: observe\nsteady_noop_streak: 12\nrecommended_repairs_count: 1\nminecraft_bundle_completion_percent: 100.0\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "player_experience_summary.yml").write_text(
+            "estimated_completeness_percent: 46.0\nexperience_state: advanced\nfirst_session_strength: 1.0\ntrust_pull: 1.0\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "player_experience_soak_summary.yml").write_text(
+            "player_experience_soak_state: observe\nestimated_completeness_percent: 46.0\nexperience_state: advanced\ncombined_recommended_repairs_count: 1\n",
+            encoding="utf-8",
+        )
+        (autonomy_dir / "engagement_fatigue_summary.yml").write_text(
+            "fatigue_gap_score: 0.25\nfatigue_state: low\nthinness_score: 0.2\nrepetition_score: 0.3\nnovelty_gap_score: 0.25\n",
+            encoding="utf-8",
+        )
         (control_dir / "lineage.jsonl").write_text('{"decision_id":"aql-1"}\n', encoding="utf-8")
         (audit_dir / "COVERAGE_AUDIT.yml").write_text("gaps: []\n", encoding="utf-8")
         (audit_dir / "CONFLICT_LOG.jsonl").write_text('{"tension":"tracked"}\n', encoding="utf-8")

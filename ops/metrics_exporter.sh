@@ -258,6 +258,7 @@ metrics.append(f"rpg_network_anti_cheat_progression_protection_score {anti_cheat
 metrics.append(f"rpg_network_liveops_promoted_actions {int(liveops_governor_summary.get('promoted_actions', 0))}")
 metrics.append(f"rpg_network_liveops_held_actions {int(liveops_governor_summary.get('held_actions', 0))}")
 metrics.append(f"rpg_network_liveops_boost_reentry {1 if liveops_governor_summary.get('boost_reentry', False) else 0}")
+metrics.append(f"rpg_network_liveops_boost_novelty {1 if liveops_governor_summary.get('boost_novelty', False) else 0}")
 metrics.append(f"rpg_network_material_total_files {int(material_inventory_summary.get('total_files', 0))}")
 metrics.append(f"rpg_network_material_canonical_source_files {int(material_inventory_summary.get('canonical_source_files', 0))}")
 metrics.append(f"rpg_network_material_append_only_runtime_truth_files {int(material_inventory_summary.get('append_only_runtime_truth_files', 0))}")

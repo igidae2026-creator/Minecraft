@@ -19,6 +19,7 @@ CONTENT_DIR = RUNTIME / "content_pipeline"
 SUMMARY_PATH = RUNTIME / "autonomy" / "content_governor_summary.yml"
 LEDGER_PATH = CONTENT_DIR / "ledger.jsonl"
 PLAYER_EXPERIENCE_SUMMARY_PATH = RUNTIME / "autonomy" / "player_experience_summary.yml"
+FATIGUE_SUMMARY_PATH = RUNTIME / "autonomy" / "engagement_fatigue_summary.yml"
 MIN_DEPTH_SCORE = 2.0
 
 
@@ -118,8 +119,11 @@ def content_candidates() -> list[dict[str, Any]]:
     guilds = (load_yaml(CONFIG / "guilds.yml").get("guilds", {}) or {})
     reward_pools = load_yaml(CONFIG / "reward_pools.yml").get("pools", {})
     player_experience = load_yaml(PLAYER_EXPERIENCE_SUMMARY_PATH)
+    fatigue = load_yaml(FATIGUE_SUMMARY_PATH)
     experience_percent = float(player_experience.get("estimated_completeness_percent", 0.0))
     experience_state = str(player_experience.get("experience_state", ""))
+    fatigue_gap_score = float(fatigue.get("fatigue_gap_score", 0.0))
+    fatigue_high = fatigue_gap_score >= 0.45
 
     candidates: list[dict[str, Any]] = []
     for template_id, template in sorted(templates.items()):
@@ -519,6 +523,81 @@ def content_candidates() -> list[dict[str, Any]]:
                     "reason": "low player-facing completeness triggers a longer mastery quest chain" if all(mastery_validation.values()) else "mastery quest chain exceeds governed economy or progression bounds",
                 }
             )
+    if fatigue_high:
+        candidates.extend(
+            [
+                {
+                    "artifact_type": "event",
+                    "artifact_id": "novelty_burst_week",
+                    "scaffold": {
+                        "event_type": "novelty_burst",
+                        "reward_pool": "starter",
+                    },
+                    "generated_payload": {
+                        "type": "novelty_burst",
+                        "reward_pool": "starter",
+                        "cooldown_minutes": 45,
+                        "returner_bonus": True,
+                        "broadcast_emphasis": "high",
+                        "challenge_steps": ["flash_objective", "remix_route", "bonus_cache"],
+                    },
+                    "validation": {
+                        "scope_fit": True,
+                        "reward_pool_known": "starter" in reward_pools,
+                        "cooldown_governed": True,
+                    },
+                    "verdict": "promote",
+                    "reason": "fatigue pressure triggers a novelty burst event artifact",
+                },
+                {
+                    "artifact_type": "social",
+                    "artifact_id": "guild_rivalry_remix",
+                    "scaffold": {
+                        "guild_progression_levels": len((guilds.get("progression", {}) or {}).get("level_thresholds", {})),
+                        "rivalry_threshold": int((guilds.get("rivalry", {}) or {}).get("created_threshold", 0)),
+                    },
+                    "generated_payload": {
+                        "reward_every": int((guilds.get("rivalry", {}) or {}).get("reward_every", 0)),
+                        "broadcast_poll_seconds": int(guilds.get("broadcast_poll_seconds", 0)),
+                        "points": (guilds.get("progression", {}) or {}).get("points", {}),
+                        "returner_bonus": True,
+                        "shared_objectives": ["guild_relay", "remix_rivalry", "shared_unlock"],
+                        "async_competition": True,
+                    },
+                    "validation": {
+                        "scope_fit": bool(guilds),
+                        "rivalry_threshold_valid": int((guilds.get("rivalry", {}) or {}).get("created_threshold", 0)) >= 2,
+                        "progression_defined": bool((guilds.get("progression", {}) or {}).get("level_thresholds", {})),
+                    },
+                    "verdict": "promote",
+                    "reason": "fatigue pressure triggers a remix social artifact",
+                },
+                {
+                    "artifact_type": "season",
+                    "artifact_id": "returner_reactivation_season_plus",
+                    "scaffold": {
+                        "scheduled_events": sorted(scheduler.keys()),
+                        "content_sources": sorted(events.keys()),
+                    },
+                    "generated_payload": {
+                        "season_objective": "reactivate players with novelty bursts, remix rivalries, and returner mastery arcs",
+                        "cadence_minutes": int(load_yaml(CONFIG / "event_scheduler.yml").get("rotation", {}).get("event_window_minutes", 0)),
+                        "seasonal_axes": ["novelty_burst", "guild_remix", "returner_mastery", "boss_gauntlet"],
+                        "seasonal_progression": True,
+                        "seasonal_progression_arc": ["return", "remix", "mastery", "prestige"],
+                        "returner_catchup": True,
+                        "badge_targets": sorted(((load_yaml(CONFIG / "prestige.yml").get("prestige", {}) or {}).get("badges", {}) or {}).keys()),
+                    },
+                    "validation": {
+                        "scope_fit": bool(scheduler) and bool(events),
+                        "scheduled_matches_source_events": all(event_id in events for event_id in scheduler),
+                        "exploration_os_compatible": True,
+                    },
+                    "verdict": "promote",
+                    "reason": "fatigue pressure triggers a stronger reactivation season frame",
+                },
+            ]
+        )
         for template_id, template in sorted(templates.items()):
             gauntlet_payload = {
                 "base_template": template_id,

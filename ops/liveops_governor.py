@@ -19,6 +19,7 @@ SUMMARY_PATH = RUNTIME / "autonomy" / "liveops_governor_summary.yml"
 LIVEOPS_DIR = RUNTIME / "live_ops"
 LEDGER_PATH = LIVEOPS_DIR / "ledger.jsonl"
 PLAYER_EXPERIENCE_PATH = RUNTIME / "autonomy" / "player_experience_summary.yml"
+FATIGUE_PATH = RUNTIME / "autonomy" / "engagement_fatigue_summary.yml"
 
 
 def now_iso() -> str:
@@ -51,12 +52,16 @@ def main() -> int:
     scheduler = load_yaml(CONFIG / "event_scheduler.yml")
     events = load_yaml(CONFIG / "events.yml").get("events", {})
     player_experience = load_yaml(PLAYER_EXPERIENCE_PATH)
+    fatigue = load_yaml(FATIGUE_PATH)
     rotation = scheduler.get("rotation", {})
     scheduled_events = scheduler.get("events", {})
     migration_required = int(rotation.get("dungeon_rotation_minutes", 0)) < 10
     experience_percent = float(player_experience.get("estimated_completeness_percent", 0.0))
     experience_state = str(player_experience.get("experience_state", ""))
     boost_reentry = experience_percent < 50.0 or experience_state in {"early", "mid"}
+    fatigue_gap_score = float(fatigue.get("fatigue_gap_score", 0.0))
+    fatigue_state = str(fatigue.get("fatigue_state", ""))
+    boost_novelty = fatigue_gap_score >= 0.45 or fatigue_state == "high"
 
     action_id = f"liveops-{uuid.uuid4().hex[:12]}"
     scaffolded_actions = [
@@ -82,6 +87,23 @@ def main() -> int:
                 },
             ]
         )
+    if boost_novelty:
+        scaffolded_actions.extend(
+            [
+                {
+                    "action": "novelty_burst_night",
+                    "mode": "promote",
+                    "cohort": "all_active",
+                    "objective": "break_repetition",
+                },
+                {
+                    "action": "remix_rivalry_week",
+                    "mode": "promote",
+                    "cohort": "guild_social",
+                    "objective": "reignite_social_loop",
+                },
+            ]
+        )
     payload = {
         "action_id": action_id,
         "created_at": created_at,
@@ -97,6 +119,8 @@ def main() -> int:
             "scheduled_events_defined": len(scheduled_events),
             "estimated_completeness_percent": experience_percent,
             "experience_state": experience_state,
+            "fatigue_gap_score": fatigue_gap_score,
+            "fatigue_state": fatigue_state,
         },
     }
     payload["signature"] = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
@@ -119,9 +143,11 @@ def main() -> int:
         "scheduled_events": len(scheduled_events),
         "live_events_defined": len(events),
         "boost_reentry": boost_reentry,
+        "boost_novelty": boost_novelty,
         "promoted_actions": sum(1 for action in payload["scaffolded_actions"] if action["mode"] == "promote"),
         "held_actions": sum(1 for action in payload["scaffolded_actions"] if action["mode"] == "hold"),
         "estimated_completeness_percent": experience_percent,
+        "fatigue_gap_score": fatigue_gap_score,
         "autonomy_threshold_ready": bool(control.get("autonomy_threshold_ready", False)),
     }
     write_yaml(SUMMARY_PATH, summary)

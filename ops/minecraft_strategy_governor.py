@@ -45,6 +45,7 @@ def main() -> int:
     player_experience = load_yaml(AUTONOMY / "player_experience_summary.yml")
     player_experience_soak = load_yaml(AUTONOMY / "player_experience_soak_summary.yml")
     gameplay_progression = load_yaml(AUTONOMY / "gameplay_progression_summary.yml")
+    engagement_fatigue = load_yaml(AUTONOMY / "engagement_fatigue_summary.yml")
 
     avg_depth = float(content.get("average_depth_score", 0.0))
     event_join_avg = float(content_strategy.get("runtime_event_join_avg", 0.0))
@@ -56,12 +57,14 @@ def main() -> int:
     experience_percent = float(player_experience.get("estimated_completeness_percent", 0.0))
     experience_soak_state = str(player_experience_soak.get("player_experience_soak_state", ""))
     progression_total_score = float(gameplay_progression.get("progression_total_score", 0.0))
+    fatigue_gap_score = float(engagement_fatigue.get("fatigue_gap_score", 0.0))
+    fatigue_state = str(engagement_fatigue.get("fatigue_state", ""))
 
     candidates = [
         {
             "domain": "gameplay_progression",
-            "priority_score": round((2.4 - avg_depth) + (0.6 if content_soak_state != "stable" else 0.0) + (0.7 if experience_percent < 40 else 0.1) + (0.7 if progression_total_score < 9.0 else 0.1), 2),
-            "reason": f"avg_depth={avg_depth} content_soak_state={content_soak_state} experience_percent={experience_percent} progression_total_score={progression_total_score}",
+            "priority_score": round((2.4 - avg_depth) + (0.6 if content_soak_state != "stable" else 0.0) + (0.7 if experience_percent < 40 else 0.1) + (0.7 if progression_total_score < 9.0 else 0.1) + (0.6 if fatigue_gap_score >= 0.45 else 0.0), 2),
+            "reason": f"avg_depth={avg_depth} content_soak_state={content_soak_state} experience_percent={experience_percent} progression_total_score={progression_total_score} fatigue_gap_score={fatigue_gap_score}",
             "repairs": ["content_governor", "player_experience_governor", "player_experience_soak_governor"],
         },
         {
@@ -72,8 +75,8 @@ def main() -> int:
         },
         {
             "domain": "social_liveops",
-            "priority_score": round((1.0 if event_join_avg < 950 else 0.2) + (0.7 if held_actions > 0 else 0.0) + (0.5 if return_player_reward_avg < 60 else 0.0) + (0.9 if experience_percent < 40 else 0.1) + (0.4 if experience_soak_state != "stable" else 0.0), 2),
-            "reason": f"event_join_avg={event_join_avg} held_actions={held_actions} return_player_reward_avg={return_player_reward_avg} experience_percent={experience_percent} experience_soak_state={experience_soak_state}",
+            "priority_score": round((1.0 if event_join_avg < 950 else 0.2) + (0.7 if held_actions > 0 else 0.0) + (0.5 if return_player_reward_avg < 60 else 0.0) + (0.9 if experience_percent < 40 else 0.1) + (0.4 if experience_soak_state != "stable" else 0.0) + (0.8 if fatigue_gap_score >= 0.45 else 0.0), 2),
+            "reason": f"event_join_avg={event_join_avg} held_actions={held_actions} return_player_reward_avg={return_player_reward_avg} experience_percent={experience_percent} experience_soak_state={experience_soak_state} fatigue_state={fatigue_state}",
             "repairs": ["liveops_governor", "content_governor", "player_experience_governor", "player_experience_soak_governor"],
         },
         {
@@ -115,6 +118,8 @@ def main() -> int:
             "experience_state": str(player_experience.get("experience_state", "")),
             "player_experience_soak_state": experience_soak_state,
             "progression_total_score": progression_total_score,
+            "fatigue_gap_score": fatigue_gap_score,
+            "fatigue_state": fatigue_state,
         },
     }
     PLAN_DIR.mkdir(parents=True, exist_ok=True)
@@ -139,6 +144,8 @@ def main() -> int:
         "experience_state": str(player_experience.get("experience_state", "")),
         "player_experience_soak_state": experience_soak_state,
         "progression_total_score": progression_total_score,
+        "fatigue_gap_score": fatigue_gap_score,
+        "fatigue_state": fatigue_state,
     }
     write_yaml(SUMMARY_PATH, summary)
     print("MINECRAFT_STRATEGY_GOVERNOR")
