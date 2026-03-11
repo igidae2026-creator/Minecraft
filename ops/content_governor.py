@@ -20,6 +20,7 @@ SUMMARY_PATH = RUNTIME / "autonomy" / "content_governor_summary.yml"
 LEDGER_PATH = CONTENT_DIR / "ledger.jsonl"
 PLAYER_EXPERIENCE_SUMMARY_PATH = RUNTIME / "autonomy" / "player_experience_summary.yml"
 FATIGUE_SUMMARY_PATH = RUNTIME / "autonomy" / "engagement_fatigue_summary.yml"
+CONTENT_VOLUME_SUMMARY_PATH = RUNTIME / "autonomy" / "content_volume_summary.yml"
 MIN_DEPTH_SCORE = 2.0
 
 
@@ -120,10 +121,13 @@ def content_candidates() -> list[dict[str, Any]]:
     reward_pools = load_yaml(CONFIG / "reward_pools.yml").get("pools", {})
     player_experience = load_yaml(PLAYER_EXPERIENCE_SUMMARY_PATH)
     fatigue = load_yaml(FATIGUE_SUMMARY_PATH)
+    content_volume = load_yaml(CONTENT_VOLUME_SUMMARY_PATH)
     experience_percent = float(player_experience.get("estimated_completeness_percent", 0.0))
     experience_state = str(player_experience.get("experience_state", ""))
     fatigue_gap_score = float(fatigue.get("fatigue_gap_score", 0.0))
     fatigue_high = fatigue_gap_score >= 0.45
+    content_volume_score = float(content_volume.get("content_volume_score", 0.0))
+    volume_low = content_volume_score < 7.5
 
     candidates: list[dict[str, Any]] = []
     for template_id, template in sorted(templates.items()):
@@ -624,6 +628,147 @@ def content_candidates() -> list[dict[str, Any]]:
                     "validation": gauntlet_validation,
                     "verdict": "promote" if all(gauntlet_validation.values()) else "hold",
                     "reason": "low player-facing completeness triggers a deeper boss gauntlet variation" if all(gauntlet_validation.values()) else "gauntlet variation exceeds governed dungeon bounds",
+                }
+            )
+    if volume_low:
+        candidates.extend(
+            [
+                {
+                    "artifact_type": "event",
+                    "artifact_id": "showcase_rotation_week",
+                    "scaffold": {
+                        "event_type": "showcase_rotation",
+                        "reward_pool": "starter",
+                    },
+                    "generated_payload": {
+                        "type": "showcase_rotation",
+                        "reward_pool": "starter",
+                        "cooldown_minutes": 40,
+                        "broadcast_emphasis": "high",
+                        "challenge_steps": ["daily_showcase", "party_showcase", "bonus_claim", "remix_vote"],
+                        "returner_bonus": True,
+                    },
+                    "validation": {
+                        "scope_fit": True,
+                        "reward_pool_known": "starter" in reward_pools,
+                        "cooldown_governed": True,
+                    },
+                    "verdict": "promote",
+                    "reason": "low content volume triggers an extra showcase event rotation",
+                },
+                {
+                    "artifact_type": "social",
+                    "artifact_id": "guild_showcase_circuit",
+                    "scaffold": {
+                        "guild_progression_levels": len((guilds.get("progression", {}) or {}).get("level_thresholds", {})),
+                        "rivalry_threshold": int((guilds.get("rivalry", {}) or {}).get("created_threshold", 0)),
+                    },
+                    "generated_payload": {
+                        "reward_every": int((guilds.get("rivalry", {}) or {}).get("reward_every", 0)),
+                        "broadcast_poll_seconds": int(guilds.get("broadcast_poll_seconds", 0)),
+                        "points": (guilds.get("progression", {}) or {}).get("points", {}),
+                        "returner_bonus": True,
+                        "shared_objectives": ["showcase_party_chain", "guild_route_clear", "rivalry_bonus_vote", "weekly_assist_bonus"],
+                        "async_competition": True,
+                    },
+                    "validation": {
+                        "scope_fit": bool(guilds),
+                        "rivalry_threshold_valid": int((guilds.get("rivalry", {}) or {}).get("created_threshold", 0)) >= 2,
+                        "progression_defined": bool((guilds.get("progression", {}) or {}).get("level_thresholds", {})),
+                    },
+                    "verdict": "promote",
+                    "reason": "low content volume triggers an extra social showcase circuit",
+                },
+                {
+                    "artifact_type": "onboarding",
+                    "artifact_id": "showcase_path_onboarding",
+                    "scaffold": {
+                        "route_family": "spectacle_first_start",
+                        "target_servers": ["lobby", "events", "boss_world"],
+                    },
+                    "generated_payload": {
+                        "phases": ["instant_reward", "showcase_vote", "boss_preview", "party_prompt", "reward_preview"],
+                        "reward_pool": "starter",
+                        "idempotent_reward": True,
+                        "tempo_bias": "fast",
+                        "party_prompt": True,
+                        "returner_bonus": True,
+                    },
+                    "validation": {
+                        "scope_fit": True,
+                        "reward_pool_known": "starter" in reward_pools,
+                        "exploration_os_compatible": True,
+                    },
+                    "verdict": "promote",
+                    "reason": "low content volume triggers a spectacle-first onboarding branch",
+                },
+                {
+                    "artifact_type": "season",
+                    "artifact_id": "showcase_ladder_season",
+                    "scaffold": {
+                        "scheduled_events": sorted(scheduler.keys()),
+                        "content_sources": sorted(events.keys()),
+                    },
+                    "generated_payload": {
+                        "season_objective": "expand visible content breadth with weekly showcases, social ladders, and boss previews",
+                        "cadence_minutes": int(load_yaml(CONFIG / "event_scheduler.yml").get("rotation", {}).get("event_window_minutes", 0)),
+                        "seasonal_axes": ["showcase_events", "guild_showcase", "boss_preview", "returner_bonus"],
+                        "seasonal_progression": True,
+                        "seasonal_progression_arc": ["showcase_entry", "group_route", "boss_preview", "prestige_bridge"],
+                        "returner_catchup": True,
+                        "badge_targets": sorted(((load_yaml(CONFIG / "prestige.yml").get("prestige", {}) or {}).get("badges", {}) or {}).keys()),
+                    },
+                    "validation": {
+                        "scope_fit": bool(scheduler) and bool(events),
+                        "scheduled_matches_source_events": all(event_id in events for event_id in scheduler),
+                        "exploration_os_compatible": True,
+                    },
+                    "verdict": "promote",
+                    "reason": "low content volume triggers a showcase-heavy seasonal frame",
+                },
+            ]
+        )
+        if len(quest_items) >= 5:
+            showcase_steps = []
+            showcase_gold = 0
+            showcase_xp = 0
+            for quest_id, quest in quest_items[:5]:
+                reward = quest.get("reward", {}) or {}
+                showcase_steps.append(
+                    {
+                        "quest_id": quest_id,
+                        "objective": quest.get("objective", "unknown"),
+                        "amount": int(quest.get("amount", 0)),
+                        "repeatable": bool(quest.get("repeatable", False)),
+                    }
+                )
+                showcase_gold += int(reward.get("gold", 0))
+                showcase_xp += int(reward.get("xp", 0))
+            showcase_payload = {
+                "steps": showcase_steps,
+                "branching_rewards": True,
+                "total_gold": showcase_gold,
+                "total_xp": showcase_xp,
+                "finale_gate": "showcase_boss_vote",
+                "returner_bonus": True,
+            }
+            showcase_validation = {
+                "scope_fit": len(showcase_steps) >= 5,
+                "progression_curve_present": showcase_xp > 0,
+                "economy_budget_governed": showcase_gold <= 520,
+            }
+            candidates.append(
+                {
+                    "artifact_type": "quest_chain",
+                    "artifact_id": "showcase_mastery_chain",
+                    "scaffold": {
+                        "step_count": len(showcase_steps),
+                        "finale_gate": "showcase_boss_vote",
+                    },
+                    "generated_payload": showcase_payload,
+                    "validation": showcase_validation,
+                    "verdict": "promote" if all(showcase_validation.values()) else "hold",
+                    "reason": "low content volume triggers a broader showcase quest chain" if all(showcase_validation.values()) else "showcase quest chain exceeds governed economy or progression bounds",
                 }
             )
     return candidates
