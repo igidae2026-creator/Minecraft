@@ -987,6 +987,7 @@ def main() -> int:
     social_persistence_strength = 0.0
     spectacle_variety_strength = 0.0
     returner_retention_strength = 0.0
+    onboarding_polish_strength = 0.0
 
     for candidate in candidates:
         quality = score_candidate(
@@ -1035,6 +1036,9 @@ def main() -> int:
         if artifact_type == "onboarding":
             starter_reward_strength += 0.9 if generated_payload.get("idempotent_reward", False) else 0.4
             starter_reward_strength += 0.5 if generated_payload.get("tempo_bias") == "fast" else 0.0
+            onboarding_polish_strength += 0.6 if generated_payload.get("idempotent_reward", False) else 0.2
+            onboarding_polish_strength += 0.45 if generated_payload.get("party_prompt", False) else 0.0
+            onboarding_polish_strength += min(0.7, len(generated_payload.get("phases", []) or []) * 0.1)
         elif artifact_type == "event":
             starter_reward_strength += 0.5 if generated_payload.get("reward_pool") == "starter" else 0.1
             starter_reward_strength += 0.35 if generated_payload.get("returner_bonus", False) else 0.0
@@ -1091,6 +1095,7 @@ def main() -> int:
         "social_persistence_strength": round(min(3.0, social_persistence_strength), 2),
         "spectacle_variety_strength": round(min(3.0, spectacle_variety_strength), 2),
         "returner_retention_strength": round(min(3.0, returner_retention_strength), 2),
+        "onboarding_polish_strength": round(min(3.0, onboarding_polish_strength), 2),
         "starter_reward_strength": round(min(3.0, starter_reward_strength), 2),
         "rivalry_reward_pull": round(min(3.0, rivalry_reward_pull), 2),
         "depth_floor": MIN_DEPTH_SCORE,

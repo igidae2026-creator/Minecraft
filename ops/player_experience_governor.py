@@ -89,6 +89,7 @@ def main() -> int:
     prestige_clarity_strength = float(content.get("prestige_clarity_strength", 0.0))
     endgame_breadth_strength = float(content.get("endgame_breadth_strength", 0.0))
     returner_retention_strength = float(content.get("returner_retention_strength", 0.0))
+    onboarding_polish_strength = float(content.get("onboarding_polish_strength", 0.0))
     starter_reward_strength = float(content.get("starter_reward_strength", 0.0))
     rivalry_reward_pull = float(content.get("rivalry_reward_pull", 0.0))
     held_actions = int(liveops.get("held_actions", 0))
@@ -135,6 +136,7 @@ def main() -> int:
         + min(1.0, prestige_clarity_strength / 3.0) * 0.06
         + min(1.0, endgame_breadth_strength / 3.0) * 0.06
         + min(1.0, returner_retention_strength / 3.0) * 0.07
+        + min(1.0, onboarding_polish_strength / 3.0) * 0.05
         + min(1.0, returner_reactivation_depth / 2.0) * 0.05
         + min(1.0, liveops_depth_strength / 3.0) * 0.05
         + long_soak_confidence * 0.06
@@ -180,6 +182,7 @@ def main() -> int:
         "prestige_clarity_strength": prestige_clarity_strength,
         "endgame_breadth_strength": endgame_breadth_strength,
         "returner_retention_strength": returner_retention_strength,
+        "onboarding_polish_strength": onboarding_polish_strength,
         "starter_reward_strength": starter_reward_strength,
         "rivalry_reward_pull": rivalry_reward_pull,
         "progression_protection_score": progression_protection_score,
