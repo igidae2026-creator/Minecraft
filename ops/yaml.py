@@ -1,7 +1,25 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
+from pathlib import Path
+import sys
 from typing import Any
+
+
+_REAL_YAML = None
+_REAL_YAML_PATH = Path("/usr/lib/python3/dist-packages/yaml/__init__.py")
+if _REAL_YAML_PATH.is_file():
+    spec = importlib.util.spec_from_file_location(
+        "_pyyaml_real",
+        _REAL_YAML_PATH,
+        submodule_search_locations=[str(_REAL_YAML_PATH.parent)],
+    )
+    if spec and spec.loader:
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        _REAL_YAML = module
 
 
 def _strip_comment(line: str) -> str:
@@ -45,6 +63,10 @@ def _scalar(raw: str) -> Any:
 
 
 def safe_load(text):
+    if _REAL_YAML is not None:
+        if hasattr(text, "read"):
+            return _REAL_YAML.safe_load(text)  # type: ignore[union-attr]
+        return _REAL_YAML.safe_load(text)  # type: ignore[union-attr]
     if hasattr(text, "read"):
         text = text.read()
     if text is None:
@@ -64,7 +86,7 @@ def safe_load(text):
         # decide container type by first line at this level
         if idx >= len(lines):
             return {}
-        is_list = lines[idx][1].startswith("- ")
+        is_list = lines[idx][1] == "-" or lines[idx][1].startswith("- ")
         container = [] if is_list else {}
 
         while idx < len(lines):
@@ -75,9 +97,9 @@ def safe_load(text):
                 raise ValueError(f"Invalid indentation near: {content}")
 
             if isinstance(container, list):
-                if not content.startswith("- "):
+                if content != "-" and not content.startswith("- "):
                     break
-                item = content[2:].strip()
+                item = "" if content == "-" else content[2:].strip()
                 idx += 1
                 if item == "":
                     if idx < len(lines) and lines[idx][0] > indent:
@@ -96,6 +118,10 @@ def safe_load(text):
                             obj[key] = {}
                     else:
                         obj[key] = _scalar(value)
+                        if idx < len(lines) and lines[idx][0] > indent:
+                            nested = parse_block(lines[idx][0])
+                            if isinstance(nested, dict):
+                                obj.update(nested)
                     container.append(obj)
                 else:
                     container.append(_scalar(item))
@@ -126,6 +152,9 @@ def safe_load(text):
 
 
 def safe_dump(payload, stream, sort_keys=False, allow_unicode=True):  # noqa: ARG001
+    if _REAL_YAML is not None:
+        return _REAL_YAML.safe_dump(payload, stream, sort_keys=sort_keys, allow_unicode=allow_unicode)  # type: ignore[union-attr]
+
     def fmt(v):
         if isinstance(v, bool):
             return "true" if v else "false"

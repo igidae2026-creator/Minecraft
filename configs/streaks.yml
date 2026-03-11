@@ -1,0 +1,21 @@
+streaks:
+  daily_play:
+    reset_days: 2
+    milestone_every: 3
+    prestige_reward: 2
+    progression_currency_reward: 1
+  dungeon_win:
+    reset_days: 3
+    milestone_every: 2
+    prestige_reward: 3
+    progression_currency_reward: 1
+  event_participation:
+    reset_days: 3
+    milestone_every: 3
+    prestige_reward: 2
+    progression_currency_reward: 1
+  return_reward:
+    inactivity_hours: 48
+    buff_id: comeback_booster
+    buff_duration_seconds: 3600
+    progression_currency_reward: 2

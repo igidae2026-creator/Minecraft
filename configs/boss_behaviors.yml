@@ -1,0 +1,41 @@
+behaviors:
+  goblin_king:
+    tick_interval: 60
+    enraged_threshold: 0.20
+    group_scaling: 0.15
+    phases:
+      phase_one:
+        health_threshold: 1.0
+        abilities:
+          - smash
+          - leap
+      phase_two:
+        health_threshold: 0.60
+        abilities:
+          - smash
+          - summon_minions
+      phase_three:
+        health_threshold: 0.25
+        abilities:
+          - leap
+          - summon_minions
+  forest_guardian:
+    tick_interval: 50
+    enraged_threshold: 0.18
+    group_scaling: 0.20
+    phases:
+      phase_one:
+        health_threshold: 1.0
+        abilities:
+          - slam
+          - root_snare
+      phase_two:
+        health_threshold: 0.65
+        abilities:
+          - slam
+          - summon_minions
+      phase_three:
+        health_threshold: 0.30
+        abilities:
+          - root_snare
+          - summon_minions

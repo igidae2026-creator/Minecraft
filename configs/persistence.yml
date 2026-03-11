@@ -25,7 +25,7 @@ redis:
 local_fallback:
   enabled: true
   path: runtime_data
-  allow_writes_when_db_unavailable: false
+  allow_writes_when_db_unavailable: true
   mirror_snapshots: true
   item_authority_manifests: true
   artifact_exports: true

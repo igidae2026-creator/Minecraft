@@ -1,0 +1,36 @@
+genre_registry:
+  lobby:
+    server: lobby
+    world: lobby
+    entry: return_lobby
+    label: Lobby
+    description: Safe hub routing layer and genre switchboard.
+    party_compatible: true
+  rpg:
+    server: rpg_world
+    world: rpg_world
+    entry: portal_rpg
+    label: RPG Adventure
+    description: Persistent progression, quests, mobs, dungeons, and economy.
+    party_compatible: true
+  minigame:
+    server: boss_world
+    world: boss_world
+    entry: portal_minigame
+    label: Quick Match
+    description: Fast combat sessions and group-ready quickplay routing.
+    party_compatible: true
+  event:
+    server: events
+    world: events
+    entry: portal_event
+    label: Rotating Event
+    description: Shared live objective with event-specific rewards.
+    party_compatible: true
+  dungeon:
+    server: dungeons
+    world: dungeons
+    entry: portal_dungeon
+    label: Dungeon Instances
+    description: Instanced cooperative dungeon sessions.
+    party_compatible: true

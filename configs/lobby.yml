@@ -1,0 +1,54 @@
+menu:
+  title: "&6Choose Your Path"
+  guide_item_name: "&6Navigator Compass"
+  guide_item_description: "&7Right-click to open the guided lobby router."
+  opening_message: "&6Welcome to the network. Pick a path for your first reward."
+onboarding:
+  auto_open_delay_ticks: 20
+  reset_claim_key: onboarding-reset
+  reward:
+    gold: 5
+    items:
+      starter_token: 1
+  branch_timeout_seconds: 120
+routes:
+  start_adventure:
+    action: route
+    branch: adventure
+    target_server: rpg_world
+    slot: 1
+    icon: iron_sword
+    label: Start Adventure
+    description: Begin the RPG progression route with quests, mobs, and gear growth.
+    recommended_action: Follow the starter hunt and push into the frontier.
+    reward_preview: 1 starter token and a safe gold boost
+  quick_match:
+    action: route
+    branch: quickplay
+    target_server: boss_world
+    slot: 3
+    icon: shield
+    label: Quick Match
+    description: Jump into a fast combat route with immediate action and low setup.
+    recommended_action: Use this when you want combat first and menus second.
+    reward_preview: 1 starter token and a safe gold boost
+  rotating_event:
+    action: route
+    branch: event
+    target_server: events
+    slot: 5
+    icon: clock
+    label: Rotating Event
+    description: Join the live rotating event for the current network-wide activity.
+    recommended_action: Great for players who want a shared world objective.
+    reward_preview: 1 starter token and a safe gold boost
+  explore_hub:
+    action: stay
+    branch: hub
+    target_server: lobby
+    slot: 7
+    icon: compass
+    label: Explore Hub
+    description: Stay in the lobby, inspect the paths, and choose later without dead air.
+    recommended_action: Use the compass any time to switch to Adventure, Quick Match, or Event.
+    reward_preview: unlocks your starter token and route guide

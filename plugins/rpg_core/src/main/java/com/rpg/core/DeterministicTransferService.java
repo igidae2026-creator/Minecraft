@@ -114,7 +114,7 @@ public final class DeterministicTransferService {
 
     public TransferRecord refuseStaleLoad(String transferId, long observedVersion) {
         staleLoadRejections.incrementAndGet();
-        return update(transferId, "stale_load_refusal:" + observedVersion, true, null);
+        return update(transferId, "stale_load_refusal:" + observedVersion, true, null, null);
     }
 
     public TransferRecord verifyLease(String transferId, String expectedLeaseId) {

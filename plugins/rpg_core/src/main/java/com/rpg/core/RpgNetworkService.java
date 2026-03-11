@@ -67,6 +67,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
@@ -140,9 +141,13 @@ public final class RpgNetworkService {
         private long allocationRequestedAt;
         private long allocationCompletedAt;
         private long expiresAt;
+        private String templateId;
+        private String rewardTier;
+        private int playerCap;
 
         private DungeonInstanceState(String instanceId, UUID ownerUuid, String dungeonId, String worldName, long createdAt, long expiresAt, InstanceType type,
-                                     InstanceLifecycleState lifecycleState, long allocationRequestedAt, long allocationCompletedAt, Set<UUID> partyMembers) {
+                                     InstanceLifecycleState lifecycleState, long allocationRequestedAt, long allocationCompletedAt, Set<UUID> partyMembers,
+                                     String templateId, String rewardTier, int playerCap) {
             this.instanceId = instanceId;
             this.ownerUuid = ownerUuid;
             this.dungeonId = dungeonId;
@@ -154,9 +159,13 @@ public final class RpgNetworkService {
             this.allocationRequestedAt = allocationRequestedAt;
             this.allocationCompletedAt = allocationCompletedAt;
             this.partyMembers.addAll(partyMembers);
+            this.templateId = templateId == null ? "" : templateId;
+            this.rewardTier = rewardTier == null ? "" : rewardTier;
+            this.playerCap = Math.max(1, playerCap);
         }
 
-        private static DungeonInstanceState create(UUID ownerUuid, String dungeonId, long ttlMillis, InstanceType type, Set<UUID> partyMembers) {
+        private static DungeonInstanceState create(UUID ownerUuid, String dungeonId, long ttlMillis, InstanceType type, Set<UUID> partyMembers,
+                                                   String templateId, String rewardTier, int playerCap) {
             long now = System.currentTimeMillis();
             String compact = ownerUuid.toString().replace("-", "");
             String ownerPart = compact.substring(0, Math.min(8, compact.length()));
@@ -175,7 +184,10 @@ public final class RpgNetworkService {
                 InstanceLifecycleState.REQUESTED,
                 now,
                 0L,
-                partyMembers
+                partyMembers,
+                templateId,
+                rewardTier,
+                playerCap
             );
         }
 
@@ -190,6 +202,9 @@ public final class RpgNetworkService {
             String stateRaw = yaml.getString("state", InstanceLifecycleState.REQUESTED.name());
             long requestedAt = yaml.getLong("allocation.requested_at", createdAt);
             long completedAt = yaml.getLong("allocation.completed_at", 0L);
+            String templateId = yaml.getString("template_id", "");
+            String rewardTier = yaml.getString("reward_tier", "");
+            int playerCap = yaml.getInt("player_cap", 1);
             if (instanceId.isBlank() || owner.isBlank() || dungeonId.isBlank() || worldName.isBlank()) {
                 return null;
             }
@@ -215,7 +230,7 @@ public final class RpgNetworkService {
             try {
                 UUID ownerUuid = UUID.fromString(owner);
                 members.add(ownerUuid);
-                return new DungeonInstanceState(instanceId, ownerUuid, dungeonId, worldName, createdAt, expiresAt, type, state, requestedAt, completedAt, members);
+                return new DungeonInstanceState(instanceId, ownerUuid, dungeonId, worldName, createdAt, expiresAt, type, state, requestedAt, completedAt, members, templateId, rewardTier, playerCap);
             } catch (IllegalArgumentException ignored) {
                 return null;
             }
@@ -233,6 +248,9 @@ public final class RpgNetworkService {
             yaml.set("state", lifecycleState.name());
             yaml.set("allocation.requested_at", allocationRequestedAt);
             yaml.set("allocation.completed_at", allocationCompletedAt);
+            yaml.set("template_id", templateId);
+            yaml.set("reward_tier", rewardTier);
+            yaml.set("player_cap", playerCap);
             List<String> members = new ArrayList<>();
             for (UUID member : partyMembers) {
                 members.add(member.toString());
@@ -272,18 +290,23 @@ public final class RpgNetworkService {
     }
 
     private final class InstanceOrchestrator {
-        private DungeonInstanceState allocateDungeonInstance(UUID ownerUuid, String dungeonId, Set<UUID> partyMembers) {
+        private DungeonInstanceState allocateDungeonInstance(UUID ownerUuid, String dungeonId, Set<UUID> partyMembers, ContentEngine.DungeonTemplate template) {
             cleanupOwnedDungeonInstance(ownerUuid, "replace");
-            DungeonInstanceState instance = DungeonInstanceState.create(ownerUuid, dungeonId, instanceHoldMillis(), InstanceType.DUNGEON, partyMembers);
+            String templateId = template == null ? "" : template.templateId();
+            String rewardTier = template == null ? "" : template.rewardTier();
+            int playerCap = template == null ? Math.max(1, partyMembers.size()) : template.playerCap();
+            DungeonInstanceState instance = DungeonInstanceState.create(ownerUuid, dungeonId, instanceHoldMillis(), InstanceType.DUNGEON, partyMembers, templateId, rewardTier, playerCap);
             instance.setLifecycleState(InstanceLifecycleState.ALLOCATING);
             persistDungeonInstance(instance);
+            instanceSpawn.incrementAndGet();
             return instance;
         }
 
         private DungeonInstanceState allocateBossEncounter(UUID ownerUuid, String bossId, Set<UUID> partyMembers) {
-            DungeonInstanceState instance = DungeonInstanceState.create(ownerUuid, "boss_" + bossId, instanceHoldMillis(), InstanceType.BOSS_ENCOUNTER, partyMembers);
+            DungeonInstanceState instance = DungeonInstanceState.create(ownerUuid, "boss_" + bossId, instanceHoldMillis(), InstanceType.BOSS_ENCOUNTER, partyMembers, "", "elite", Math.max(1, partyMembers.size()));
             instance.setLifecycleState(InstanceLifecycleState.ALLOCATING);
             persistDungeonInstance(instance);
+            instanceSpawn.incrementAndGet();
             return instance;
         }
 
@@ -379,6 +402,8 @@ public final class RpgNetworkService {
     private final Path experimentRegistryDir;
     private final Path incidentDir;
     private final Path knowledgeDir;
+    private final Path socialDir;
+    private final Path socialBroadcastDir;
     private final String serverName;
     private final String serverRole;
     private final YamlConfiguration network;
@@ -393,6 +418,18 @@ public final class RpgNetworkService {
     private final YamlConfiguration dungeons;
     private final YamlConfiguration skills;
     private final YamlConfiguration events;
+    private final YamlConfiguration lobbyConfig;
+    private final YamlConfiguration genresConfig;
+    private final YamlConfiguration dungeonTemplatesConfig;
+    private final YamlConfiguration bossBehaviorsConfig;
+    private final YamlConfiguration eventSchedulerConfig;
+    private final YamlConfiguration rewardPoolsConfig;
+    private final YamlConfiguration gearTiersConfig;
+    private final YamlConfiguration runtimeMonitorConfig;
+    private final YamlConfiguration adaptiveRulesConfig;
+    private final YamlConfiguration guildsConfig;
+    private final YamlConfiguration prestigeConfig;
+    private final YamlConfiguration streaksConfig;
     private final YamlConfiguration governance;
     private final YamlConfiguration experimentation;
     private final YamlConfiguration pressureConfig;
@@ -406,6 +443,8 @@ public final class RpgNetworkService {
     private final Map<String, Long> lastFlushedGuildVersion = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastMobRewardAt = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastCommandAt = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> recentJoinAttempts = new ConcurrentHashMap<>();
+    private final Deque<UUID> admissionQueue = new ArrayDeque<>();
     private final Set<UUID> transferFrozenProfiles = ConcurrentHashMap.newKeySet();
     private final Map<String, BukkitTask> bossTasks = new ConcurrentHashMap<>();
     private final ConcurrentLinkedQueue<LedgerEntry> ledgerQueue = new ConcurrentLinkedQueue<>();
@@ -435,6 +474,13 @@ public final class RpgNetworkService {
     private final PolicyRegistry policyRegistry = new PolicyRegistry();
     private final PressureControlPlane pressureControlPlane = new PressureControlPlane();
     private final RuntimeKnowledgeIndex runtimeKnowledgeIndex = new RuntimeKnowledgeIndex();
+    private final TelemetryAdaptiveEngine telemetryAdaptiveEngine;
+    private final LobbyInteractionController lobbyInteractionController;
+    private final GenreRegistry genreRegistry;
+    private final PartyService partyService = new PartyService();
+    private final ContentEngine contentEngine;
+    private final Map<String, Integer> rivalryScores = new ConcurrentHashMap<>();
+    private final Map<String, Integer> rivalryRewardMilestones = new ConcurrentHashMap<>();
     private final Map<String, Integer> managedEntityCounters = new ConcurrentHashMap<>();
     private final Set<UUID> managedEntityIds = ConcurrentHashMap.newKeySet();
     private final AtomicLong dbOperationCount = new AtomicLong();
@@ -455,6 +501,68 @@ public final class RpgNetworkService {
     private final AtomicLong cleanupFailureCount = new AtomicLong();
     private final AtomicLong cleanupLatencyTotalMillis = new AtomicLong();
     private final AtomicLong cleanupLatencyMaxMillis = new AtomicLong();
+    private final AtomicLong onboardingStarted = new AtomicLong();
+    private final AtomicLong onboardingCompleted = new AtomicLong();
+    private final AtomicLong onboardingFirstInteraction = new AtomicLong();
+    private final AtomicLong onboardingFirstRewardGranted = new AtomicLong();
+    private final AtomicLong onboardingFirstBranchSelected = new AtomicLong();
+    private final AtomicLong onboardingTimeToFirstInteractionTotalMillis = new AtomicLong();
+    private final AtomicLong onboardingTimeToFirstRewardTotalMillis = new AtomicLong();
+    private final Map<String, AtomicLong> onboardingBranchSelections = new ConcurrentHashMap<>();
+    private final AtomicLong genreEntered = new AtomicLong();
+    private final AtomicLong genreExit = new AtomicLong();
+    private final AtomicLong genreTransferSuccess = new AtomicLong();
+    private final AtomicLong genreTransferFailure = new AtomicLong();
+    private final AtomicLong genreSessionDurationTotalMillis = new AtomicLong();
+    private final AtomicLong dungeonStarted = new AtomicLong();
+    private final AtomicLong dungeonCompleted = new AtomicLong();
+    private final AtomicLong bossKilled = new AtomicLong();
+    private final AtomicLong eventStarted = new AtomicLong();
+    private final AtomicLong eventJoinCount = new AtomicLong();
+    private final AtomicLong rewardDistributed = new AtomicLong();
+    private final AtomicLong economyEarn = new AtomicLong();
+    private final AtomicLong economySpend = new AtomicLong();
+    private final AtomicLong gearDrop = new AtomicLong();
+    private final AtomicLong gearUpgradeCount = new AtomicLong();
+    private final AtomicLong progressionLevelUp = new AtomicLong();
+    private final AtomicLong instanceSpawn = new AtomicLong();
+    private final AtomicLong instanceShutdown = new AtomicLong();
+    private final AtomicLong exploitFlag = new AtomicLong();
+    private final AtomicLong queueSizeMetric = new AtomicLong();
+    private final AtomicLong playerDensityMetric = new AtomicLong();
+    private final AtomicLong adaptiveAdjustment = new AtomicLong();
+    private final AtomicLong difficultyChange = new AtomicLong();
+    private final AtomicLong rewardAdjustment = new AtomicLong();
+    private final AtomicLong eventFrequencyChange = new AtomicLong();
+    private final AtomicLong matchmakingAdjustment = new AtomicLong();
+    private final AtomicLong dungeonCompletionsTracked = new AtomicLong();
+    private final AtomicLong dungeonAttemptsTracked = new AtomicLong();
+    private final AtomicLong guildCreated = new AtomicLong();
+    private final AtomicLong guildJoined = new AtomicLong();
+    private final AtomicLong prestigeGain = new AtomicLong();
+    private final AtomicLong returnPlayerReward = new AtomicLong();
+    private final AtomicLong streakProgress = new AtomicLong();
+    private final AtomicLong rivalryCreated = new AtomicLong();
+    private final AtomicLong rivalryMatch = new AtomicLong();
+    private final AtomicLong rivalryReward = new AtomicLong();
+    private final Map<UUID, Integer> recentDeathCounts = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> lastChurnMitigationAt = new ConcurrentHashMap<>();
+    private volatile long lastDuplicateRewardSample;
+    private volatile long lastEconomyEarnSample;
+    private volatile long lastRollbackSample;
+    private volatile long lastSpawnDeniedSample;
+    private volatile double runtimeTps = 20.0D;
+    private volatile double networkRoutingLatencyMs = 0.0D;
+    private volatile boolean autoScalingEnabled;
+    private volatile boolean debugMetricsEnabled;
+    private volatile double adaptiveDifficultyMultiplier = 1.0D;
+    private volatile double adaptiveRewardWeightMultiplier = 1.0D;
+    private volatile double adaptiveEventFrequencyMultiplier = 1.0D;
+    private volatile double adaptiveMatchmakingRangeMultiplier = 1.0D;
+    private volatile String lastLobbyContentBroadcastId = "";
+    private volatile String lastSocialBroadcastId = "";
+    private BukkitTask lobbyContentTask;
+    private BukkitTask operationsBrainTask;
     private volatile boolean mysqlSchemaReady;
     private volatile boolean mysqlDriverReady;
     private volatile boolean mysqlDriverUnavailableLogged;
@@ -467,6 +575,7 @@ public final class RpgNetworkService {
     private BukkitTask healthTask;
     private BukkitTask entityCleanupTask;
     private BukkitTask instanceCleanupTask;
+    private BukkitTask socialBroadcastTask;
 
     public RpgNetworkService(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -483,6 +592,18 @@ public final class RpgNetworkService {
         this.dungeons = loadConfig("dungeons.yml");
         this.skills = loadConfig("skills.yml");
         this.events = loadOptionalConfig("events.yml");
+        this.lobbyConfig = loadOptionalConfig("lobby.yml");
+        this.genresConfig = loadOptionalConfig("genres.yml");
+        this.dungeonTemplatesConfig = loadOptionalConfig("dungeon_templates.yml");
+        this.bossBehaviorsConfig = loadOptionalConfig("boss_behaviors.yml");
+        this.eventSchedulerConfig = loadOptionalConfig("event_scheduler.yml");
+        this.rewardPoolsConfig = loadOptionalConfig("reward_pools.yml");
+        this.gearTiersConfig = loadOptionalConfig("gear_tiers.yml");
+        this.runtimeMonitorConfig = loadOptionalConfig("runtime_monitor.yml");
+        this.adaptiveRulesConfig = loadOptionalConfig("adaptive_rules.yml");
+        this.guildsConfig = loadOptionalConfig("guilds.yml");
+        this.prestigeConfig = loadOptionalConfig("prestige.yml");
+        this.streaksConfig = loadOptionalConfig("streaks.yml");
         this.governance = loadOptionalConfig("governance.yml");
         this.experimentation = loadOptionalConfig("experiments.yml");
         this.pressureConfig = loadOptionalConfig("pressure.yml");
@@ -509,7 +630,15 @@ public final class RpgNetworkService {
         this.experimentRegistryDir = runtimeDir.resolve("experiments");
         this.incidentDir = runtimeDir.resolve("incidents");
         this.knowledgeDir = runtimeDir.resolve("knowledge");
+        this.socialDir = runtimeDir.resolve("social");
+        this.socialBroadcastDir = socialDir.resolve("broadcasts");
         this.sessionAuthorityService = new SessionAuthorityService(coordinationDir);
+        this.lobbyInteractionController = new LobbyInteractionController(lobbyConfig);
+        this.genreRegistry = new GenreRegistry(genresConfig);
+        this.contentEngine = new ContentEngine(dungeonTemplatesConfig, bossBehaviorsConfig, eventSchedulerConfig, rewardPoolsConfig);
+        this.telemetryAdaptiveEngine = new TelemetryAdaptiveEngine(adaptiveRulesConfig);
+        this.autoScalingEnabled = runtimeMonitorConfig.getBoolean("admin.scaling_default", true);
+        this.debugMetricsEnabled = runtimeMonitorConfig.getBoolean("admin.debug_metrics_default", false);
     }
 
     public void enable() {
@@ -530,7 +659,10 @@ public final class RpgNetworkService {
         ensurePath(experimentRegistryDir);
         ensurePath(incidentDir);
         ensurePath(knowledgeDir);
+        ensurePath(socialDir);
+        ensurePath(socialBroadcastDir);
         validateBackendBaseline();
+        loadSocialState();
         loadPendingLedgerEntries();
         loadPersistedInstances();
         rebuildManagedEntityCounters();
@@ -545,6 +677,14 @@ public final class RpgNetworkService {
         healthTask = Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, this::writeHealthSnapshot, 20L, 20L * 30L);
         entityCleanupTask = Bukkit.getScheduler().runTaskTimer(plugin, this::cleanupTaggedEntities, 20L * 15L, 20L * 15L);
         instanceCleanupTask = Bukkit.getScheduler().runTaskTimer(plugin, this::cleanupExpiredInstances, 20L * 10L, 20L * 10L);
+        if ("lobby".equalsIgnoreCase(serverRole)) {
+            long pollTicks = Math.max(20L, eventSchedulerConfig.getLong("rotation.lobby_broadcast_poll_seconds", 5L) * 20L);
+            lobbyContentTask = Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, this::pollLobbyContentBroadcasts, 40L, pollTicks);
+        }
+        long socialPollTicks = Math.max(20L, guildsConfig.getLong("guilds.broadcast_poll_seconds", 4L) * 20L);
+        socialBroadcastTask = Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, this::pollSocialBroadcasts, 40L, socialPollTicks);
+        long opsTicks = Math.max(20L, runtimeMonitorConfig.getLong("health_thresholds.sample_interval_seconds", 10L) * 20L);
+        operationsBrainTask = Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, this::runOperationsBrain, 40L, opsTicks);
         evaluateBackendSafety();
         writeHealthSnapshot();
         plugin.getLogger().info("RPG core service ready for " + serverName + " role=" + serverRole + " root=" + root);
@@ -565,6 +705,15 @@ public final class RpgNetworkService {
         }
         if (instanceCleanupTask != null) {
             instanceCleanupTask.cancel();
+        }
+        if (lobbyContentTask != null) {
+            lobbyContentTask.cancel();
+        }
+        if (operationsBrainTask != null) {
+            operationsBrainTask.cancel();
+        }
+        if (socialBroadcastTask != null) {
+            socialBroadcastTask.cancel();
         }
         for (BukkitTask task : bossTasks.values()) {
             task.cancel();
@@ -648,6 +797,42 @@ public final class RpgNetworkService {
 
     public YamlConfiguration events() {
         return events;
+    }
+
+    public ContentEngine.ScheduledEvent scheduledEvent(String eventId) {
+        return contentEngine.scheduledEvent(eventId);
+    }
+
+    public ContentEngine.ScheduledEvent nextScheduledEvent(String currentEventId) {
+        return contentEngine.nextEvent(currentEventId, System.currentTimeMillis());
+    }
+
+    public long contentRotationTickSeconds() {
+        long base = Math.max(15L, eventSchedulerConfig.getLong("rotation.tick_interval_seconds", 30L));
+        return Math.max(15L, Math.round(base / Math.max(0.70D, adaptiveEventFrequencyMultiplier)));
+    }
+
+    public void recordEventStarted(String eventId, String eventType, String rewardPool) {
+        eventStarted.incrementAndGet();
+        exportArtifact("encounter_pacing_variant", eventId, "", Map.of(
+            "event_id", eventId,
+            "event_type", eventType == null ? "" : eventType,
+            "reward_pool", rewardPool == null ? "" : rewardPool,
+            "server", serverName
+        ));
+        writeAudit("content_event_start", eventId + ":" + eventType + ":" + rewardPool);
+    }
+
+    public void recordEventJoin(String eventId, UUID playerId) {
+        eventJoinCount.incrementAndGet();
+        ingestTelemetry(TelemetryAdaptiveEngine.SignalType.EVENT_JOIN_RATE, 1.0D, eventId);
+        Player player = Bukkit.getPlayer(playerId);
+        if (player != null) {
+            awardSocialProgress(player, "event_join", eventId);
+            advanceStreak(player, "event_participation");
+            recordNearbyRivalries(player, "event_join:" + eventId);
+        }
+        writeAudit("content_event_join", eventId + ":" + playerId);
     }
 
     public int profileCount() {
@@ -775,6 +960,187 @@ public final class RpgNetworkService {
         return cleanupFailureCount.get();
     }
 
+    public long onboardingStartedCount() {
+        return onboardingStarted.get();
+    }
+
+    public long onboardingCompletedCount() {
+        return onboardingCompleted.get();
+    }
+
+    public long firstInteractionCount() {
+        return onboardingFirstInteraction.get();
+    }
+
+    public long firstRewardGrantedCount() {
+        return onboardingFirstRewardGranted.get();
+    }
+
+    public long firstBranchSelectedCount() {
+        return onboardingFirstBranchSelected.get();
+    }
+
+    public double onboardingTimeToFirstInteractionSecondsAvg() {
+        long count = onboardingFirstInteraction.get();
+        if (count <= 0L) {
+            return 0.0D;
+        }
+        return onboardingTimeToFirstInteractionTotalMillis.get() / 1000.0D / count;
+    }
+
+    public double onboardingTimeToFirstRewardSecondsAvg() {
+        long count = onboardingFirstRewardGranted.get();
+        if (count <= 0L) {
+            return 0.0D;
+        }
+        return onboardingTimeToFirstRewardTotalMillis.get() / 1000.0D / count;
+    }
+
+    public long genreEnteredCount() {
+        return genreEntered.get();
+    }
+
+    public long genreExitCount() {
+        return genreExit.get();
+    }
+
+    public long genreTransferSuccessCount() {
+        return genreTransferSuccess.get();
+    }
+
+    public long genreTransferFailureCount() {
+        return genreTransferFailure.get();
+    }
+
+    public double genreSessionDurationSecondsAvg() {
+        long count = Math.max(1L, genreExit.get());
+        return genreSessionDurationTotalMillis.get() / 1000.0D / count;
+    }
+
+    public long dungeonStartedCount() {
+        return dungeonStarted.get();
+    }
+
+    public long dungeonCompletedCount() {
+        return dungeonCompleted.get();
+    }
+
+    public long bossKilledCount() {
+        return bossKilled.get();
+    }
+
+    public long eventStartedCount() {
+        return eventStarted.get();
+    }
+
+    public long eventJoinCount() {
+        return eventJoinCount.get();
+    }
+
+    public long rewardDistributedCount() {
+        return rewardDistributed.get();
+    }
+
+    public long economyEarnCount() {
+        return economyEarn.get();
+    }
+
+    public long economySpendCount() {
+        return economySpend.get();
+    }
+
+    public long gearDropCount() {
+        return gearDrop.get();
+    }
+
+    public long gearUpgradeMetricCount() {
+        return gearUpgradeCount.get();
+    }
+
+    public long progressionLevelUpCount() {
+        return progressionLevelUp.get();
+    }
+
+    public double runtimeTps() {
+        return runtimeTps;
+    }
+
+    public long instanceSpawnCount() {
+        return instanceSpawn.get();
+    }
+
+    public long instanceShutdownCount() {
+        return instanceShutdown.get();
+    }
+
+    public long exploitFlagCount() {
+        return exploitFlag.get();
+    }
+
+    public long queueSize() {
+        return queueSizeMetric.get();
+    }
+
+    public long playerDensity() {
+        return playerDensityMetric.get();
+    }
+
+    public double networkRoutingLatencyMs() {
+        return networkRoutingLatencyMs;
+    }
+
+    public long adaptiveAdjustmentCount() {
+        return adaptiveAdjustment.get();
+    }
+
+    public long difficultyChangeCount() {
+        return difficultyChange.get();
+    }
+
+    public long rewardAdjustmentCount() {
+        return rewardAdjustment.get();
+    }
+
+    public long eventFrequencyChangeCount() {
+        return eventFrequencyChange.get();
+    }
+
+    public long matchmakingAdjustmentCount() {
+        return matchmakingAdjustment.get();
+    }
+
+    public long guildCreatedCount() {
+        return guildCreated.get();
+    }
+
+    public long guildJoinedCount() {
+        return guildJoined.get();
+    }
+
+    public long prestigeGainCount() {
+        return prestigeGain.get();
+    }
+
+    public long returnPlayerRewardCount() {
+        return returnPlayerReward.get();
+    }
+
+    public long streakProgressCount() {
+        return streakProgress.get();
+    }
+
+    public long rivalryCreatedCount() {
+        return rivalryCreated.get();
+    }
+
+    public long rivalryMatchCount() {
+        return rivalryMatch.get();
+    }
+
+    public long rivalryRewardCount() {
+        return rivalryReward.get();
+    }
+
     public int ledgerQueueDepth() {
         return ledgerQueue.size();
     }
@@ -822,6 +1188,606 @@ public final class RpgNetworkService {
         return blocked;
     }
 
+    public boolean isLobbyMenuTitle(String rawTitle) {
+        return rawTitle != null && rawTitle.equals(lobbyInteractionController.menuTitle());
+    }
+
+    public void openLobbyRouter(Player player) {
+        if (player == null || !"lobby".equalsIgnoreCase(serverRole)) {
+            return;
+        }
+        player.openInventory(lobbyInteractionController.buildInventory());
+        player.sendMessage(color(lobbyInteractionController.openingMessage()));
+    }
+
+    public OperationResult selectLobbyRoute(Player player, String routeId) {
+        if (player == null) {
+            return new OperationResult(false, color("&cPlayer unavailable."));
+        }
+        LobbyInteractionController.LobbyRoute route = lobbyInteractionController.routeById(routeId);
+        if (route == null && routeId != null && routeId.chars().allMatch(Character::isDigit)) {
+            route = lobbyInteractionController.routeBySlot(Integer.parseInt(routeId));
+        }
+        if (route == null) {
+            return new OperationResult(false, color("&cUnknown route."));
+        }
+        if (!"lobby".equalsIgnoreCase(serverRole)) {
+            return new OperationResult(false, color("&cLobby routing is only available on the lobby server."));
+        }
+        final String normalizedRouteId = route.routeId();
+        final String targetServer = route.targetServer();
+        final String branch = route.branch();
+        final String rewardKey = "onboarding-reward:v1";
+        final boolean[] firstInteractionNow = {false};
+        final boolean[] firstRewardNow = {false};
+        final boolean[] firstBranchNow = {false};
+        final long[] timeToInteraction = {0L};
+        final long[] timeToReward = {0L};
+        final OperationResult[] resultHolder = {new OperationResult(true, color("&aRoute selected."))};
+
+        withProfile(player, profile -> {
+            RpgProfile before = profile.copy();
+            long now = System.currentTimeMillis();
+            if (profile.getOnboardingStartedAt() <= 0L) {
+                profile.setOnboardingStartedAt(now);
+                onboardingStarted.incrementAndGet();
+            }
+            if (profile.getOnboardingFirstInteractionAt() <= 0L) {
+                profile.setOnboardingFirstInteractionAt(now);
+                onboardingFirstInteraction.incrementAndGet();
+                firstInteractionNow[0] = true;
+                timeToInteraction[0] = Math.max(0L, now - profile.getOnboardingStartedAt());
+                onboardingTimeToFirstInteractionTotalMillis.addAndGet(timeToInteraction[0]);
+                writeAudit("first_interaction", player.getUniqueId() + ":" + normalizedRouteId);
+            }
+            if (!"hub".equalsIgnoreCase(branch) && profile.getOnboardingBranch().isBlank()) {
+                profile.setOnboardingBranch(branch);
+                profile.setOnboardingDestination(targetServer);
+                onboardingFirstBranchSelected.incrementAndGet();
+                onboardingBranchSelections.computeIfAbsent(branch, ignored -> new AtomicLong()).incrementAndGet();
+                firstBranchNow[0] = true;
+                writeAudit("first_branch_selected", player.getUniqueId() + ":" + branch + ":" + targetServer);
+            }
+            if (profile.getOnboardingCompletedAt() <= 0L && !"hub".equalsIgnoreCase(branch)) {
+                profile.setOnboardingCompletedAt(now);
+                onboardingCompleted.incrementAndGet();
+            }
+            if (!profile.hasClaimedOperation(rewardKey)) {
+                double rewardGold = lobbyConfig.getDouble("onboarding.reward.gold", 5.0D);
+                Map<String, Integer> rewardItems = intMap(lobbyConfig.getConfigurationSection("onboarding.reward.items"));
+                profile.markClaimedOperation(rewardKey);
+                profile.addGold(rewardGold);
+                for (Map.Entry<String, Integer> entry : rewardItems.entrySet()) {
+                    profile.addItem(entry.getKey(), entry.getValue());
+                }
+                appendLedgerMutation(profile.getUuid(), "onboarding_reward", normalizedRouteId, rewardGold, rewardItems);
+                if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
+                    restoreProfileSnapshot(before);
+                    resultHolder[0] = new OperationResult(false, color("&cStarter reward commit delayed. Try again."));
+                    return null;
+                }
+                profile.setOnboardingFirstRewardAt(now);
+                trackHighValueItemMint(profile.getUuid(), "player:" + profile.getUuid(), "onboarding_reward:" + normalizedRouteId, rewardItems);
+                onboardingFirstRewardGranted.incrementAndGet();
+                firstRewardNow[0] = true;
+                timeToReward[0] = Math.max(0L, now - profile.getOnboardingStartedAt());
+                onboardingTimeToFirstRewardTotalMillis.addAndGet(timeToReward[0]);
+                writeAudit("first_reward_granted", player.getUniqueId() + ":" + normalizedRouteId + ":items=" + rewardItems);
+            }
+            exportArtifact("balancing_decision", "onboarding", "", Map.of(
+                "player", profile.getUuid().toString(),
+                "route", normalizedRouteId,
+                "branch", branch,
+                "target_server", targetServer,
+                "first_interaction", firstInteractionNow[0],
+                "first_reward", firstRewardNow[0]
+            ));
+            return null;
+        });
+
+        if (!resultHolder[0].ok()) {
+            return resultHolder[0];
+        }
+
+        if (firstInteractionNow[0]) {
+            player.sendMessage(color("&aFirst interaction recorded in &e" + (timeToInteraction[0] / 1000.0D) + "s&a."));
+        }
+        if (firstRewardNow[0]) {
+            player.sendMessage(color("&6Starter reward granted. &7Check &e/wallet &7and &e/rpgprofile&7."));
+        }
+        if ("stay".equalsIgnoreCase(route.action()) || targetServer.isBlank() || serverName.equalsIgnoreCase(targetServer)) {
+            player.closeInventory();
+            player.sendMessage(color("&eExplore the hub with your navigator compass. Adventure, Quick Match, and Event remain available."));
+            return new OperationResult(true, color("&aLobby route selected: &e" + route.destinationLabel()));
+        }
+        GenreRegistry.GenreDefinition definition = genreRegistry.byServer(targetServer);
+        if (definition != null) {
+            return routeToGenre(player, definition.genreId(), true);
+        }
+        return travel(player, targetServer);
+    }
+
+    public void handleLobbyGuideInteract(Player player) {
+        if (player == null || !"lobby".equalsIgnoreCase(serverRole)) {
+            return;
+        }
+        openLobbyRouter(player);
+    }
+
+    private void equipLobbyNavigator(Player player) {
+        if (player == null || !"lobby".equalsIgnoreCase(serverRole)) {
+            return;
+        }
+        ItemStack guide = lobbyInteractionController.guideItem();
+        ItemStack current = player.getInventory().getItem(0);
+        if (current == null || current.getType().isAir()) {
+            player.getInventory().setItem(0, guide);
+        }
+    }
+
+    private void maybeStartOnboarding(Player player) {
+        withProfile(player, profile -> {
+            if (!shouldRunOnboarding(profile)) {
+                return null;
+            }
+            long now = System.currentTimeMillis();
+            if (profile.getOnboardingStartedAt() <= 0L) {
+                profile.setOnboardingStartedAt(now);
+                onboardingStarted.incrementAndGet();
+                writeAudit("onboarding_started", player.getUniqueId() + ":" + serverName);
+            }
+            long delay = Math.max(1L, lobbyConfig.getLong("onboarding.auto_open_delay_ticks", 20L));
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                if (player.isOnline() && "lobby".equalsIgnoreCase(serverRole)) {
+                    openLobbyRouter(player);
+                    player.sendTitle(color("&6Choose Your Path"), color("&7Adventure, Quick Match, or Event. First reward on action."), 10, 70, 20);
+                }
+            }, delay);
+            return null;
+        });
+    }
+
+    private boolean shouldRunOnboarding(RpgProfile profile) {
+        if (profile == null) {
+            return false;
+        }
+        if (profile.isOnboardingComplete()) {
+            return false;
+        }
+        return profile.getOnboardingStartedAt() <= 0L
+            || profile.getOnboardingFirstInteractionAt() <= 0L
+            || profile.getOnboardingFirstRewardAt() <= 0L
+            || profile.getOnboardingBranch().isBlank();
+    }
+
+    public String currentGenreId() {
+        GenreRegistry.GenreDefinition definition = genreRegistry.byServer(serverName);
+        if (definition != null) {
+            return definition.genreId();
+        }
+        return switch (serverRole.toLowerCase(Locale.ROOT)) {
+            case "lobby" -> "lobby";
+            case "progression" -> "rpg";
+            case "event" -> "event";
+            case "boss" -> "minigame";
+            case "instance" -> "dungeon";
+            default -> serverRole.toLowerCase(Locale.ROOT);
+        };
+    }
+
+    private void recordGenreEntry(RpgProfile profile, long now) {
+        if (profile == null) {
+            return;
+        }
+        String genreId = currentGenreId();
+        profile.enterGenre(genreId, serverName, serverName, now);
+        genreEntered.incrementAndGet();
+        writeAudit("genre_entered", profile.getUuid() + ":" + genreId + ":" + serverName);
+    }
+
+    private void recordGenreExit(RpgProfile profile, long now) {
+        if (profile == null || profile.getCurrentGenre().isBlank()) {
+            return;
+        }
+        long enteredAt = profile.getCurrentGenreEnteredAt();
+        if (enteredAt > 0L) {
+            genreSessionDurationTotalMillis.addAndGet(Math.max(0L, now - enteredAt));
+        }
+        genreExit.incrementAndGet();
+        writeAudit("genre_exit", profile.getUuid() + ":" + profile.getCurrentGenre() + ":" + serverName);
+    }
+
+    public String genreMeshSummary(Player player) {
+        return withProfileRead(player.getUniqueId(), player.getName(), profile -> {
+            List<String> genres = new ArrayList<>();
+            for (GenreRegistry.GenreDefinition definition : genreRegistry.all()) {
+                genres.add(definition.genreId() + "->" + definition.targetServer());
+            }
+            return color("&6Genre Mesh &7current=&e" + profile.getCurrentGenre()
+                + " &7lastWorld=&e" + profile.getLastWorldVisited()
+                + " &7shard=&e" + profile.getShardRoutingHint()
+                + " &7globalGold=&e" + money(profile.getGold())
+                + " &7genreCurrencies=&e" + profile.getGenreCurrenciesView()
+                + " &7progressionCurrencies=&e" + profile.getProgressionCurrenciesView()
+                + " &7routes=&e" + String.join(", ", genres));
+        });
+    }
+
+    public OperationResult returnToLobby(Player player) {
+        if (player == null) {
+            return new OperationResult(false, color("&cPlayer unavailable."));
+        }
+        if ("lobby".equalsIgnoreCase(serverName)) {
+            if (player.getWorld() != null) {
+                player.teleport(player.getWorld().getSpawnLocation());
+            }
+            return new OperationResult(true, color("&aAlready in lobby. Returned to the safe spawn."));
+        }
+        OperationResult routed = routeToGenre(player, "lobby", false);
+        if (routed.ok()) {
+            return routed;
+        }
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            World safeWorld = Bukkit.getWorlds().isEmpty() ? null : Bukkit.getWorlds().get(0);
+            if (safeWorld != null) {
+                player.teleport(safeWorld.getSpawnLocation());
+            }
+        });
+        return new OperationResult(false, color("&cLobby routing failed. Applied local safe fallback teleport."));
+    }
+
+    public OperationResult routeToGenre(Player player, String genreId, boolean includeParty) {
+        GenreRegistry.GenreDefinition definition = genreRegistry.byGenreId(genreId);
+        if (definition == null) {
+            genreTransferFailure.incrementAndGet();
+            return new OperationResult(false, color("&cUnknown genre: " + genreId));
+        }
+        if (includeParty) {
+            PartyService.Party party = partyService.partyFor(player.getUniqueId());
+            if (party != null && partyService.isLeader(player.getUniqueId()) && definition.partyCompatible()) {
+                partyService.markTransfer();
+                OperationResult partyResult = new OperationResult(true, color("&aParty routed to &e" + definition.label()));
+                for (UUID memberId : party.members()) {
+                    Player member = Bukkit.getPlayer(memberId);
+                    if (member == null) {
+                        continue;
+                    }
+                    OperationResult result = routeSingleProfile(member, definition);
+                    if (!result.ok()) {
+                        partyResult = result;
+                    }
+                }
+                return partyResult;
+            }
+        }
+        return routeSingleProfile(player, definition);
+    }
+
+    private OperationResult routeSingleProfile(Player player, GenreRegistry.GenreDefinition definition) {
+        final String genreId = definition.genreId();
+        final RpgProfile[] snapshot = new RpgProfile[1];
+        withProfile(player, profile -> {
+            snapshot[0] = profile.copy();
+            profile.setLastWorldVisited(serverName);
+            profile.setShardRoutingHint(definition.targetServer());
+            profile.setCurrentGenre(genreId);
+            profile.addGenreCurrency(genreId, 0);
+            return null;
+        });
+        OperationResult result = travel(player, definition.targetServer());
+        if (result.ok()) {
+            genreTransferSuccess.incrementAndGet();
+            writeAudit("genre_transfer_success", player.getUniqueId() + ":" + currentGenreId() + "->" + genreId + ":" + definition.targetServer());
+            return new OperationResult(true, color("&aEntering " + definition.label() + " &7via &e" + definition.targetServer()));
+        }
+        restoreProfileSnapshot(snapshot[0]);
+        genreTransferFailure.incrementAndGet();
+        writeAudit("genre_transfer_failure", player.getUniqueId() + ":" + currentGenreId() + "->" + genreId + ":" + definition.targetServer());
+        return result;
+    }
+
+    public String partySummary(Player player) {
+        PartyService.Party party = partyService.partyFor(player.getUniqueId());
+        if (party == null) {
+            return color("&eNo party. Use &e/party invite <player>&7 or &e/party accept&7.");
+        }
+        List<String> members = new ArrayList<>();
+        for (UUID memberId : party.members()) {
+            members.add(memberId.equals(party.leaderId()) ? memberId + "(leader)" : memberId.toString());
+        }
+        return color("&6Party &7id=&e" + party.partyId() + " &7members=&e" + String.join(", ", members));
+    }
+
+    public OperationResult partyInvite(Player leader, Player invited) {
+        if (leader == null || invited == null) {
+            return new OperationResult(false, color("&cParty invite target unavailable."));
+        }
+        partyService.createOrGet(leader.getUniqueId());
+        partyService.invite(leader.getUniqueId(), invited.getUniqueId());
+        invited.sendMessage(color("&6Party invite from &e" + leader.getName() + "&7. Use &e/party accept&7."));
+        return new OperationResult(true, color("&aParty invite sent to &e" + invited.getName()));
+    }
+
+    public OperationResult partyAccept(Player player) {
+        PartyService.Party party = partyService.accept(player.getUniqueId());
+        if (party == null) {
+            return new OperationResult(false, color("&cNo pending party invite."));
+        }
+        return new OperationResult(true, color("&aJoined party &e" + party.partyId()));
+    }
+
+    public OperationResult partyLeave(Player player) {
+        partyService.leave(player.getUniqueId());
+        return new OperationResult(true, color("&eLeft party."));
+    }
+
+    public OperationResult partyWarp(Player player, String genreId) {
+        if (!partyService.isLeader(player.getUniqueId())) {
+            return new OperationResult(false, color("&cOnly the party leader can warp the party."));
+        }
+        return routeToGenre(player, genreId, true);
+    }
+
+    private record RuntimeHealthSnapshot(double tps, int managedEntities, int playerDensity, int eventLoad, int activeInstances, double routingLatencyMs) {}
+
+    private void runOperationsBrain() {
+        RuntimeHealthSnapshot snapshot = collectRuntimeHealth();
+        runtimeTps = snapshot.tps();
+        playerDensityMetric.set(snapshot.playerDensity());
+        networkRoutingLatencyMs = snapshot.routingLatencyMs();
+        syncAdmissionQueue();
+        recomputeAdaptiveGameplay(snapshot);
+        if (snapshot.tps() <= runtimeMonitorConfig.getDouble("health_thresholds.tps_critical", 15.0D)
+            || snapshot.managedEntities() >= runtimeMonitorConfig.getInt("health_thresholds.entity_limit", 400)
+            || snapshot.routingLatencyMs() >= runtimeMonitorConfig.getDouble("health_thresholds.routing_latency_critical_ms", 150.0D)) {
+            plugin.getLogger().warning("OPS_BRAIN critical tps=" + String.format(Locale.US, "%.2f", snapshot.tps())
+                + " entities=" + snapshot.managedEntities()
+                + " density=" + snapshot.playerDensity()
+                + " routingMs=" + String.format(Locale.US, "%.2f", snapshot.routingLatencyMs()));
+        }
+        if (autoScalingEnabled) {
+            evaluateAutoScaling(snapshot);
+        }
+        detectRuntimeExploitAnomalies(snapshot);
+        drainForcedEventRequest();
+    }
+
+    private void recomputeAdaptiveGameplay(RuntimeHealthSnapshot snapshot) {
+        double completionRate = dungeonAttemptsTracked.get() <= 0L ? 1.0D : Math.min(1.0D, dungeonCompletionsTracked.get() / (double) dungeonAttemptsTracked.get());
+        TelemetryAdaptiveEngine.AdaptiveState previous = telemetryAdaptiveEngine.current();
+        TelemetryAdaptiveEngine.AdaptiveState next = telemetryAdaptiveEngine.recompute(pressureControlPlane.current().composite(), completionRate);
+        if (Double.compare(previous.difficultyMultiplier(), next.difficultyMultiplier()) != 0) {
+            adaptiveDifficultyMultiplier = next.difficultyMultiplier();
+            difficultyChange.incrementAndGet();
+        }
+        if (Double.compare(previous.rewardWeightMultiplier(), next.rewardWeightMultiplier()) != 0) {
+            adaptiveRewardWeightMultiplier = next.rewardWeightMultiplier();
+            rewardAdjustment.incrementAndGet();
+        }
+        if (Double.compare(previous.eventFrequencyMultiplier(), next.eventFrequencyMultiplier()) != 0) {
+            adaptiveEventFrequencyMultiplier = next.eventFrequencyMultiplier();
+            eventFrequencyChange.incrementAndGet();
+        }
+        if (Double.compare(previous.matchmakingRangeMultiplier(), next.matchmakingRangeMultiplier()) != 0) {
+            adaptiveMatchmakingRangeMultiplier = next.matchmakingRangeMultiplier();
+            matchmakingAdjustment.incrementAndGet();
+        }
+        if (!Objects.equals(previous.lastReason(), next.lastReason())) {
+            adaptiveAdjustment.incrementAndGet();
+            exportArtifact("balancing_decision", serverName, "", Map.of(
+                "adaptive_reason", next.lastReason(),
+                "difficulty_multiplier", next.difficultyMultiplier(),
+                "reward_multiplier", next.rewardWeightMultiplier(),
+                "event_frequency_multiplier", next.eventFrequencyMultiplier(),
+                "matchmaking_multiplier", next.matchmakingRangeMultiplier(),
+                "telemetry", telemetryAdaptiveEngine.snapshot().getValues(true)
+            ));
+            runtimeKnowledgeIndex.remember("adaptive_" + serverName + "_" + next.capturedAt(),
+                "adaptive_balancing",
+                serverName,
+                "artifact:adaptive:" + serverName,
+                "",
+                pressureControlPlane.current().composite(),
+                List.of("adaptive", "difficulty", "reward", "matchmaking"));
+        }
+        if (averageChurnSignal() >= adaptiveRulesConfig.getDouble("churn.trigger_score", 3.0D)) {
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                maybeMitigateChurn(player);
+            }
+        }
+    }
+
+    private void ingestTelemetry(TelemetryAdaptiveEngine.SignalType type, double value, String subject) {
+        telemetryAdaptiveEngine.ingest(type, value, subject);
+    }
+
+    private double averageChurnSignal() {
+        return telemetryAdaptiveEngine.average(TelemetryAdaptiveEngine.SignalType.PLAYER_CHURN_SIGNAL);
+    }
+
+    private void maybeMitigateChurn(Player player) {
+        long now = System.currentTimeMillis();
+        long cooldown = adaptiveRulesConfig.getLong("churn.mitigation_cooldown_seconds", 900L) * 1000L;
+        long previous = lastChurnMitigationAt.getOrDefault(player.getUniqueId(), 0L);
+        if (now - previous < cooldown) {
+            return;
+        }
+        lastChurnMitigationAt.put(player.getUniqueId(), now);
+        withProfile(player, profile -> {
+            profile.addProgressionCurrency("mastery_points", Math.max(1, adaptiveRulesConfig.getInt("churn.max_bonus_progression_currency", 2)));
+            profile.markClaimedOperation("adaptive-churn:" + dailyDateKey(now));
+            appendLedgerMutation(profile.getUuid(), "adaptive_churn_mitigation", currentGenreId(), 0.0D, Collections.emptyMap());
+            return null;
+        });
+        player.sendMessage(color("&eMetaOS noticed friction. Bonus mastery granted and &e/play rotating_event &7is recommended."));
+    }
+
+    private RuntimeHealthSnapshot collectRuntimeHealth() {
+        int density = 0;
+        int eventLoad = 0;
+        for (World world : Bukkit.getWorlds()) {
+            density = Math.max(density, world.getPlayers().size());
+            if ("event".equalsIgnoreCase(serverRole)) {
+                eventLoad += world.getPlayers().size();
+            }
+        }
+        return new RuntimeHealthSnapshot(
+            currentTpsSnapshot(),
+            managedEntityTotalCount(),
+            density,
+            eventLoad,
+            activeInstanceCount(),
+            measureAverageRoutingLatencyMs()
+        );
+    }
+
+    private void evaluateAutoScaling(RuntimeHealthSnapshot snapshot) {
+        int densityTrigger = runtimeMonitorConfig.getInt("scaling.density_scale_trigger", 65);
+        int densityLimit = runtimeMonitorConfig.getInt("health_thresholds.player_density_limit", 80);
+        if (snapshot.playerDensity() >= densityTrigger || snapshot.activeInstances() >= runtimeMonitorConfig.getInt("health_thresholds.dungeon_instance_limit", 60)) {
+            instanceSpawn.incrementAndGet();
+            writeAudit("ops_autoscale", serverName + ":density=" + snapshot.playerDensity() + ":instances=" + snapshot.activeInstances());
+        }
+        if (snapshot.playerDensity() >= densityLimit && !"lobby".equalsIgnoreCase(serverRole)) {
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                player.sendMessage(color("&eOperations brain detected high load. New arrivals are being redirected to healthier shards."));
+            }
+        }
+    }
+
+    private void detectRuntimeExploitAnomalies(RuntimeHealthSnapshot snapshot) {
+        int duplicateRewardSpike = runtimeMonitorConfig.getInt("exploit_detection.duplicate_reward_spike", 3);
+        int entitySpike = runtimeMonitorConfig.getInt("exploit_detection.entity_spawn_anomaly", 40);
+        int rollbackSpike = runtimeMonitorConfig.getInt("exploit_detection.rollback_spike", 2);
+        int abnormalCurrency = runtimeMonitorConfig.getInt("exploit_detection.abnormal_currency_gain", 2500);
+        long duplicateDelta = rewardDuplicateSuppressionCount() - lastDuplicateRewardSample;
+        long spawnDeniedDelta = managedEntitySpawnDeniedCount() - lastSpawnDeniedSample;
+        long rollbackDelta = (experimentRollbackCount() + policyRollbackCount()) - lastRollbackSample;
+        long economyEarnDelta = economyEarnCount() - lastEconomyEarnSample;
+        lastDuplicateRewardSample = rewardDuplicateSuppressionCount();
+        lastSpawnDeniedSample = managedEntitySpawnDeniedCount();
+        lastRollbackSample = experimentRollbackCount() + policyRollbackCount();
+        lastEconomyEarnSample = economyEarnCount();
+        boolean suspicious = duplicateDelta >= duplicateRewardSpike
+            || spawnDeniedDelta >= entitySpike
+            || rollbackDelta >= rollbackSpike
+            || economyEarnDelta >= abnormalCurrency;
+        if (!suspicious) {
+            return;
+        }
+        exploitFlag.incrementAndGet();
+        String instanceId = densestActiveInstanceId();
+        exploitForensicsPlane.record("ops_runtime_anomaly", null, serverName + ":" + instanceId, sha256(serverName + "|" + instanceId + "|" + snapshot.tps()),
+            ExploitForensicsPlane.Action.FLAG_ONLY,
+            Map.of("tps", snapshot.tps(), "entities", snapshot.managedEntities(), "density", snapshot.playerDensity(), "routing_ms", snapshot.routingLatencyMs()));
+        if (instanceId != null && !instanceId.isBlank()) {
+            quarantineInstance(instanceId, "runtime_anomaly");
+        }
+    }
+
+    private void syncAdmissionQueue() {
+        long now = System.currentTimeMillis();
+        recentJoinAttempts.entrySet().removeIf(entry -> now - entry.getValue() > runtimeMonitorConfig.getLong("queue.login_storm_window_seconds", 15L) * 1000L);
+        synchronized (admissionQueue) {
+            queueSizeMetric.set(admissionQueue.size());
+        }
+    }
+
+    private boolean shouldQueueJoin(Player player) {
+        if (!runtimeMonitorConfig.getBoolean("queue.enabled", true)) {
+            return false;
+        }
+        int maxPlayers = network.getInt("servers." + serverName + ".max_players", Bukkit.getMaxPlayers());
+        int adaptiveCapacity = Math.max(1, Math.min(maxPlayers, (int) Math.round(maxPlayers * Math.max(0.95D, adaptiveMatchmakingRangeMultiplier))));
+        long stormWindowMillis = runtimeMonitorConfig.getLong("queue.login_storm_window_seconds", 15L) * 1000L;
+        long stormLimit = Math.max(1L, Math.round(runtimeMonitorConfig.getLong("queue.login_storm_limit", 45L) * Math.max(0.85D, adaptiveMatchmakingRangeMultiplier)));
+        long now = System.currentTimeMillis();
+        recentJoinAttempts.put(player.getUniqueId(), now);
+        long inWindow = recentJoinAttempts.values().stream().filter(timestamp -> now - timestamp <= stormWindowMillis).count();
+        return Bukkit.getOnlinePlayers().size() >= adaptiveCapacity || inWindow >= stormLimit || runtimeTps <= runtimeMonitorConfig.getDouble("health_thresholds.tps_critical", 15.0D);
+    }
+
+    private boolean enqueueJoin(Player player) {
+        synchronized (admissionQueue) {
+            if (admissionQueue.contains(player.getUniqueId())) {
+                return true;
+            }
+            if (admissionQueue.size() >= runtimeMonitorConfig.getInt("queue.max_queue_size", 200)) {
+                return false;
+            }
+            boolean priority = runtimeMonitorConfig.getBoolean("queue.prioritize_parties", true) && partyService.partyFor(player.getUniqueId()) != null;
+            if (priority) {
+                admissionQueue.addFirst(player.getUniqueId());
+            } else {
+                admissionQueue.addLast(player.getUniqueId());
+            }
+            queueSizeMetric.set(admissionQueue.size());
+            long estimatedSeconds = Math.max(1L, Math.round((admissionQueue.size() * runtimeMonitorConfig.getLong("queue.estimated_seconds_per_slot", 4L))
+                / Math.max(0.85D, adaptiveMatchmakingRangeMultiplier)));
+            ingestTelemetry(TelemetryAdaptiveEngine.SignalType.QUEUE_TIME, estimatedSeconds, player.getUniqueId().toString());
+            writeAudit("ops_queue_join", player.getUniqueId() + ":priority=" + priority + ":size=" + admissionQueue.size());
+            return true;
+        }
+    }
+
+    private String queueKickMessage(Player player) {
+        int position;
+        synchronized (admissionQueue) {
+            int idx = 0;
+            position = 1;
+            for (UUID queued : admissionQueue) {
+                idx++;
+                if (queued.equals(player.getUniqueId())) {
+                    position = idx;
+                    break;
+                }
+            }
+        }
+        long eta = Math.max(1L, Math.round((position * runtimeMonitorConfig.getLong("queue.estimated_seconds_per_slot", 4L))
+            / Math.max(0.85D, adaptiveMatchmakingRangeMultiplier)));
+        return color("&eServer stabilizing. Queue position=&6" + position + " &7eta=&e" + eta + "s");
+    }
+
+    private double currentTpsSnapshot() {
+        try {
+            Object value = Bukkit.getServer().getClass().getMethod("getTPS").invoke(Bukkit.getServer());
+            if (value instanceof double[] array && array.length > 0) {
+                return array[0];
+            }
+        } catch (ReflectiveOperationException ignored) {
+        }
+        return 20.0D;
+    }
+
+    private double measureAverageRoutingLatencyMs() {
+        double total = 0.0D;
+        int count = 0;
+        for (String serverId : network.getConfigurationSection("servers").getKeys(false)) {
+            String address = network.getString("servers." + serverId + ".address", "127.0.0.1:25565");
+            String[] split = address.split(":");
+            long started = System.nanoTime();
+            boolean reachable = endpointReachable(split[0], Integer.parseInt(split[1]), 200);
+            if (reachable) {
+                total += (System.nanoTime() - started) / 1_000_000.0D;
+                count++;
+            }
+        }
+        return count == 0 ? 0.0D : total / count;
+    }
+
+    private String densestActiveInstanceId() {
+        String selected = "";
+        int maxPlayers = 0;
+        for (DungeonInstanceState instance : dungeonInstances.values()) {
+            World world = Bukkit.getWorld(instance.worldName);
+            if (world != null && world.getPlayers().size() >= maxPlayers) {
+                maxPlayers = world.getPlayers().size();
+                selected = instance.instanceId;
+            }
+        }
+        return selected;
+    }
+
     public void handleJoin(Player player) {
         long now = System.currentTimeMillis();
         if (sessionAuthorityService.rejectDuplicateLogin(player.getUniqueId(), serverName, now)) {
@@ -834,8 +1800,20 @@ public final class RpgNetworkService {
             player.kickPlayer(color("&cAuthority conflict detected."));
             return;
         }
+        if (!player.hasPermission("rpg.admin") && shouldQueueJoin(player)) {
+            if (enqueueJoin(player)) {
+                player.kickPlayer(queueKickMessage(player));
+            } else {
+                player.kickPlayer(color("&cQueue capacity reached. Please retry shortly."));
+            }
+            return;
+        }
         if (!authorizeJoin(player, loadLiveSession(player.getUniqueId()))) {
             return;
+        }
+        synchronized (admissionQueue) {
+            admissionQueue.remove(player.getUniqueId());
+            queueSizeMetric.set(admissionQueue.size());
         }
         RpgProfile sessionSnapshot = withProfile(player, profile -> {
             if (profile.getCreatedAt() == profile.getUpdatedAt() && profile.getGold() <= 0.0D) {
@@ -854,6 +1832,7 @@ public final class RpgNetworkService {
                 profile.clearActiveDungeon();
             }
             profile.setLastJoinAt(System.currentTimeMillis());
+            recordGenreEntry(profile, now);
             autoAcceptStarterQuest(profile);
             syncCollectQuestProgress(profile);
             restoreDungeonInstance(player, profile);
@@ -863,6 +1842,12 @@ public final class RpgNetworkService {
         sessionAuthorityService.reclaim(player.getUniqueId(), serverName, serverName + ":" + now, UUID.randomUUID().toString(), now, transferLeaseMillis());
         authorityPlane.claimSession(player.getUniqueId(), serverName, UUID.randomUUID().toString(), System.currentTimeMillis(), transferLeaseMillis());
         applyPassiveStats(player);
+        equipLobbyNavigator(player);
+        grantReturnRewardIfEligible(player);
+        advanceStreak(player, "daily_play");
+        if ("lobby".equalsIgnoreCase(serverRole)) {
+            maybeStartOnboarding(player);
+        }
         if (safeMode) {
             player.sendMessage(color("&cBackend safe mode active: &e" + safeModeReason));
         }
@@ -874,11 +1859,29 @@ public final class RpgNetworkService {
         authorityPlane.releaseSession(player.getUniqueId());
         RpgProfile sessionSnapshot = withProfile(player, profile -> {
             profile.setLastQuitAt(System.currentTimeMillis());
+            recordGenreExit(profile, System.currentTimeMillis());
             holdDungeonInstance(profile);
+            long sessionSeconds = Math.max(0L, (profile.getLastQuitAt() - profile.getLastJoinAt()) / 1000L);
+            ingestTelemetry(TelemetryAdaptiveEngine.SignalType.PLAYER_SESSION_LENGTH, sessionSeconds, profile.getCurrentGenre());
+            if (sessionSeconds > 0L && sessionSeconds <= adaptiveRulesConfig.getLong("telemetry.churn_short_session_seconds", 180L)) {
+                ingestTelemetry(TelemetryAdaptiveEngine.SignalType.PLAYER_CHURN_SIGNAL, 1.0D, profile.getCurrentGenre());
+            }
             return profile.copy();
         });
         writeSession(sessionSnapshot, false);
         flushPlayer(player.getUniqueId());
+    }
+
+    public void handlePlayerDeath(Player player) {
+        if (player == null) {
+            return;
+        }
+        int count = recentDeathCounts.merge(player.getUniqueId(), 1, Integer::sum);
+        ingestTelemetry(TelemetryAdaptiveEngine.SignalType.PLAYER_DEATH_RATE, Math.min(1.0D, count / 10.0D), currentGenreId());
+        if (count >= adaptiveRulesConfig.getInt("telemetry.repeated_death_threshold", 3)) {
+            ingestTelemetry(TelemetryAdaptiveEngine.SignalType.PLAYER_CHURN_SIGNAL, count, currentGenreId());
+            player.sendMessage(color("&eMetaOS adjusted the challenge curve. Try a different route with &e/play &7or queue a fresh event."));
+        }
     }
 
     public <T> T withProfile(Player player, Function<RpgProfile, T> action) {
@@ -1141,13 +2144,23 @@ public final class RpgNetworkService {
         return withProfileRead(player.getUniqueId(), player.getName(), profile -> {
             String guildText = profile.getGuildName().isBlank() ? "none" : profile.getGuildName();
             String activeDungeon = profile.getActiveDungeon().isBlank() ? "none" : profile.getActiveDungeon() + " (kills=" + profile.getActiveDungeonKills() + ")";
+            String onboarding = profile.isOnboardingComplete()
+                ? "complete:" + (profile.getOnboardingBranch().isBlank() ? "none" : profile.getOnboardingBranch())
+                : "pending";
             List<String> gear = new ArrayList<>();
             for (Map.Entry<String, String> entry : profile.getGearTiersView().entrySet()) {
-                gear.add(entry.getKey() + ":" + entry.getValue());
+                gear.add(entry.getKey() + ":" + normalizedTier(entry.getValue()) + "@" + profile.getGearCondition(entry.getKey()) + "%");
             }
             return color("&6Profile &7role=&e" + serverRole
-                + " &7gold=&e" + money(profile.getGold())
+                + " &7" + globalCurrencyDisplayName().toLowerCase(Locale.ROOT) + "=&e" + money(profile.getGold())
+                + " &7genre=&e" + profile.getCurrentGenre()
+                + " &7lastWorld=&e" + profile.getLastWorldVisited()
                 + " &7guild=&e" + guildText
+                + " &7prestige=&e" + profile.getPrestigePoints() + "/" + (profile.getPrestigeBadge().isBlank() ? "none" : profile.getPrestigeBadge())
+                + " &7onboarding=&e" + onboarding
+                + " &7mastery=&e" + profile.getMasteryLevel()
+                + " &7achievements=&e" + profile.getAchievementPoints()
+                + " &7cosmetic=&e" + (profile.getEquippedCosmetic().isBlank() ? "none" : profile.getEquippedCosmetic())
                 + " &7dungeon=&e" + activeDungeon
                 + " &7gear=&e" + String.join(", ", gear)
                 + " &7inventory=&e" + String.join(", ", profile.inventorySummary(6))
@@ -1156,7 +2169,20 @@ public final class RpgNetworkService {
     }
 
     public String walletSummary(Player player) {
-        return withProfileRead(player.getUniqueId(), player.getName(), profile -> color("&6Wallet &7gold=&e" + money(profile.getGold()) + " &7items=&e" + String.join(", ", profile.inventorySummary(8))));
+        return withProfileRead(player.getUniqueId(), player.getName(), profile -> color("&6Wallet &7" + globalCurrencyDisplayName().toLowerCase(Locale.ROOT) + "=&e" + money(profile.getGold())
+            + " &7genre=&e" + walletGenreSummary(profile)
+            + " &7progression=&e" + walletProgressionSummary(profile)
+            + " &7items=&e" + String.join(", ", profile.inventorySummary(8))));
+    }
+
+    public String progressionSummary(Player player) {
+        return withProfileRead(player.getUniqueId(), player.getName(), profile -> color("&6Progression &7masteryLv=&e" + profile.getMasteryLevel()
+            + " &7masteryXp=&e" + profile.getMasteryExperience()
+            + " &7achievementPoints=&e" + profile.getAchievementPoints()
+            + " &7prestige=&e" + profile.getPrestigePoints()
+            + " &7activities=&e" + profile.getActivityExperienceView()
+            + " &7cosmetics=&e" + profile.getOwnedCosmeticsView()
+            + " &7buffs=&e" + activeBuffSummary(profile)));
     }
 
     public String skillSummary(Player player) {
@@ -1238,10 +2264,13 @@ public final class RpgNetworkService {
                 }
             }
             double rewardGold = quests.getDouble(questId + ".reward.gold", 0.0D);
-            profile.addGold(rewardGold);
+            addEconomyEarn(profile, "quest_turnin", rewardGold);
             for (Map.Entry<String, Integer> entry : intMap(quests.getConfigurationSection(questId + ".reward.items")).entrySet()) {
                 profile.addItem(entry.getKey(), entry.getValue());
             }
+            addGenreCurrencyReward(profile, "quest_turnin");
+            addProgressionCurrencyReward(profile, "quest_turnin");
+            awardProgressionTrack(profile, "quest_turnin");
             int rewardXp = quests.getInt(questId + ".reward.xp", 0);
             applyQuestRewardXp(profile, objective, rewardXp);
             appendLedgerMutation(profile.getUuid(), "quest_turnin", questId, rewardGold, intMap(quests.getConfigurationSection(questId + ".reward.items")));
@@ -1250,6 +2279,7 @@ public final class RpgNetworkService {
                 return new OperationResult(false, color("&cQuest reward commit delayed. Try again."));
             }
             trackHighValueItemMint(profile.getUuid(), "player:" + profile.getUuid(), "quest_turnin:" + questId, intMap(quests.getConfigurationSection(questId + ".reward.items")));
+            recordGearRewards(intMap(quests.getConfigurationSection(questId + ".reward.items")));
             if (quests.getBoolean(questId + ".repeatable", false)) {
                 int cooldownHours = quests.getInt(questId + ".cooldown_hours", 0);
                 if (cooldownHours > 0) {
@@ -1286,17 +2316,22 @@ public final class RpgNetworkService {
             profile.markNonce(nonce);
             profile.incrementKillCount(mobId);
             double goldReward = configuredMobGold(mobId);
-            profile.addGold(goldReward);
+            addEconomyEarn(profile, "mob_kill", goldReward);
             Map<String, Integer> rolled = rollConfiguredDrops(mobs.getConfigurationSection(mobId + ".drops"));
             for (Map.Entry<String, Integer> entry : rolled.entrySet()) {
                 profile.addItem(entry.getKey(), entry.getValue());
             }
+            addGenreCurrencyReward(profile, "mob_kill");
+            addProgressionCurrencyReward(profile, "mob_kill");
+            awardProgressionTrack(profile, "mob_kill");
             appendLedgerMutation(profile.getUuid(), "mob_kill", mobId, goldReward, rolled);
             if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
                 restoreProfileSnapshot(before);
                 return new KillReward(true, mobId, 0.0D, Collections.emptyMap(), color("&cReward commit delayed. Try again."));
             }
             trackHighValueItemMint(profile.getUuid(), "player:" + profile.getUuid(), "mob_kill:" + mobId, rolled);
+            recordGearRewards(rolled);
+            wearOwnedGear(profile, 1);
             awardSkillXp(profile, "combat", "mob_kill");
             updateQuestProgressForKill(profile, mobId, false, "");
             syncCollectQuestProgress(profile);
@@ -1355,12 +2390,33 @@ public final class RpgNetworkService {
             }
             int lockoutHours = bosses.getInt(bossId + ".summon.lockout_hours", 0);
             profile.setBossLockout(bossId, System.currentTimeMillis() + lockoutHours * 3_600_000L);
+            ContentEngine.RewardBundle bundle = composeRewardPool("elite", 1.15D);
+            for (Map.Entry<String, Integer> entry : bundle.items().entrySet()) {
+                profile.addItem(entry.getKey(), entry.getValue());
+                itemsGranted.merge(entry.getKey(), entry.getValue(), Integer::sum);
+            }
+            bonusGold += bundle.gold();
+            addEconomyEarn(profile, "boss_kill", bundle.gold());
+            profile.addProgressionCurrency("content_marks", bundle.progressionCurrency());
+            profile.addGenreCurrency(currentGenreId(), bundle.genreCurrency());
+            for (String milestone : bundle.milestones()) {
+                profile.addProgressionCurrency("milestone_" + milestone, 1);
+            }
+            addGenreCurrencyReward(profile, "boss_kill");
+            addProgressionCurrencyReward(profile, "boss_kill");
+            awardProgressionTrack(profile, "boss_kill");
             appendLedgerMutation(profile.getUuid(), "boss_kill", bossId, bonusGold, itemsGranted);
             if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
                 restoreProfileSnapshot(before);
                 return new BossReward(true, bossId, false, 0.0D, Collections.emptyMap(), color("&cReward commit delayed. Try again."));
             }
             trackHighValueItemMint(profile.getUuid(), "player:" + profile.getUuid(), "boss_kill:" + bossId, itemsGranted);
+            recordGearRewards(itemsGranted);
+            wearOwnedGear(profile, 8);
+            bossKilled.incrementAndGet();
+            rewardDistributed.incrementAndGet();
+            addPrestige(profile, "boss_kill");
+            applyGuildProgression(profile, "boss_kill", killer.getName());
             awardSkillXp(profile, "combat", "boss_kill");
             updateQuestProgressForKill(profile, "", true, bossId);
             syncCollectQuestProgress(profile);
@@ -1369,6 +2425,8 @@ public final class RpgNetworkService {
                 instanceOrchestrator.beginEgress(encounter);
                 cleanupDungeonInstance(encounter, "boss_defeated");
             }
+            recordNearbyRivalries(killer, "boss_kill:" + bossId);
+            broadcastMilestoneIfNeeded(killer, "boss_kill", bossId, profile);
             writeAudit("boss_kill", killer.getUniqueId() + ":" + bossId + ":gold=" + bonusGold + ":items=" + itemsGranted);
             String msg = color("&aBoss rewards &7boss=&e" + bossId + rewardSuffix(itemsGranted) + (bonusGold > 0.0D ? " &7bonus=&e" + money(bonusGold) : ""));
             return new BossReward(true, bossId, true, bonusGold, itemsGranted, msg);
@@ -1387,6 +2445,7 @@ public final class RpgNetworkService {
         }
         return withProfile(player, profile -> {
             RpgProfile before = profile.copy();
+            ContentEngine.DungeonTemplate template = resolveDungeonTemplate(dungeonId);
             if (!profile.getActiveDungeon().isBlank()) {
                 return new DungeonStart(false, dungeonId, 0, color("&eAlready inside dungeon &6" + profile.getActiveDungeon()));
             }
@@ -1402,13 +2461,17 @@ public final class RpgNetworkService {
             if (profile.getGold() + 0.000001D < fee) {
                 return new DungeonStart(false, dungeonId, 0, color("&cNeed " + money(fee) + " gold for entry."));
             }
+            if (template != null && template.playerCap() < 1) {
+                return new DungeonStart(false, dungeonId, 0, color("&cDungeon template is invalid."));
+            }
+            dungeonAttemptsTracked.incrementAndGet();
             DungeonInstanceState instance = createDungeonInstance(player.getUniqueId(), dungeonId, Set.of(player.getUniqueId()));
             World world = ensureDungeonWorld(instance);
             if (world == null) {
                 cleanupDungeonInstance(instance, "world_create_failed");
                 return new DungeonStart(false, dungeonId, 0, color("&cFailed to prepare a private dungeon instance."));
             }
-            if (!profile.spendGold(fee)) {
+            if (!spendEconomyGlobal(profile, fee)) {
                 cleanupDungeonInstance(instance, "entry_cost_recheck_failed");
                 return new DungeonStart(false, dungeonId, 0, color("&cNeed " + money(fee) + " gold for entry."));
             }
@@ -1440,8 +2503,15 @@ public final class RpgNetworkService {
             int spawnTotal = spawnDungeonWave(entry, player, dungeonId, instance.instanceId);
             instanceOrchestrator.activate(instance);
             writeSession(profile, true);
+            dungeonStarted.incrementAndGet();
+            exportArtifact("dungeon_topology_variant", dungeonId, "", Map.of(
+                "template_id", template == null ? "" : template.templateId(),
+                "layout_type", template == null ? "legacy" : template.layoutType(),
+                "reward_tier", template == null ? "starter" : template.rewardTier(),
+                "player_cap", template == null ? 1 : template.playerCap()
+            ));
             writeAudit("dungeon_enter", player.getUniqueId() + ":" + dungeonId + ":fee=" + fee + ":spawned=" + spawnTotal);
-            return new DungeonStart(true, dungeonId, spawnTotal, color("&aEntered dungeon &e" + dungeonId + " &7spawned=&e" + spawnTotal));
+            return new DungeonStart(true, dungeonId, spawnTotal, color("&aEntered dungeon &e" + dungeonId + " &7template=&e" + (template == null ? "legacy" : template.templateId()) + " &7spawned=&e" + spawnTotal));
         });
     }
 
@@ -1486,20 +2556,21 @@ public final class RpgNetworkService {
         }
         String mobId = resolveMobId(entity);
         return withProfile(player, profile -> {
+            ContentEngine.DungeonTemplate template = resolveDungeonTemplate(dungeonId, instanceId);
             if (!dungeonId.equals(profile.getActiveDungeon())) {
                 return new DungeonProgress(false, false, "");
             }
             if (!Objects.equals(instanceId, profile.getActiveDungeonInstanceId())) {
                 return new DungeonProgress(true, false, color("&cKill denied outside your reserved instance."));
             }
-            List<String> trash = dungeons.getStringList(dungeonId + ".trash_mobs");
+            List<String> trash = template == null || template.enemyGroups().isEmpty() ? dungeons.getStringList(dungeonId + ".trash_mobs") : template.enemyGroups();
             if (mobId == null || !trash.contains(mobId)) {
                 return new DungeonProgress(false, false, "");
             }
             profile.incrementActiveDungeonKills();
-            int requiredKills = Math.max(6, trash.size() * 3);
+            int requiredKills = Math.max(6, (int) Math.ceil(trash.size() * 3 * (template == null ? 1.0D : template.difficultyScaling())));
             if (!profile.isActiveDungeonBossSpawned() && profile.getActiveDungeonKills() >= requiredKills) {
-                String bossId = dungeons.getString(dungeonId + ".boss", "");
+                String bossId = template == null || template.bossType().isBlank() ? dungeons.getString(dungeonId + ".boss", "") : template.bossType();
                 LivingEntity boss = spawnConfiguredBoss(player.getLocation().add(0.0D, 0.0D, 4.0D), bossId, player, dungeonId, profile.getActiveDungeonInstanceId());
                 if (boss != null) {
                     profile.setActiveDungeonBossSpawned(true);
@@ -1523,6 +2594,7 @@ public final class RpgNetworkService {
         String bossId = resolveBossId(entity);
         return withProfile(player, profile -> {
             RpgProfile before = profile.copy();
+            ContentEngine.DungeonTemplate template = resolveDungeonTemplate(dungeonId);
             if (!dungeonId.equals(profile.getActiveDungeon())) {
                 return new DungeonCompletion(false, false, dungeonId, 0.0D, Collections.emptyMap(), "");
             }
@@ -1542,20 +2614,40 @@ public final class RpgNetworkService {
             profile.pruneClaimedOperations(claimRetentionMillis());
             DungeonInstanceState activeInstance = loadDungeonInstance(profile.getActiveDungeonInstanceId());
             instanceOrchestrator.resolve(activeInstance);
-            Map<String, Integer> rewards = intMap(dungeons.getConfigurationSection(dungeonId + ".completion_rewards"));
+            Map<String, Integer> rewards = new LinkedHashMap<>(intMap(dungeons.getConfigurationSection(dungeonId + ".completion_rewards")));
+            ContentEngine.RewardBundle bundle = composeRewardPool(template == null ? "starter" : template.rewardTier(), template == null ? 1.0D : template.difficultyScaling());
+            for (Map.Entry<String, Integer> entry : bundle.items().entrySet()) {
+                rewards.merge(entry.getKey(), entry.getValue(), Integer::sum);
+            }
             for (Map.Entry<String, Integer> entry : rewards.entrySet()) {
                 profile.addItem(entry.getKey(), entry.getValue());
             }
             String bonusKey = dungeonId + "_clear_bonus";
-            double goldReward = economy.getDouble("faucets.dungeons." + bonusKey, 0.0D);
-            profile.addGold(goldReward);
+            double goldReward = economy.getDouble("faucets.dungeons." + bonusKey, 0.0D) + bundle.gold();
+            addEconomyEarn(profile, "dungeon_complete", goldReward);
+            profile.addProgressionCurrency("content_marks", bundle.progressionCurrency());
+            profile.addGenreCurrency(currentGenreId(), bundle.genreCurrency());
+            for (String milestone : bundle.milestones()) {
+                profile.addProgressionCurrency("milestone_" + milestone, 1);
+            }
+            addGenreCurrencyReward(profile, "dungeon_complete");
+            addProgressionCurrencyReward(profile, "dungeon_complete");
+            awardProgressionTrack(profile, "dungeon_complete");
             appendLedgerMutation(profile.getUuid(), "dungeon_complete", dungeonId, goldReward, rewards);
             if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
                 restoreProfileSnapshot(before);
                 profile.clearClaimedOperation(completionClaimKey);
                 return new DungeonCompletion(true, false, dungeonId, 0.0D, Collections.emptyMap(), color("&cReward commit delayed. Try again."));
             }
+            long completionSeconds = Math.max(1L, (System.currentTimeMillis() - profile.getActiveDungeonStartedAt()) / 1000L);
+            ingestTelemetry(TelemetryAdaptiveEngine.SignalType.DUNGEON_COMPLETION_TIME, completionSeconds, dungeonId);
+            dungeonCompletionsTracked.incrementAndGet();
             trackHighValueItemMint(profile.getUuid(), "player:" + profile.getUuid(), "dungeon_complete:" + dungeonId, rewards);
+            recordGearRewards(rewards);
+            wearOwnedGear(profile, 5);
+            addPrestige(profile, "dungeon_complete");
+            applyGuildProgression(profile, "dungeon_complete", player.getName());
+            advanceStreak(player, "dungeon_win");
             instanceOrchestrator.rewardCommit(activeInstance);
             profile.setDungeonCooldown(dungeonId, System.currentTimeMillis() + dungeons.getLong(dungeonId + ".repeat_cooldown_seconds", 30L) * 1000L);
             teleportToPrimaryWorldSpawn(player);
@@ -1565,7 +2657,11 @@ public final class RpgNetworkService {
             awardSkillXp(profile, "combat", "dungeon_clear");
             updateQuestProgressForDungeonClear(profile, dungeonId);
             syncCollectQuestProgress(profile);
+            recordNearbyRivalries(player, "dungeon_complete:" + dungeonId);
+            broadcastMilestoneIfNeeded(player, "dungeon_complete", dungeonId, profile);
             writeSession(profile, true);
+            dungeonCompleted.incrementAndGet();
+            rewardDistributed.incrementAndGet();
             writeAudit("dungeon_complete", player.getUniqueId() + ":" + dungeonId + ":gold=" + goldReward + ":items=" + rewards);
             return new DungeonCompletion(true, true, dungeonId, goldReward, rewards, color("&aDungeon cleared &e" + dungeonId + rewardSuffix(rewards) + " &7bonus=&e" + money(goldReward)));
         });
@@ -1584,23 +2680,40 @@ public final class RpgNetworkService {
             }
             profile.markClaimedOperation(opKey);
             profile.pruneClaimedOperations(claimRetentionMillis());
-            Map<String, Integer> grantedItems = Collections.emptyMap();
-            profile.addGold(gold);
+            Map<String, Integer> grantedItems = new LinkedHashMap<>();
+            ContentEngine.RewardBundle bundle = composeRewardPool(resolveEventRewardPool(eventId), 1.0D);
+            double totalGold = Math.max(0.0D, gold) + bundle.gold();
+            addEconomyEarn(profile, "event_bonus_reward", totalGold);
             if (grantItem && itemId != null && !itemId.isBlank() && amount > 0) {
                 String normalized = itemId.toLowerCase(Locale.ROOT);
                 profile.addItem(normalized, amount);
-                grantedItems = Map.of(normalized, amount);
+                grantedItems.merge(normalized, amount, Integer::sum);
             }
-            appendLedgerMutation(profile.getUuid(), "event_bonus_reward", eventId + ":" + nonce, gold, grantedItems);
+            for (Map.Entry<String, Integer> entry : bundle.items().entrySet()) {
+                profile.addItem(entry.getKey(), entry.getValue());
+                grantedItems.merge(entry.getKey(), entry.getValue(), Integer::sum);
+            }
+            profile.addProgressionCurrency("content_marks", bundle.progressionCurrency());
+            profile.addGenreCurrency("event", bundle.genreCurrency());
+            for (String milestone : bundle.milestones()) {
+                profile.addProgressionCurrency("milestone_" + milestone, 1);
+            }
+            addGenreCurrencyReward(profile, "event_bonus_reward");
+            addProgressionCurrencyReward(profile, "event_bonus_reward");
+            awardProgressionTrack(profile, "event_bonus_reward");
+            appendLedgerMutation(profile.getUuid(), "event_bonus_reward", eventId + ":" + nonce, totalGold, grantedItems);
             if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
                 restoreProfileSnapshot(before);
                 profile.clearClaimedOperation(opKey);
                 return new OperationResult(false, color("&cEvent bonus commit delayed. Try again."));
             }
             trackHighValueItemMint(profile.getUuid(), "player:" + profile.getUuid(), "event_bonus:" + eventId, grantedItems);
+            recordGearRewards(grantedItems);
+            wearOwnedGear(profile, 2);
+            rewardDistributed.incrementAndGet();
             awardSkillXp(profile, "combat", "mob_kill");
             syncCollectQuestProgress(profile);
-            writeAudit("event_bonus_reward", player.getUniqueId() + ":" + eventId + ":" + nonce + ":gold=" + gold + ":items=" + grantedItems);
+            writeAudit("event_bonus_reward", player.getUniqueId() + ":" + eventId + ":" + nonce + ":gold=" + totalGold + ":items=" + grantedItems);
             return new OperationResult(true, color("&dEvent bonus: " + eventId));
         });
     }
@@ -1637,7 +2750,7 @@ public final class RpgNetworkService {
                     return new BossSummonResult(false, bossId, color("&cMissing summon materials: " + missingItems(profile, req)), null);
                 }
                 double goldCost = bosses.getDouble(bossId + ".summon.gold_cost", 0.0D);
-                if (!profile.spendGold(goldCost)) {
+                if (!spendEconomyGlobal(profile, goldCost)) {
                     return new BossSummonResult(false, bossId, color("&cNeed " + money(goldCost) + " gold to summon."), null);
                 }
                 removeItems(profile, req);
@@ -1660,7 +2773,7 @@ public final class RpgNetworkService {
                         player.getUniqueId().toString(), "reward_idempotency_policy:v1", "drop_rate_canary", instanceHoldMillis());
                     World encounterWorld = instanceOrchestrator.bootInstanceWorld(encounterInstance);
                     if (encounterWorld == null) {
-                        profile.addGold(goldCost);
+                        addEconomyEarn(profile, "travel_refund", goldCost);
                         addItems(profile, req);
                         cleanupDungeonInstance(encounterInstance, "boss_encounter_world_failed");
                         return new BossSummonResult(false, bossId, color("&cFailed to allocate boss encounter instance."), null);
@@ -1676,7 +2789,7 @@ public final class RpgNetworkService {
                 String encounterInstanceId = encounterInstance == null ? null : encounterInstance.instanceId;
                 LivingEntity entity = spawnConfiguredBoss(spawnOrigin, bossId, player, dungeonIdForBoss, encounterInstanceId);
                 if (entity == null) {
-                    profile.addGold(goldCost);
+                    addEconomyEarn(profile, "travel_refund", goldCost);
                     addItems(profile, req);
                     appendLedgerMutation(profile.getUuid(), "boss_summon_personal_refund", refundReference, goldCost, req);
                     if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
@@ -1805,7 +2918,7 @@ public final class RpgNetworkService {
             }
             profile.removeItem(key, amount);
             double payout = vendorValue * amount;
-            profile.addGold(payout);
+            addEconomyEarn(profile, "vendor_sell", payout);
             appendLedgerMutation(profile.getUuid(), "vendor_sell", key, payout, Map.of(key, -amount));
             if (!reconcileHighValueItemConsumption("player:" + profile.getUuid(), key, amount, "vendor_sell:" + key)) {
                 restoreProfileSnapshot(before);
@@ -1848,7 +2961,7 @@ public final class RpgNetworkService {
                 return new OperationResult(false, color("&cMissing upgrade materials: " + missingItems(profile, req)));
             }
             double goldCost = items.getDouble("tiers." + nextTier + ".upgrade_cost_gold", 0.0D);
-            if (!profile.spendGold(goldCost)) {
+            if (!spendEconomyGlobal(profile, goldCost)) {
                 return new OperationResult(false, color("&cNeed " + money(goldCost) + " gold to upgrade."));
             }
             removeItems(profile, req);
@@ -1865,9 +2978,138 @@ public final class RpgNetworkService {
                 return new OperationResult(false, color("&cUpgrade commit delayed. Try again."));
             }
             awardSkillXp(profile, "crafting", "gear_upgrade");
+            awardProgressionTrack(profile, "gear_upgrade");
+            profile.setGearCondition(gearPath, 100);
+            gearUpgradeCount.incrementAndGet();
             syncCollectQuestProgress(profile);
             writeAudit("gear_upgrade", player.getUniqueId() + ":" + gearPath + ":" + currentTier + "->" + nextTier);
-            return new OperationResult(true, color("&aUpgraded &e" + gearPath + " &7to &d" + nextTier));
+            return new OperationResult(true, color("&aUpgraded &e" + gearPath + " &7to &d" + normalizedTier(nextTier)));
+        });
+    }
+
+    public OperationResult craftGear(Player player, String recipeId) {
+        if (safeMode) {
+            return new OperationResult(false, color("&cBackend safe mode active. Crafting paused."));
+        }
+        String key = recipeId == null ? "" : recipeId.toLowerCase(Locale.ROOT);
+        if (!items.contains("crafting." + key)) {
+            return new OperationResult(false, color("&cUnknown crafting recipe: " + recipeId));
+        }
+        return withProfile(player, profile -> {
+            RpgProfile before = profile.copy();
+            Map<String, Integer> req = intMap(items.getConfigurationSection("crafting." + key + ".required_materials"));
+            if (!profile.hasItems(req)) {
+                return new OperationResult(false, color("&cMissing crafting materials: " + missingItems(profile, req)));
+            }
+            double recipeCost = items.getDouble("crafting." + key + ".gold_cost", 0.0D);
+            double tax = Math.max(0.0D, economy.getDouble("economy_model.sinks_runtime.crafting.craft_tax_global", 0.0D));
+            double totalCost = recipeCost + tax;
+            if (!spendEconomyGlobal(profile, totalCost)) {
+                return new OperationResult(false, color("&cNeed " + money(totalCost) + " " + globalCurrencyDisplayName().toLowerCase(Locale.ROOT) + " to craft."));
+            }
+            removeItems(profile, req);
+            String tier = items.getString("crafting." + key + ".tier", "common");
+            profile.setGearTier(key, tier);
+            profile.setGearCondition(key, 100);
+            appendLedgerMutation(profile.getUuid(), "crafting", key, -totalCost, negativeItemMap(req));
+            for (Map.Entry<String, Integer> entry : req.entrySet()) {
+                if (!reconcileHighValueItemConsumption("player:" + profile.getUuid(), entry.getKey(), entry.getValue(), "crafting:" + key)) {
+                    restoreProfileSnapshot(before);
+                    return new OperationResult(false, color("&cCrafting material authority mismatch. Craft quarantined."));
+                }
+            }
+            if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
+                restoreProfileSnapshot(before);
+                return new OperationResult(false, color("&cCraft commit delayed. Try again."));
+            }
+            awardProgressionTrack(profile, "crafting");
+            gearDrop.incrementAndGet();
+            writeAudit("crafting", player.getUniqueId() + ":" + key + ":" + normalizedTier(tier));
+            return new OperationResult(true, color("&aCrafted &e" + key + " &7tier=&d" + normalizedTier(tier)));
+        });
+    }
+
+    public OperationResult repairGear(Player player, String gearPath) {
+        if (safeMode) {
+            return new OperationResult(false, color("&cBackend safe mode active. Repairs paused."));
+        }
+        String key = gearPath == null ? "" : gearPath.toLowerCase(Locale.ROOT);
+        return withProfile(player, profile -> {
+            RpgProfile before = profile.copy();
+            if (!profile.getGearTiersView().containsKey(key)) {
+                return new OperationResult(false, color("&cYou do not own gear path: " + gearPath));
+            }
+            int condition = profile.getGearCondition(key);
+            if (condition >= 100) {
+                return new OperationResult(false, color("&eGear is already fully repaired."));
+            }
+            double base = Math.max(0.0D, economy.getDouble("economy_model.sinks_runtime.repair.base_cost_global", 0.0D));
+            double perMissing = Math.max(0.0D, economy.getDouble("economy_model.sinks_runtime.repair.cost_per_missing_condition", 0.0D));
+            double cost = base + ((100 - condition) * perMissing);
+            if (!spendEconomyGlobal(profile, cost)) {
+                return new OperationResult(false, color("&cNeed " + money(cost) + " " + globalCurrencyDisplayName().toLowerCase(Locale.ROOT) + " to repair."));
+            }
+            profile.setGearCondition(key, 100);
+            appendLedgerMutation(profile.getUuid(), "gear_repair", key, -cost, Collections.emptyMap());
+            if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
+                restoreProfileSnapshot(before);
+                return new OperationResult(false, color("&cRepair commit delayed. Try again."));
+            }
+            awardProgressionTrack(profile, "repair");
+            writeAudit("gear_repair", player.getUniqueId() + ":" + key + ":cost=" + cost);
+            return new OperationResult(true, color("&aRepaired &e" + key + " &7for &e" + money(cost)));
+        });
+    }
+
+    public OperationResult unlockCosmetic(Player player, String cosmeticId, boolean equip) {
+        String key = cosmeticId == null ? "" : cosmeticId.toLowerCase(Locale.ROOT);
+        if (!economy.contains("economy_model.sinks_runtime.cosmetics." + key)) {
+            return new OperationResult(false, color("&cUnknown cosmetic: " + cosmeticId));
+        }
+        return withProfile(player, profile -> {
+            RpgProfile before = profile.copy();
+            if (!profile.ownsCosmetic(key)) {
+                double cost = Math.max(0.0D, economy.getDouble("economy_model.sinks_runtime.cosmetics." + key + ".cost_global", 0.0D));
+                if (!spendEconomyGlobal(profile, cost)) {
+                    return new OperationResult(false, color("&cNeed " + money(cost) + " " + globalCurrencyDisplayName().toLowerCase(Locale.ROOT) + " to unlock."));
+                }
+                profile.unlockCosmetic(key);
+                appendLedgerMutation(profile.getUuid(), "cosmetic_unlock", key, -cost, Collections.emptyMap());
+                if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
+                    restoreProfileSnapshot(before);
+                    return new OperationResult(false, color("&cCosmetic unlock commit delayed. Try again."));
+                }
+                awardProgressionTrack(profile, "cosmetic_unlock");
+            }
+            if (equip) {
+                profile.setEquippedCosmetic(key);
+            }
+            writeAudit("cosmetic_unlock", player.getUniqueId() + ":" + key + ":equip=" + equip);
+            return new OperationResult(true, color("&aCosmetic ready: &e" + key + (equip ? " &7(equipped)" : "")));
+        });
+    }
+
+    public OperationResult buyTemporaryBuff(Player player, String buffId) {
+        String key = buffId == null ? "" : buffId.toLowerCase(Locale.ROOT);
+        if (!economy.contains("economy_model.sinks_runtime.temporary_buffs." + key)) {
+            return new OperationResult(false, color("&cUnknown buff: " + buffId));
+        }
+        return withProfile(player, profile -> {
+            RpgProfile before = profile.copy();
+            double cost = Math.max(0.0D, economy.getDouble("economy_model.sinks_runtime.temporary_buffs." + key + ".cost_global", 0.0D));
+            int durationMinutes = Math.max(1, economy.getInt("economy_model.sinks_runtime.temporary_buffs." + key + ".duration_minutes", 30));
+            if (!spendEconomyGlobal(profile, cost)) {
+                return new OperationResult(false, color("&cNeed " + money(cost) + " " + globalCurrencyDisplayName().toLowerCase(Locale.ROOT) + " for this buff."));
+            }
+            long expiresAt = System.currentTimeMillis() + (durationMinutes * 60_000L);
+            profile.activateBuff(key, expiresAt);
+            appendLedgerMutation(profile.getUuid(), "temporary_buff", key, -cost, Collections.emptyMap());
+            if (!commitDurabilityBoundary(profile.getUuid(), profile.getUpdatedAt(), profile.getGuildName(), resolveGuildVersion(profile.getGuildName()))) {
+                restoreProfileSnapshot(before);
+                return new OperationResult(false, color("&cBuff purchase commit delayed. Try again."));
+            }
+            writeAudit("temporary_buff", player.getUniqueId() + ":" + key + ":" + expiresAt);
+            return new OperationResult(true, color("&aActivated buff &e" + key + " &7for &e" + durationMinutes + "m"));
         });
     }
 
@@ -1912,7 +3154,7 @@ public final class RpgNetworkService {
         final String transferId = UUID.randomUUID().toString();
         OperationResult reservation = withProfile(player, profile -> {
             double fee = economy.getDouble("sinks.travel.local_transfer_fee", 0.0D);
-            if (!profile.spendGold(fee)) {
+            if (!spendEconomyGlobal(profile, fee)) {
                 return new OperationResult(false, color("&cNeed " + money(fee) + " gold to travel."));
             }
             profile.incrementTransfers();
@@ -1959,7 +3201,7 @@ public final class RpgNetworkService {
             deterministicTransferService.transition(transferRecord.transferId(), DeterministicTransferService.TransferState.FAILED, "profile_barrier");
             unfreezeMutationAuthority(player.getUniqueId());
             withProfile(player, profile -> {
-                profile.addGold(fee);
+                addEconomyEarn(profile, "travel_refund", fee);
                 appendLedgerMutation(profile.getUuid(), "travel_refund", serverName + "->" + targetServer, fee, Collections.emptyMap());
                 return null;
             });
@@ -1971,7 +3213,7 @@ public final class RpgNetworkService {
             clearTravelTicket(player.getUniqueId());
             unfreezeMutationAuthority(player.getUniqueId());
             withProfile(player, profile -> {
-                profile.addGold(fee);
+                addEconomyEarn(profile, "travel_refund", fee);
                 appendLedgerMutation(profile.getUuid(), "travel_refund", serverName + "->" + targetServer, fee, Collections.emptyMap());
                 return null;
             });
@@ -1985,7 +3227,7 @@ public final class RpgNetworkService {
             clearTravelTicket(player.getUniqueId());
             unfreezeMutationAuthority(player.getUniqueId());
             withProfile(player, profile -> {
-                profile.addGold(fee);
+                addEconomyEarn(profile, "travel_refund", fee);
                 appendLedgerMutation(profile.getUuid(), "travel_refund", serverName + "->" + targetServer, fee, Collections.emptyMap());
                 return null;
             });
@@ -1997,7 +3239,7 @@ public final class RpgNetworkService {
             clearTravelTicket(player.getUniqueId());
             unfreezeMutationAuthority(player.getUniqueId());
             withProfile(player, profile -> {
-                profile.addGold(fee);
+                addEconomyEarn(profile, "travel_refund", fee);
                 appendLedgerMutation(profile.getUuid(), "travel_refund", serverName + "->" + targetServer, fee, Collections.emptyMap());
                 return null;
             });
@@ -2063,6 +3305,58 @@ public final class RpgNetworkService {
         return new OperationResult(true, color("&aAdjusted gold for &e" + target.getName() + " &7delta=&e" + money(delta)));
     }
 
+    public String operationsStatus() {
+        return "ops scaling=" + autoScalingEnabled
+            + " debugMetrics=" + debugMetricsEnabled
+            + " queue=" + queueSize()
+            + " tps=" + String.format(Locale.US, "%.2f", runtimeTps())
+            + " density=" + playerDensity()
+            + " routingMs=" + String.format(Locale.US, "%.2f", networkRoutingLatencyMs())
+            + " instanceSpawn=" + instanceSpawnCount()
+            + " instanceShutdown=" + instanceShutdownCount()
+            + " exploitFlag=" + exploitFlagCount()
+            + " guild=" + guildCreatedCount() + "/" + guildJoinedCount()
+            + " prestige=" + prestigeGainCount()
+            + " returnRewards=" + returnPlayerRewardCount()
+            + " streaks=" + streakProgressCount()
+            + " rivalry=" + rivalryCreatedCount() + "/" + rivalryMatchCount() + "/" + rivalryRewardCount();
+    }
+
+    public OperationResult setAutoScalingEnabled(boolean enabled) {
+        autoScalingEnabled = enabled;
+        writeAudit("ops_scaling_toggle", serverName + ":" + enabled);
+        return new OperationResult(true, color("&aAuto scaling " + (enabled ? "enabled" : "disabled")));
+    }
+
+    public OperationResult setDebugMetricsEnabled(boolean enabled) {
+        debugMetricsEnabled = enabled;
+        writeAudit("ops_debug_metrics_toggle", serverName + ":" + enabled);
+        return new OperationResult(true, color("&aDebug metrics " + (enabled ? "enabled" : "disabled")));
+    }
+
+    public OperationResult forceEventStart(String eventId) {
+        if (eventId == null || eventId.isBlank()) {
+            return new OperationResult(false, color("&cEvent id required."));
+        }
+        YamlConfiguration yaml = new YamlConfiguration();
+        yaml.set("event_id", eventId.toLowerCase(Locale.ROOT));
+        yaml.set("requested_at", System.currentTimeMillis());
+        writeYaml(eventDir.resolve("force-request.yml"), yaml.saveToString());
+        writeAudit("ops_force_event", eventId);
+        return new OperationResult(true, color("&aQueued forced event start for &e" + eventId));
+    }
+
+    private void drainForcedEventRequest() {
+        Path path = eventDir.resolve("force-request.yml");
+        if (!Files.exists(path)) {
+            return;
+        }
+        if (!"event".equalsIgnoreCase(serverRole)) {
+            return;
+        }
+        // The event plugin consumes this file; the operations brain just makes sure it exists on the authoritative shard.
+    }
+
     public OperationResult createGuild(Player player, String requestedName) {
         if (safeMode) {
             return new OperationResult(false, color("&cBackend safe mode active. Guild changes paused."));
@@ -2079,10 +3373,13 @@ public final class RpgNetworkService {
                 return new OperationResult(false, color("&cGuild already exists."));
             }
             RpgGuild guild = new RpgGuild(guildName, player.getUniqueId().toString());
+            guild.setGuildLevel(Math.max(1, guildsConfig.getInt("guilds.starting_level", 1)));
             guilds.put(guildName, guild);
             dirtyGuilds.add(guildName);
             profile.setGuildName(guildName);
             writeSession(profile, true);
+            guildCreated.incrementAndGet();
+            broadcastSocialEvent("guild_created", guildName, "&b[Guild] &f" + player.getName() + " formed guild &e" + guildName + "&f.");
             writeAudit("guild_create", player.getUniqueId() + ":" + guildName);
             return new OperationResult(true, color("&aCreated guild &e" + guildName));
         });
@@ -2101,10 +3398,10 @@ public final class RpgNetworkService {
                     return new OperationResult(false, color("&cGuild data missing."));
                 }
                 RpgGuild guild = guildOptional.get();
-                if (!guild.getOwnerUuid().equals(inviter.getUniqueId().toString())) {
-                    return new OperationResult(false, color("&cOnly the guild owner can invite players."));
+                if (!guild.isOfficer(inviter.getUniqueId().toString())) {
+                    return new OperationResult(false, color("&cOnly guild officers can invite players."));
                 }
-                guild.invite(target.getUniqueId().toString(), System.currentTimeMillis() + 600_000L);
+                guild.invite(target.getUniqueId().toString(), System.currentTimeMillis() + guildsConfig.getLong("guilds.invite_expiry_seconds", 600L) * 1000L);
                 dirtyGuilds.add(guildKey);
                 writeAudit("guild_invite", inviter.getUniqueId() + ":" + target.getUniqueId() + ":" + guildName);
                 return new OperationResult(true, color("&aInvited &e" + target.getName() + " &7to guild &e" + guildName));
@@ -2136,6 +3433,8 @@ public final class RpgNetworkService {
                 dirtyGuilds.add(guildKey);
                 profile.setGuildName(guildName);
                 writeSession(profile, true);
+                guildJoined.incrementAndGet();
+                broadcastSocialEvent("guild_joined", guildName, "&b[Guild] &f" + player.getName() + " joined &e" + guildName + "&f.");
                 writeAudit("guild_join", player.getUniqueId() + ":" + guildName);
                 return new OperationResult(true, color("&aJoined guild &e" + guildName));
             }
@@ -2285,10 +3584,379 @@ public final class RpgNetworkService {
                 RpgGuild guild = guildOptional.get();
                 return color("&6Guild &7name=&e" + guild.getName()
                     + " &7owner=&e" + guild.getOwnerUuid()
+                    + " &7level=&e" + guild.getGuildLevel()
+                    + " &7points=&e" + guild.getGuildPoints()
                     + " &7members=&e" + guild.getMembersView().size()
                     + " &7bank=&e" + String.join(", ", guild.bankSummary(6)));
             }
         });
+    }
+
+    public OperationResult sendGuildChat(Player player, String rawMessage) {
+        String message = rawMessage == null ? "" : rawMessage.trim();
+        if (message.isBlank()) {
+            return new OperationResult(false, color("&cGuild chat message cannot be empty."));
+        }
+        return withProfileRead(player.getUniqueId(), player.getName(), profile -> {
+            if (profile.getGuildName().isBlank()) {
+                return new OperationResult(false, color("&cYou are not in a guild."));
+            }
+            Optional<RpgGuild> guildOptional = getGuild(profile.getGuildName());
+            if (guildOptional.isEmpty()) {
+                return new OperationResult(false, color("&cGuild state missing."));
+            }
+            String outbound = color("&2[Guild] &a" + player.getName() + "&7: &f" + message);
+            RpgGuild guild = guildOptional.get();
+            for (String memberId : guild.getMembersView()) {
+                Player online = Bukkit.getPlayer(UUID.fromString(memberId));
+                if (online != null) {
+                    online.sendMessage(outbound);
+                }
+            }
+            writeAudit("guild_chat", player.getUniqueId() + ":" + guild.getName() + ":" + normalize(message));
+            return new OperationResult(true, outbound);
+        });
+    }
+
+    public OperationResult setGuildRank(Player actor, Player target, String rankId) {
+        String requested = rankId == null ? "" : rankId.toLowerCase(Locale.ROOT);
+        if (!requested.equals("officer") && !requested.equals("member")) {
+            return new OperationResult(false, color("&cRank must be officer or member."));
+        }
+        return withProfile(actor, profile -> {
+            if (profile.getGuildName().isBlank()) {
+                return new OperationResult(false, color("&cYou are not in a guild."));
+            }
+            String guildKey = normalizeGuild(profile.getGuildName());
+            synchronized (guildLocks.computeIfAbsent(guildKey, ignored -> new Object())) {
+                Optional<RpgGuild> guildOptional = getGuild(profile.getGuildName());
+                if (guildOptional.isEmpty()) {
+                    return new OperationResult(false, color("&cGuild data missing."));
+                }
+                RpgGuild guild = guildOptional.get();
+                if (!guild.getOwnerUuid().equals(actor.getUniqueId().toString())) {
+                    return new OperationResult(false, color("&cOnly the guild owner can change ranks."));
+                }
+                if (!guild.isMember(target.getUniqueId().toString())) {
+                    return new OperationResult(false, color("&cTarget is not in your guild."));
+                }
+                guild.setRank(target.getUniqueId().toString(), requested);
+                dirtyGuilds.add(guildKey);
+                broadcastSocialEvent("guild_rank", guild.getName(), "&b[Guild] &f" + target.getName() + " is now &e" + requested + "&f in guild &e" + guild.getName() + "&f.");
+                return new OperationResult(true, color("&aSet guild rank for &e" + target.getName() + " &7to &e" + requested));
+            }
+        });
+    }
+
+    public String prestigeSummary(Player player) {
+        return withProfileRead(player.getUniqueId(), player.getName(), profile -> color("&6Prestige &7points=&e" + profile.getPrestigePoints()
+            + " &7badge=&e" + (profile.getPrestigeBadge().isBlank() ? "none" : profile.getPrestigeBadge())
+            + " &7season=&e" + prestigeConfig.getString("prestige.season_id", "default")));
+    }
+
+    public String streakSummary(Player player) {
+        return withProfileRead(player.getUniqueId(), player.getName(), profile -> color("&6Streaks &7daily=&e" + profile.getStreakCount("daily_play")
+            + " &7dungeon=&e" + profile.getStreakCount("dungeon_win")
+            + " &7event=&e" + profile.getStreakCount("event_participation")));
+    }
+
+    private void awardSocialProgress(Player player, String sourceKey, String reference) {
+        withProfile(player, profile -> {
+            addPrestige(profile, sourceKey);
+            applyGuildProgression(profile, sourceKey, player.getName());
+            writeSession(profile, true);
+            return null;
+        });
+        broadcastMilestoneIfNeeded(player, sourceKey, reference, profileSnapshot(player));
+    }
+
+    private void addPrestige(RpgProfile profile, String sourceKey) {
+        int amount = Math.max(0, prestigeConfig.getInt("prestige.sources." + sourceKey, 0));
+        if (amount <= 0) {
+            return;
+        }
+        profile.addPrestigePoints(amount);
+        prestigeGain.incrementAndGet();
+        String badge = resolvePrestigeBadge(profile.getPrestigePoints());
+        if (!badge.equals(profile.getPrestigeBadge())) {
+            profile.setPrestigeBadge(badge);
+            String cosmetic = prestigeConfig.getString("prestige.badges." + badge + ".cosmetic", badge);
+            if (!cosmetic.isBlank()) {
+                profile.unlockCosmetic(cosmetic);
+            }
+        }
+    }
+
+    private String resolvePrestigeBadge(int points) {
+        String selected = "";
+        ConfigurationSection section = prestigeConfig.getConfigurationSection("prestige.badges");
+        if (section == null) {
+            return selected;
+        }
+        for (String badgeId : section.getKeys(false)) {
+            if (points >= prestigeConfig.getInt("prestige.badges." + badgeId + ".threshold", Integer.MAX_VALUE)) {
+                selected = badgeId.toLowerCase(Locale.ROOT);
+            }
+        }
+        return selected;
+    }
+
+    private void applyGuildProgression(RpgProfile profile, String sourceKey, String actorName) {
+        if (profile.getGuildName().isBlank()) {
+            return;
+        }
+        int points = Math.max(0, guildsConfig.getInt("guilds.progression.points." + sourceKey, 0));
+        if (points <= 0) {
+            return;
+        }
+        String guildKey = normalizeGuild(profile.getGuildName());
+        synchronized (guildLocks.computeIfAbsent(guildKey, ignored -> new Object())) {
+            Optional<RpgGuild> guildOptional = getGuild(guildKey);
+            if (guildOptional.isEmpty()) {
+                return;
+            }
+            RpgGuild guild = guildOptional.get();
+            int beforeLevel = guild.getGuildLevel();
+            guild.addGuildPoints(points);
+            guild.setGuildLevel(resolveGuildLevel(guild.getGuildPoints()));
+            dirtyGuilds.add(guildKey);
+            if (guild.getGuildLevel() > beforeLevel) {
+                broadcastSocialEvent("guild_level", guild.getName(), "&b[Guild] &e" + guild.getName() + " &fadvanced to level &a" + guild.getGuildLevel() + "&f.");
+                runtimeKnowledgeIndex.remember("guild_level_" + guild.getName() + "_" + guild.getGuildLevel(),
+                    "guild_progression",
+                    guild.getName(),
+                    "artifact:guild:" + guild.getName(),
+                    "",
+                    pressureControlPlane.current().composite(),
+                    List.of("guild", "progression", "social"));
+            } else if (!actorName.isBlank()) {
+                writeAudit("guild_progress", actorName + ":" + guild.getName() + ":" + sourceKey + ":points=" + points);
+            }
+        }
+    }
+
+    private int resolveGuildLevel(int guildPoints) {
+        int selected = Math.max(1, guildsConfig.getInt("guilds.starting_level", 1));
+        ConfigurationSection section = guildsConfig.getConfigurationSection("guilds.progression.level_thresholds");
+        if (section == null) {
+            return selected;
+        }
+        for (String levelKey : section.getKeys(false)) {
+            int level = Integer.parseInt(levelKey);
+            if (guildPoints >= guildsConfig.getInt("guilds.progression.level_thresholds." + levelKey, Integer.MAX_VALUE)) {
+                selected = Math.max(selected, level);
+            }
+        }
+        return selected;
+    }
+
+    private void advanceStreak(Player player, String streakId) {
+        String normalized = streakId == null ? "" : streakId.toLowerCase(Locale.ROOT);
+        String today = dailyDateKey(System.currentTimeMillis());
+        withProfile(player, profile -> {
+            String lastDate = profile.getStreakDate(normalized);
+            int current = profile.getStreakCount(normalized);
+            if (today.equals(lastDate)) {
+                return null;
+            }
+            int resetDays = Math.max(1, streaksConfig.getInt("streaks." + normalized + ".reset_days", 2));
+            long gapDays = daysBetween(lastDate, today);
+            int next = gapDays >= 1 && gapDays <= resetDays ? current + 1 : 1;
+            profile.setStreakCount(normalized, next);
+            profile.setStreakDate(normalized, today);
+            streakProgress.incrementAndGet();
+            int milestoneEvery = Math.max(1, streaksConfig.getInt("streaks." + normalized + ".milestone_every", 3));
+            if (next % milestoneEvery == 0) {
+                profile.addProgressionCurrency("mastery_points", Math.max(0, streaksConfig.getInt("streaks." + normalized + ".progression_currency_reward", 1)));
+                addPrestige(profile, "streak_milestone");
+                broadcastSocialEvent("streak", player.getUniqueId().toString(), "&d[Streak] &f" + player.getName() + " reached &e" + next + "&f on &a" + normalized + "&f.");
+            }
+            writeSession(profile, true);
+            return null;
+        });
+    }
+
+    private long daysBetween(String fromDate, String toDate) {
+        try {
+            return java.time.temporal.ChronoUnit.DAYS.between(LocalDate.parse(fromDate), LocalDate.parse(toDate));
+        } catch (DateTimeException ignored) {
+            return Long.MAX_VALUE;
+        }
+    }
+
+    private void grantReturnRewardIfEligible(Player player) {
+        withProfile(player, profile -> {
+            long lastQuitAt = profile.getLastQuitAt();
+            long minAwayMillis = Math.max(1L, streaksConfig.getLong("streaks.return_reward.inactivity_hours", 48L)) * 3_600_000L;
+            long now = System.currentTimeMillis();
+            if (lastQuitAt <= 0L || now - lastQuitAt < minAwayMillis) {
+                return null;
+            }
+            String window = dailyDateKey(lastQuitAt) + ":" + dailyDateKey(now);
+            String claimKey = "return_reward:" + window;
+            if (profile.hasClaimedOperation(claimKey)) {
+                return null;
+            }
+            profile.markClaimedOperation(claimKey);
+            profile.addProgressionCurrency("mastery_points", Math.max(0, streaksConfig.getInt("streaks.return_reward.progression_currency_reward", 2)));
+            String buffId = streaksConfig.getString("streaks.return_reward.buff_id", "comeback_booster");
+            long buffExpiry = now + Math.max(300L, streaksConfig.getLong("streaks.return_reward.buff_duration_seconds", 3600L)) * 1000L;
+            profile.activateBuff(buffId, buffExpiry);
+            addPrestige(profile, "return_player");
+            appendLedgerMutation(profile.getUuid(), "return_player_reward", window, 0.0D, Collections.emptyMap());
+            returnPlayerReward.incrementAndGet();
+            writeSession(profile, true);
+            player.sendMessage(color("&aWelcome back. Comeback boost activated and mastery awarded."));
+            broadcastSocialEvent("return_player", player.getUniqueId().toString(), "&a[Return] &f" + player.getName() + " returned to the network.");
+            return null;
+        });
+    }
+
+    private void recordNearbyRivalries(Player actor, String context) {
+        if (actor == null || actor.getWorld() == null) {
+            return;
+        }
+        for (Player nearby : actor.getLocation().getNearbyPlayers(18.0D)) {
+            if (!nearby.getUniqueId().equals(actor.getUniqueId())) {
+                recordRivalryEncounter(actor, nearby, context);
+            }
+        }
+    }
+
+    private void recordRivalryEncounter(Player actor, Player other, String context) {
+        String pairKey = rivalryKey(actor.getUniqueId(), other.getUniqueId());
+        int score = rivalryScores.merge(pairKey, 1, Integer::sum);
+        rivalryMatch.incrementAndGet();
+        persistSocialState();
+        int createdThreshold = Math.max(2, guildsConfig.getInt("guilds.rivalry.created_threshold", 3));
+        if (score == createdThreshold) {
+            rivalryCreated.incrementAndGet();
+            broadcastSocialEvent("rivalry_created", pairKey, "&c[Rivalry] &f" + actor.getName() + " and " + other.getName() + " are becoming rivals.");
+        }
+        int rewardEvery = Math.max(2, guildsConfig.getInt("guilds.rivalry.reward_every", 5));
+        int milestone = score / rewardEvery;
+        if (score >= rewardEvery && rivalryRewardMilestones.getOrDefault(pairKey, 0) < milestone) {
+            rivalryRewardMilestones.put(pairKey, milestone);
+            persistSocialState();
+            rivalryReward.incrementAndGet();
+            Bukkit.getScheduler().runTask(plugin, () -> grantRivalryReward(actor, other, context, score));
+        }
+    }
+
+    private void grantRivalryReward(Player actor, Player other, String context, int score) {
+        for (Player target : List.of(actor, other)) {
+            if (target == null || !target.isOnline()) {
+                continue;
+            }
+            withProfile(target, profile -> {
+                addPrestige(profile, "rivalry_reward");
+                profile.addProgressionCurrency("mastery_points", 1);
+                writeSession(profile, true);
+                return null;
+            });
+            target.sendMessage(color("&c[Rivalry] &fTension escalated in &e" + context + "&f. Rivalry reward granted at score &e" + score + "&f."));
+        }
+    }
+
+    private String rivalryKey(UUID first, UUID second) {
+        String a = first.toString();
+        String b = second.toString();
+        return a.compareTo(b) <= 0 ? a + ":" + b : b + ":" + a;
+    }
+
+    private void broadcastMilestoneIfNeeded(Player actor, String sourceKey, String reference, RpgProfile profile) {
+        if (profile.getPrestigePoints() > 0 && profile.getPrestigePoints() % 25 == 0) {
+            broadcastSocialEvent("prestige_milestone", actor.getUniqueId().toString(),
+                "&6[Prestige] &f" + actor.getName() + " reached &e" + profile.getPrestigePoints() + "&f prestige through &a" + sourceKey + "&f.");
+            exportArtifact("balancing_decision", "prestige_" + actor.getUniqueId(), "", Map.of(
+                "type", "prestige_milestone",
+                "player", actor.getUniqueId().toString(),
+                "source", sourceKey,
+                "reference", reference,
+                "prestige_points", profile.getPrestigePoints()
+            ));
+        }
+        if ("boss_kill".equalsIgnoreCase(sourceKey) && !profile.getGuildName().isBlank()) {
+            broadcastSocialEvent("guild_victory", profile.getGuildName(),
+                "&b[Victory] &e" + profile.getGuildName() + " &fclaimed boss victory on &c" + reference + "&f.");
+        }
+    }
+
+    private void loadSocialState() {
+        Path rivalryPath = socialDir.resolve("rivalries.yml");
+        if (!Files.exists(rivalryPath)) {
+            return;
+        }
+        YamlConfiguration yaml = readYaml(rivalryPath);
+        ConfigurationSection scores = yaml.getConfigurationSection("scores");
+        if (scores != null) {
+            for (String key : scores.getKeys(false)) {
+                rivalryScores.put(key, scores.getInt(key, 0));
+            }
+        }
+        ConfigurationSection milestones = yaml.getConfigurationSection("reward_milestones");
+        if (milestones != null) {
+            for (String key : milestones.getKeys(false)) {
+                rivalryRewardMilestones.put(key, milestones.getInt(key, 0));
+            }
+        }
+    }
+
+    private void persistSocialState() {
+        YamlConfiguration yaml = new YamlConfiguration();
+        yaml.set("scores", new LinkedHashMap<>(rivalryScores));
+        yaml.set("reward_milestones", new LinkedHashMap<>(rivalryRewardMilestones));
+        writeYaml(socialDir.resolve("rivalries.yml"), yaml.saveToString());
+    }
+
+    private void broadcastSocialEvent(String type, String entityKey, String rawMessage) {
+        String id = type + ":" + normalize(entityKey) + ":" + System.currentTimeMillis();
+        YamlConfiguration yaml = new YamlConfiguration();
+        yaml.set("id", id);
+        yaml.set("type", type);
+        yaml.set("entity_key", entityKey);
+        yaml.set("message", color(rawMessage));
+        yaml.set("created_at", System.currentTimeMillis());
+        lastSocialBroadcastId = id;
+        writeYaml(socialBroadcastDir.resolve(id + ".yml"), yaml.saveToString());
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            player.sendMessage(color(rawMessage));
+        }
+    }
+
+    private void pollSocialBroadcasts() {
+        if (Bukkit.getOnlinePlayers().isEmpty() || !Files.isDirectory(socialBroadcastDir)) {
+            return;
+        }
+        try (var paths = Files.list(socialBroadcastDir)) {
+            Path selected = null;
+            long latest = 0L;
+            for (Path path : paths.filter(entry -> entry.getFileName().toString().endsWith(".yml")).toList()) {
+                long modified = Files.getLastModifiedTime(path).toMillis();
+                if (modified >= latest) {
+                    latest = modified;
+                    selected = path;
+                }
+            }
+            if (selected == null) {
+                return;
+            }
+            YamlConfiguration yaml = readYaml(selected);
+            String id = yaml.getString("id", "");
+            if (id.isBlank() || id.equals(lastSocialBroadcastId)) {
+                return;
+            }
+            lastSocialBroadcastId = id;
+            String message = yaml.getString("message", "");
+            if (message.isBlank()) {
+                return;
+            }
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                player.sendMessage(message);
+            }
+        } catch (IOException exception) {
+            plugin.getLogger().warning("Unable to poll social broadcasts: " + exception.getMessage());
+        }
     }
 
     public void applyPassiveStats(Player player) {
@@ -2379,7 +4047,8 @@ public final class RpgNetworkService {
             spawned.remove();
             return null;
         }
-        configureLivingEntity(living, mobId.replace('_', ' '), section.getDouble("health", 20.0D), section.getDouble("damage", 3.0D));
+        double difficulty = Math.max(0.75D, adaptiveDifficultyMultiplier);
+        configureLivingEntity(living, mobId.replace('_', ' '), section.getDouble("health", 20.0D) * difficulty, section.getDouble("damage", 3.0D) * difficulty);
         living.addScoreboardTag("rpg_mob:" + mobId);
         tagManagedEntity(living, category, owner, dungeonId, eventId, instanceId, entityTtlMillis(category));
         return living;
@@ -2408,7 +4077,8 @@ public final class RpgNetworkService {
             spawned.remove();
             return null;
         }
-        configureLivingEntity(living, bossId.replace('_', ' '), section.getDouble("health", 200.0D), 8.0D);
+        double difficulty = Math.max(0.75D, adaptiveDifficultyMultiplier);
+        configureLivingEntity(living, bossId.replace('_', ' '), section.getDouble("health", 200.0D) * difficulty, 8.0D * difficulty);
         living.addScoreboardTag("rpg_boss:" + bossId);
         tagManagedEntity(living, category, owner, null, null, instanceId, entityTtlMillis(category));
         if (dungeonId != null && !dungeonId.isBlank()) {
@@ -2424,6 +4094,9 @@ public final class RpgNetworkService {
         if (existing != null) {
             existing.cancel();
         }
+        ContentEngine.BossBehavior behavior = contentEngine.bossBehavior(bossId);
+        long baseInterval = behavior == null ? 60L : Math.max(20L, behavior.tickInterval());
+        long interval = Math.max(20L, Math.round(baseInterval / Math.max(0.75D, adaptiveDifficultyMultiplier)));
         BukkitTask task = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             if (!boss.isValid() || boss.isDead()) {
                 BukkitTask removed = bossTasks.remove(key);
@@ -2432,20 +4105,26 @@ public final class RpgNetworkService {
                 }
                 return;
             }
-            List<String> abilities = bosses.getStringList(bossId + ".abilities");
-            if (abilities.isEmpty()) {
-                return;
-            }
-            String ability = abilities.get(ThreadLocalRandom.current().nextInt(abilities.size()));
             List<Player> nearby = boss.getLocation().getNearbyPlayers(12.0D).stream().sorted(Comparator.comparingDouble(p -> p.getLocation().distanceSquared(boss.getLocation()))).toList();
             if (nearby.isEmpty()) {
                 return;
             }
+            double healthRatio = Math.max(0.0D, Math.min(1.0D, boss.getHealth() / Math.max(1.0D, boss.getAttribute(Attribute.GENERIC_MAX_HEALTH) == null ? boss.getMaxHealth() : boss.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue())));
+            ContentEngine.BossPhase activePhase = activeBossPhase(behavior, healthRatio);
+            List<String> abilities = activePhase == null || activePhase.abilities().isEmpty()
+                ? bosses.getStringList(bossId + ".abilities")
+                : activePhase.abilities();
+            if (abilities.isEmpty()) {
+                return;
+            }
+            String ability = abilities.get(ThreadLocalRandom.current().nextInt(abilities.size()));
+            boolean enraged = behavior != null && healthRatio <= behavior.enragedThreshold();
+            double groupMultiplier = behavior == null ? 1.0D : 1.0D + (Math.max(0, nearby.size() - 1) * behavior.groupScaling());
             Player target = nearby.getFirst();
             switch (ability) {
                 case "smash", "slam" -> {
                     for (Player player : nearby) {
-                        player.damage(6.0D, boss);
+                        player.damage(6.0D * groupMultiplier * (enraged ? 1.2D : 1.0D), boss);
                         Vector knockback = player.getLocation().toVector().subtract(boss.getLocation().toVector()).normalize().multiply(0.7D);
                         player.setVelocity(knockback.setY(0.25D));
                     }
@@ -2461,12 +4140,15 @@ public final class RpgNetworkService {
                     long current = boss.getWorld().getNearbyEntities(boss.getLocation(), 16.0D, 16.0D, 16.0D).stream()
                         .filter(entity -> tagValue(entity, "rpg_boss_minion:") != null)
                         .count();
+                    int summonCount = enraged ? 2 : 1;
                     if (current < cap) {
                         String minionMob = bossId.equals("forest_guardian") ? "forest_wolf" : "goblin";
-                        Player reservedOwner = ownerPlayerForEntity(boss);
-                        LivingEntity minion = spawnConfiguredMob(boss.getLocation(), reservedOwner == null ? target : reservedOwner, minionMob, null, null);
-                        if (minion != null) {
-                            minion.addScoreboardTag("rpg_boss_minion:" + bossId);
+                        for (int summon = 0; summon < summonCount && current + summon < cap; summon++) {
+                            Player reservedOwner = ownerPlayerForEntity(boss);
+                            LivingEntity minion = spawnConfiguredMob(boss.getLocation(), reservedOwner == null ? target : reservedOwner, minionMob, null, null);
+                            if (minion != null) {
+                                minion.addScoreboardTag("rpg_boss_minion:" + bossId);
+                            }
                         }
                     }
                 }
@@ -2474,7 +4156,7 @@ public final class RpgNetworkService {
                 default -> {
                 }
             }
-        }, 40L, 60L);
+        }, 40L, interval);
         bossTasks.put(key, task);
     }
 
@@ -2496,7 +4178,11 @@ public final class RpgNetworkService {
     public double totalGearBonus(RpgProfile profile) {
         double total = 0.0D;
         for (Map.Entry<String, String> entry : profile.getGearTiersView().entrySet()) {
-            total += items.getDouble("tiers." + entry.getValue() + ".stat_bonus", 0.0D);
+            String normalized = normalizedTier(entry.getValue());
+            double base = items.getDouble("tiers." + entry.getValue() + ".stat_bonus", 0.0D);
+            double normalizedMultiplier = gearTiersConfig.getDouble("tiers." + normalized + ".stat_multiplier", 1.0D);
+            double conditionMultiplier = Math.max(0.25D, profile.getGearCondition(entry.getKey()) / 100.0D);
+            total += base * normalizedMultiplier * conditionMultiplier;
         }
         return total;
     }
@@ -2552,6 +4238,219 @@ public final class RpgNetworkService {
         }
     }
 
+    private ContentEngine.BossPhase activeBossPhase(ContentEngine.BossBehavior behavior, double healthRatio) {
+        if (behavior == null || behavior.phases().isEmpty()) {
+            return null;
+        }
+        ContentEngine.BossPhase selected = behavior.phases().getFirst();
+        for (ContentEngine.BossPhase phase : behavior.phases()) {
+            if (healthRatio <= phase.healthThreshold()) {
+                selected = phase;
+            }
+        }
+        return selected;
+    }
+
+    private ContentEngine.DungeonTemplate resolveDungeonTemplate(String dungeonId) {
+        if (dungeonId == null || dungeonId.isBlank()) {
+            return null;
+        }
+        List<String> templatePool = dungeons.getStringList(dungeonId + ".template_pool");
+        String configuredTemplate = dungeons.getString(dungeonId + ".active_template", "");
+        if (!templatePool.isEmpty()) {
+            long rotationMinutes = Math.max(5L, eventSchedulerConfig.getLong("rotation.dungeon_rotation_minutes", 15L));
+            long slot = System.currentTimeMillis() / (rotationMinutes * 60_000L);
+            int index = Math.floorMod((int) (slot + Math.abs(dungeonId.hashCode())), templatePool.size());
+            configuredTemplate = templatePool.get(index);
+            contentEngine.activateDungeonTemplate(dungeonId, configuredTemplate);
+        }
+        return contentEngine.resolveDungeonTemplate(dungeonId, configuredTemplate);
+    }
+
+    private ContentEngine.DungeonTemplate resolveDungeonTemplate(String dungeonId, String instanceId) {
+        if (instanceId != null && !instanceId.isBlank()) {
+            DungeonInstanceState instance = loadDungeonInstance(instanceId);
+            if (instance != null && instance.templateId != null && !instance.templateId.isBlank()) {
+                return contentEngine.resolveDungeonTemplate(dungeonId, instance.templateId);
+            }
+        }
+        return resolveDungeonTemplate(dungeonId);
+    }
+
+    private String resolveEventRewardPool(String eventId) {
+        ContentEngine.ScheduledEvent scheduled = contentEngine.scheduledEvent(eventId);
+        if (scheduled != null && !scheduled.linkedRewardPool().isBlank()) {
+            return scheduled.linkedRewardPool();
+        }
+        return "starter";
+    }
+
+    private ContentEngine.RewardBundle composeRewardPool(String poolId, double difficulty) {
+        return contentEngine.composeRewards(poolId, Math.max(0.80D, difficulty * adaptiveRewardWeightMultiplier));
+    }
+
+    private String globalCurrencyDisplayName() {
+        return economy.getString("economy_model.global_currency.display_name", "Credits");
+    }
+
+    private String progressionCurrencyDisplayName() {
+        return economy.getString("economy_model.progression_currency.display_name", "Mastery Points");
+    }
+
+    private String genreCurrencyDisplayName(String genreId) {
+        return economy.getString("economy_model.genre_currency." + normalizeGenre(genreId) + ".display_name", normalizeGenre(genreId));
+    }
+
+    private String walletGenreSummary(RpgProfile profile) {
+        StringJoiner joiner = new StringJoiner(", ");
+        for (Map.Entry<String, Integer> entry : profile.getGenreCurrenciesView().entrySet()) {
+            joiner.add(entry.getKey() + "=" + entry.getValue() + " " + genreCurrencyDisplayName(entry.getKey()));
+        }
+        return joiner.length() == 0 ? "none" : joiner.toString();
+    }
+
+    private String walletProgressionSummary(RpgProfile profile) {
+        StringJoiner joiner = new StringJoiner(", ");
+        for (Map.Entry<String, Integer> entry : profile.getProgressionCurrenciesView().entrySet()) {
+            String display = progressionCurrencyDisplayName();
+            if (!"mastery_points".equalsIgnoreCase(entry.getKey())) {
+                display = entry.getKey();
+            }
+            joiner.add(entry.getKey() + "=" + entry.getValue() + " " + display);
+        }
+        return joiner.length() == 0 ? "none" : joiner.toString();
+    }
+
+    private String activeBuffSummary(RpgProfile profile) {
+        long now = System.currentTimeMillis();
+        StringJoiner joiner = new StringJoiner(", ");
+        for (Map.Entry<String, Long> entry : profile.getActiveBuffsView().entrySet()) {
+            if (entry.getValue() > now) {
+                joiner.add(entry.getKey() + ":" + secondsRemaining(entry.getValue()) + "s");
+            }
+        }
+        return joiner.length() == 0 ? "none" : joiner.toString();
+    }
+
+    private String normalizedTier(String rawTier) {
+        String key = rawTier == null ? "" : rawTier.toLowerCase(Locale.ROOT);
+        ConfigurationSection tiersSection = gearTiersConfig.getConfigurationSection("tiers");
+        if (tiersSection == null) {
+            return key;
+        }
+        for (String tierId : tiersSection.getKeys(false)) {
+            List<String> aliases = gearTiersConfig.getStringList("tiers." + tierId + ".aliases");
+            if (tierId.equalsIgnoreCase(key) || aliases.stream().anyMatch(alias -> alias.equalsIgnoreCase(key))) {
+                return tierId.toLowerCase(Locale.ROOT);
+            }
+        }
+        return key;
+    }
+
+    private int tierRank(String rawTier) {
+        String normalized = normalizedTier(rawTier);
+        return Math.max(1, gearTiersConfig.getInt("tiers." + normalized + ".rank", 1));
+    }
+
+    private double activeBuffMultiplier(RpgProfile profile, String field) {
+        double multiplier = 1.0D;
+        long now = System.currentTimeMillis();
+        profile.pruneExpiredBuffs(now);
+        for (String buffId : new ArrayList<>(profile.getActiveBuffsView().keySet())) {
+            if (profile.hasActiveBuff(buffId, now)) {
+                multiplier *= Math.max(1.0D, economy.getDouble("economy_model.sinks_runtime.temporary_buffs." + buffId + "." + field, 1.0D));
+            }
+        }
+        return multiplier;
+    }
+
+    private void addEconomyEarn(RpgProfile profile, String source, double amount) {
+        if (amount <= 0.0D) {
+            return;
+        }
+        profile.addGold(amount);
+        economyEarn.incrementAndGet();
+    }
+
+    private boolean spendEconomyGlobal(RpgProfile profile, double amount) {
+        if (amount <= 0.0D) {
+            return true;
+        }
+        boolean ok = profile.spendGold(amount);
+        if (ok) {
+            economySpend.incrementAndGet();
+        }
+        return ok;
+    }
+
+    private void addGenreCurrencyReward(RpgProfile profile, String sourceKey) {
+        int base = Math.max(0, economy.getInt("economy_model.rewards.genre_currency." + sourceKey, 0));
+        if (base <= 0) {
+            return;
+        }
+        int adjusted = (int) Math.round(base * activeBuffMultiplier(profile, "genre_multiplier"));
+        profile.addGenreCurrency(currentGenreId(), adjusted);
+    }
+
+    private void addProgressionCurrencyReward(RpgProfile profile, String sourceKey) {
+        int base = Math.max(0, economy.getInt("economy_model.rewards.progression_currency." + sourceKey, 0));
+        if (base <= 0) {
+            return;
+        }
+        int adjusted = (int) Math.round(base * activeBuffMultiplier(profile, "progression_multiplier"));
+        profile.addProgressionCurrency("mastery_points", adjusted);
+    }
+
+    private void awardProgressionTrack(RpgProfile profile, String sourceKey) {
+        String path = "economy_model.progression.sources." + sourceKey;
+        int masteryXp = Math.max(0, economy.getInt(path + ".mastery_xp", 0));
+        int achievement = Math.max(0, economy.getInt(path + ".achievement_points", 0));
+        int progressionCurrency = Math.max(0, economy.getInt(path + ".progression_currency", 0));
+        String activity = economy.getString(path + ".activity", sourceKey);
+        if (masteryXp > 0) {
+            int adjustedXp = (int) Math.round(masteryXp * activeBuffMultiplier(profile, "progression_multiplier"));
+            profile.addMasteryExperience(adjustedXp);
+            profile.addActivityExperience(activity, adjustedXp);
+        }
+        if (achievement > 0) {
+            profile.addAchievementPoints(achievement);
+        }
+        if (progressionCurrency > 0) {
+            int adjusted = (int) Math.round(progressionCurrency * activeBuffMultiplier(profile, "progression_multiplier"));
+            profile.addProgressionCurrency("mastery_points", adjusted);
+        }
+        int previousLevel = profile.getMasteryLevel();
+        int nextLevel = Math.max(1, (profile.getMasteryExperience() / Math.max(10, economy.getInt("economy_model.progression.mastery_base_xp", 40))) + 1);
+        if (nextLevel > previousLevel) {
+            profile.setMasteryLevel(nextLevel);
+            progressionLevelUp.incrementAndGet();
+        }
+    }
+
+    private void recordGearRewards(Map<String, Integer> itemsGranted) {
+        if (itemsGranted == null) {
+            return;
+        }
+        for (Map.Entry<String, Integer> entry : itemsGranted.entrySet()) {
+            if (entry.getValue() > 0 && items.contains("materials." + entry.getKey())) {
+                gearDrop.incrementAndGet();
+            }
+        }
+    }
+
+    private void wearOwnedGear(RpgProfile profile, int lossPerPiece) {
+        if (profile == null || lossPerPiece <= 0) {
+            return;
+        }
+        for (String gearPath : profile.getGearTiersView().keySet()) {
+            profile.wearGear(gearPath, lossPerPiece);
+        }
+    }
+
+    public boolean isTradeRestrictedMaterial(String itemId) {
+        return isHighValueItem(itemId) || isBoundMaterial(itemId);
+    }
+
     public String questStatusLine(RpgProfile profile, String questId) {
         int progress = profile.getQuestProgress(questId);
         int amount = quests.getInt(questId + ".amount", 1);
@@ -2570,8 +4469,9 @@ public final class RpgNetworkService {
     }
 
     private int spawnDungeonWave(Location origin, Player owner, String dungeonId, String instanceId) {
-        List<String> trash = dungeons.getStringList(dungeonId + ".trash_mobs");
-        int count = Math.max(6, trash.size() * 3);
+        ContentEngine.DungeonTemplate template = resolveDungeonTemplate(dungeonId, instanceId);
+        List<String> trash = template == null || template.enemyGroups().isEmpty() ? dungeons.getStringList(dungeonId + ".trash_mobs") : template.enemyGroups();
+        int count = Math.max(6, (int) Math.ceil(trash.size() * 3 * (template == null ? 1.0D : template.difficultyScaling()) * Math.max(0.75D, adaptiveDifficultyMultiplier)));
         int spawned = 0;
         for (int index = 0; index < count; index++) {
             String mobId = trash.get(index % trash.size());
@@ -2741,6 +4641,10 @@ public final class RpgNetworkService {
         return normalize(requestedName).replaceAll("[^a-z0-9_-]", "");
     }
 
+    private String normalizeGenre(String genreId) {
+        return normalize(genreId);
+    }
+
     private String normalize(String input) {
         return input == null ? "" : input.toLowerCase(Locale.ROOT).replace(' ', '_');
     }
@@ -2783,7 +4687,7 @@ public final class RpgNetworkService {
             return false;
         }
         return switch (serverRole.toLowerCase(Locale.ROOT)) {
-            case "lobby" -> "progression".equalsIgnoreCase(targetRole);
+            case "lobby" -> Set.of("progression", "boss", "event").contains(targetRole.toLowerCase(Locale.ROOT));
             case "progression" -> Set.of("lobby", "instance", "boss", "event").contains(targetRole.toLowerCase(Locale.ROOT));
             case "instance", "boss", "event" -> Set.of("progression", "lobby").contains(targetRole.toLowerCase(Locale.ROOT));
             default -> false;
@@ -3220,8 +5124,15 @@ public final class RpgNetworkService {
         return Math.max(configured, reconnectFloor) * 1000L;
     }
 
+    private long transferLeaseMillis() {
+        long configured = scaling.getLong("limits.transfer_ticket_seconds", 15L);
+        long reconnectFloor = exploit.getLong("progression.reconnect_state_hold_seconds", 30L);
+        return Math.max(configured, reconnectFloor) * 1000L;
+    }
+
     private DungeonInstanceState createDungeonInstance(UUID ownerUuid, String dungeonId, Set<UUID> partyMembers) {
-        DungeonInstanceState instance = instanceOrchestrator.allocateDungeonInstance(ownerUuid, dungeonId, partyMembers);
+        ContentEngine.DungeonTemplate template = resolveDungeonTemplate(dungeonId);
+        DungeonInstanceState instance = instanceOrchestrator.allocateDungeonInstance(ownerUuid, dungeonId, partyMembers, template);
         instanceExperimentPlane.registerInstance(InstanceExperimentControlPlane.RuntimeInstanceClass.DUNGEON_INSTANCE,
             ownerUuid == null ? "" : ownerUuid.toString(), "transfer_safety_policy:v1", "drop_rate_canary", instanceHoldMillis());
         return instance;
@@ -3439,10 +5350,30 @@ public final class RpgNetworkService {
             plugin.getLogger().warning("Unable to clear dungeon instance file: " + exception.getMessage());
         }
         instanceOrchestrator.markTerminated(instance);
+        instanceShutdown.incrementAndGet();
         long latency = Math.max(0L, System.currentTimeMillis() - started);
         cleanupLatencyTotalMillis.addAndGet(latency);
         cleanupLatencyMaxMillis.accumulateAndGet(latency, Math::max);
         writeAudit("dungeon_instance_cleanup", instance.instanceId + ":" + reason);
+    }
+
+    public OperationResult quarantineInstance(String instanceId, String reason) {
+        DungeonInstanceState instance = loadDungeonInstance(instanceId);
+        if (instance == null) {
+            return new OperationResult(false, color("&cUnknown instance: " + instanceId));
+        }
+        World world = Bukkit.getWorld(instance.worldName);
+        if (world != null) {
+            for (Player player : new ArrayList<>(world.getPlayers())) {
+                player.sendMessage(color("&cInstance quarantined: &e" + reason + "&7. Returning to safety."));
+                teleportToPrimaryWorldSpawn(player);
+            }
+        }
+        exploitFlag.incrementAndGet();
+        exportArtifact("recovery_action", instanceId, "", Map.of("reason", reason, "world", instance.worldName, "type", instance.type.name()));
+        writeAudit("instance_quarantine", instanceId + ":" + reason);
+        cleanupDungeonInstance(instance, "quarantine:" + reason);
+        return new OperationResult(true, color("&aInstance quarantined and reset: &e" + instanceId));
     }
 
     private void cleanupExpiredInstances() {
@@ -5422,6 +7353,70 @@ public final class RpgNetworkService {
         writeYaml(knowledgeDir.resolve(serverName + "-knowledge.yml"), runtimeKnowledgeIndex.snapshot().saveToString());
     }
 
+    private void pollLobbyContentBroadcasts() {
+        if (!"lobby".equalsIgnoreCase(serverRole) || Bukkit.getOnlinePlayers().isEmpty()) {
+            return;
+        }
+        String activeEventId = "";
+        long activeUntil = 0L;
+        Path eventsStateDir = runtimeDir.resolve("events");
+        if (Files.isDirectory(eventsStateDir)) {
+            try (var paths = Files.list(eventsStateDir)) {
+                for (Path path : paths.filter(entry -> entry.getFileName().toString().endsWith(".yml")).toList()) {
+                    YamlConfiguration yaml = readYaml(path);
+                    String candidate = yaml.getString("active", "");
+                    long until = yaml.getLong("active_until", 0L);
+                    if (!candidate.isBlank() && until > System.currentTimeMillis() && until >= activeUntil) {
+                        activeEventId = candidate;
+                        activeUntil = until;
+                    }
+                }
+            } catch (IOException exception) {
+                plugin.getLogger().warning("Unable to inspect event rotation state: " + exception.getMessage());
+            }
+        }
+        Map<String, String> dungeonRotations = new LinkedHashMap<>();
+        if (dungeons.getKeys(false) != null) {
+            for (String dungeonId : dungeons.getKeys(false)) {
+                ContentEngine.DungeonTemplate template = resolveDungeonTemplate(dungeonId);
+                if (template != null) {
+                    dungeonRotations.put(dungeonId, template.templateId());
+                }
+            }
+        }
+        StringBuilder summary = new StringBuilder();
+        summary.append("event=").append(activeEventId.isBlank() ? "idle" : activeEventId);
+        for (Map.Entry<String, String> entry : dungeonRotations.entrySet()) {
+            summary.append('|').append(entry.getKey()).append('=').append(entry.getValue());
+        }
+        String broadcastId = summary.toString();
+        if (broadcastId.equals(lastLobbyContentBroadcastId)) {
+            return;
+        }
+        lastLobbyContentBroadcastId = broadcastId;
+        StringBuilder message = new StringBuilder("§b[Content] §f");
+        if (activeEventId.isBlank()) {
+            message.append("No live event right now. ");
+        } else {
+            message.append("Live event: §d").append(activeEventId).append("§f via §e/play rotating_event§f. ");
+        }
+        if (!dungeonRotations.isEmpty()) {
+            message.append("Dungeon rotation ");
+            boolean first = true;
+            for (Map.Entry<String, String> entry : dungeonRotations.entrySet()) {
+                if (!first) {
+                    message.append(" §7|§f ");
+                }
+                message.append("§e").append(entry.getKey()).append("§f -> §a").append(entry.getValue());
+                first = false;
+            }
+        }
+        String outbound = message.toString();
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            player.sendMessage(outbound);
+        }
+    }
+
     private void writeHealthSnapshot() {
         YamlConfiguration yaml = new YamlConfiguration();
         yaml.set("server", serverName);
@@ -5469,6 +7464,58 @@ public final class RpgNetworkService {
         yaml.set("guild_value_drift", guildValueDriftCount());
         yaml.set("replay_divergence", replayDivergenceCount());
         yaml.set("item_ownership_conflicts", itemOwnershipConflictCount());
+        yaml.set("onboarding_started", onboardingStartedCount());
+        yaml.set("onboarding_completed", onboardingCompletedCount());
+        yaml.set("first_interaction", firstInteractionCount());
+        yaml.set("first_reward_granted", firstRewardGrantedCount());
+        yaml.set("first_branch_selected", firstBranchSelectedCount());
+        yaml.set("time_to_first_interaction_seconds_avg", onboardingTimeToFirstInteractionSecondsAvg());
+        yaml.set("time_to_first_reward_seconds_avg", onboardingTimeToFirstRewardSecondsAvg());
+        Map<String, Long> branchCounts = new LinkedHashMap<>();
+        onboardingBranchSelections.forEach((branch, count) -> branchCounts.put(branch, count.get()));
+        yaml.set("branch_selected", branchCounts);
+        yaml.set("genre_entered", genreEnteredCount());
+        yaml.set("genre_exit", genreExitCount());
+        yaml.set("genre_transfer_success", genreTransferSuccessCount());
+        yaml.set("genre_transfer_failure", genreTransferFailureCount());
+        yaml.set("genre_session_duration_seconds_avg", genreSessionDurationSecondsAvg());
+        yaml.set("dungeon_started", dungeonStartedCount());
+        yaml.set("dungeon_completed", dungeonCompletedCount());
+        yaml.set("boss_killed", bossKilledCount());
+        yaml.set("event_started", eventStartedCount());
+        yaml.set("event_join_count", eventJoinCount());
+        yaml.set("reward_distributed", rewardDistributedCount());
+        yaml.set("economy_earn", economyEarnCount());
+        yaml.set("economy_spend", economySpendCount());
+        yaml.set("gear_drop", gearDropCount());
+        yaml.set("gear_upgrade", gearUpgradeMetricCount());
+        yaml.set("progression_level_up", progressionLevelUpCount());
+        yaml.set("guild_created", guildCreatedCount());
+        yaml.set("guild_joined", guildJoinedCount());
+        yaml.set("prestige_gain", prestigeGainCount());
+        yaml.set("return_player_reward", returnPlayerRewardCount());
+        yaml.set("streak_progress", streakProgressCount());
+        yaml.set("rivalry_created", rivalryCreatedCount());
+        yaml.set("rivalry_match", rivalryMatchCount());
+        yaml.set("rivalry_reward", rivalryRewardCount());
+        yaml.set("runtime_tps", runtimeTps());
+        yaml.set("instance_spawn", instanceSpawnCount());
+        yaml.set("instance_shutdown", instanceShutdownCount());
+        yaml.set("exploit_flag", exploitFlagCount());
+        yaml.set("queue_size", queueSize());
+        yaml.set("player_density", playerDensity());
+        yaml.set("network_routing_latency_ms", networkRoutingLatencyMs());
+        yaml.set("adaptive_adjustment", adaptiveAdjustmentCount());
+        yaml.set("difficulty_change", difficultyChangeCount());
+        yaml.set("reward_adjustment", rewardAdjustmentCount());
+        yaml.set("event_frequency_change", eventFrequencyChangeCount());
+        yaml.set("matchmaking_adjustment", matchmakingAdjustmentCount());
+        yaml.set("adaptive_difficulty_multiplier", adaptiveDifficultyMultiplier);
+        yaml.set("adaptive_reward_weight_multiplier", adaptiveRewardWeightMultiplier);
+        yaml.set("adaptive_event_frequency_multiplier", adaptiveEventFrequencyMultiplier);
+        yaml.set("adaptive_matchmaking_range_multiplier", adaptiveMatchmakingRangeMultiplier);
+        yaml.set("auto_scaling_enabled", autoScalingEnabled);
+        yaml.set("debug_metrics_enabled", debugMetricsEnabled);
         yaml.set("ledger_last_flush_at", ledgerLastFlushAt.get());
         String[] exportedArtifacts = Files.exists(artifactDir) ? artifactDir.toFile().list() : null;
         yaml.set("artifact_exports", exportedArtifacts == null ? 0 : exportedArtifacts.length);
@@ -5481,6 +7528,8 @@ public final class RpgNetworkService {
         YamlConfiguration artifactRegistry = gameplayArtifactRegistry.snapshot();
         YamlConfiguration governanceRegistry = governancePolicyRegistry.snapshot();
         YamlConfiguration detectorRegistry = exploitDetectorRegistry.snapshot();
+        YamlConfiguration genreRegistrySnapshot = genreRegistry.snapshot();
+        YamlConfiguration partySnapshot = partyService.snapshot();
         yaml.set("authority_plane", authority.getValues(true));
         yaml.set("session_authority_service", sessionAuthority.getValues(true));
         yaml.set("deterministic_transfer_service", transferAuthority.getValues(true));
@@ -5490,9 +7539,13 @@ public final class RpgNetworkService {
         yaml.set("gameplay_artifact_registry", artifactRegistry.getValues(true));
         yaml.set("governance_policy_registry", governanceRegistry.getValues(true));
         yaml.set("exploit_detector_registry", detectorRegistry.getValues(true));
+        yaml.set("genre_registry", genreRegistrySnapshot.getValues(true));
+        yaml.set("party_service", partySnapshot.getValues(true));
         yaml.set("experiment_registry", experimentRegistry.snapshot().getValues(true));
         yaml.set("policy_registry", policyRegistry.snapshot().getValues(true));
         yaml.set("runtime_knowledge_index", runtimeKnowledgeIndex.snapshot().getValues(true));
+        yaml.set("adaptive_engine", telemetryAdaptiveEngine.snapshot().getValues(true));
+        yaml.set("content_engine", contentEngine.snapshot().getValues(true));
         writeYaml(runtimeDir.resolve("status").resolve(serverName + ".yml"), yaml.saveToString());
     }
 

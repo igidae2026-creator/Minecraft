@@ -7,7 +7,7 @@ import sys
 
 import yaml
 
-from helpers import ROOT
+from helpers import ROOT, dump_yaml
 
 
 def _backup_runtime(tmp_path: Path) -> Path:
@@ -28,6 +28,10 @@ def test_runtime_summary_reports_operator_surfaces(tmp_path: Path):
     try:
         status_dir = ROOT / "runtime_data" / "status"
         status_dir.mkdir(parents=True, exist_ok=True)
+        for path in status_dir.glob("*.yml"):
+            path.unlink()
+        control_dir = ROOT / "runtime_data" / "autonomy" / "control"
+        control_dir.mkdir(parents=True, exist_ok=True)
         status = {
             "session_authority_service": {
                 "session_ownership_conflicts": 2,
@@ -48,11 +52,34 @@ def test_runtime_summary_reports_operator_surfaces(tmp_path: Path):
             "policy_registry": {"rollbacks": 1},
             "runtime_knowledge_index": {"records": 7},
         }
-        (status_dir / "summary-test.yml").write_text(yaml.safe_dump(status), encoding="utf-8")
+        (status_dir / "summary-test.yml").write_text(dump_yaml(status), encoding="utf-8")
+        (control_dir / "state.yml").write_text(
+            dump_yaml(
+                {
+                    "last_mode": "hold",
+                    "last_regime": "pressured",
+                    "active_soak": {"decision_id": "aql-test"},
+                    "last_soak_resolution": {"resolution": "promote"},
+                    "steady_noop_streak": 2,
+                    "final_threshold_ready": False,
+                }
+            ),
+            encoding="utf-8",
+        )
+        (ROOT / "runtime_data" / "autonomy" / "final_threshold_eval.json").write_text(
+            '{"final_threshold_ready": false, "failed_criteria": ["long_soak_steady_noop"], "quality_lift_if_human_intervenes": 0.28}',
+            encoding="utf-8",
+        )
 
         result = subprocess.run([sys.executable, str(ROOT / "ops" / "runtime_summary.py")], cwd=ROOT, capture_output=True, text=True, check=True)
 
         assert "RUNTIME_SUMMARY" in result.stdout
+        assert "AUTONOMY_LAST_MODE=hold" in result.stdout
+        assert "AUTONOMY_LAST_REGIME=pressured" in result.stdout
+        assert "AUTONOMY_ACTIVE_SOAK=aql-test" in result.stdout
+        assert "AUTONOMY_LAST_SOAK_RESOLUTION=promote" in result.stdout
+        assert "AUTONOMY_STEADY_NOOP_STREAK=2" in result.stdout
+        assert "AUTONOMY_FINAL_THRESHOLD_READY=0" in result.stdout
         assert "SESSION_AUTHORITY_CONFLICTS=2" in result.stdout
         assert "SESSION_SPLIT_BRAIN=1" in result.stdout
         assert "TRANSFER_FAILURES=3" in result.stdout
@@ -63,6 +90,7 @@ def test_runtime_summary_reports_operator_surfaces(tmp_path: Path):
         assert "INSTANCE_LEAKS=3" in result.stdout
         assert "EXPERIMENT_ANOMALIES=3" in result.stdout
         assert "KNOWLEDGE_RECORDS=7" in result.stdout
+        assert "FINAL_THRESHOLD_BUNDLE_READY=0" in result.stdout
     finally:
         _restore_runtime(backup)
 
@@ -76,7 +104,7 @@ def test_reconcile_runtime_fails_closed_on_transfer_quarantine_and_split_brain(t
             "deterministic_transfer_service": {"quarantines": 1},
             "session_authority_service": {"split_brain_detections": 1},
         }
-        (status_dir / "fault-test.yml").write_text(yaml.safe_dump(status), encoding="utf-8")
+        (status_dir / "fault-test.yml").write_text(dump_yaml(status), encoding="utf-8")
 
         result = subprocess.run([sys.executable, str(ROOT / "ops" / "reconcile_runtime.py")], cwd=ROOT, capture_output=True, text=True)
 

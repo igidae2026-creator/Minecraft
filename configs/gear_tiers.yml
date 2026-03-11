@@ -1,0 +1,51 @@
+tiers:
+  tier1:
+    aliases:
+      - common
+    rank: 1
+    stat_multiplier: 1.0
+  tier2:
+    aliases:
+      - rare
+    rank: 2
+    stat_multiplier: 1.6
+  tier3:
+    aliases:
+      - epic
+    rank: 3
+    stat_multiplier: 2.4
+  tier4:
+    aliases:
+      - legendary
+    rank: 4
+    stat_multiplier: 3.2
+  tier5:
+    aliases:
+      - mythic
+    rank: 5
+    stat_multiplier: 4.0
+genre_reward_mapping:
+  rpg:
+    max_drop_tier: tier4
+    primary_paths:
+      - trainee_blade
+      - ranger_bow
+  dungeon:
+    max_drop_tier: tier4
+    primary_paths:
+      - guardian_blade
+      - guardian_mail
+  minigame:
+    max_drop_tier: tier2
+    primary_paths:
+      - goblin_slasher
+      - wolf_hunter_jerkin
+  event:
+    max_drop_tier: tier3
+    primary_paths:
+      - guardian_blade
+  boss:
+    max_drop_tier: tier4
+    primary_paths:
+      - guardian_blade
+      - guardian_mail

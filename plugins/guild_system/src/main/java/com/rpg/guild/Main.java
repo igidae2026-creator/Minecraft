@@ -69,10 +69,36 @@ public class Main extends JavaPlugin implements CommandExecutor {
                 sender.sendMessage(service.leaveGuild(player).message());
                 return true;
             }
+            case "chat" -> {
+                if (args.length < 2) {
+                    sender.sendMessage("/guild chat <message>");
+                    return true;
+                }
+                RpgNetworkService.OperationResult result = service.sendGuildChat(player, String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length)));
+                if (!result.ok()) {
+                    sender.sendMessage(result.message());
+                }
+                return true;
+            }
+            case "rank" -> {
+                if (args.length != 3) {
+                    sender.sendMessage("/guild rank <player> <officer|member>");
+                    return true;
+                }
+                Player target = Bukkit.getPlayerExact(args[1]);
+                if (target == null) {
+                    sender.sendMessage("Target not online.");
+                    return true;
+                }
+                sender.sendMessage(service.setGuildRank(player, target, args[2]).message());
+                return true;
+            }
             case "deposit" -> {
                 if (args.length < 3) {
                     sender.sendMessage("/guild deposit gold <amount>");
                     sender.sendMessage("/guild deposit item <item> <amount>");
+                    sender.sendMessage("/guild chat <message>");
+                    sender.sendMessage("/guild rank <player> <officer|member>");
                     return true;
                 }
                 if (args[1].equalsIgnoreCase("gold")) {
@@ -99,6 +125,8 @@ public class Main extends JavaPlugin implements CommandExecutor {
                 }
                 sender.sendMessage("/guild deposit gold <amount>");
                 sender.sendMessage("/guild deposit item <item> <amount>");
+                sender.sendMessage("/guild chat <message>");
+                sender.sendMessage("/guild rank <player> <officer|member>");
                 return true;
             }
             default -> {
@@ -108,6 +136,8 @@ public class Main extends JavaPlugin implements CommandExecutor {
                 sender.sendMessage("/guild join <name>");
                 sender.sendMessage("/guild leave");
                 sender.sendMessage("/guild deposit gold <amount>");
+                sender.sendMessage("/guild chat <message>");
+                sender.sendMessage("/guild rank <player> <officer|member>");
                 return true;
             }
         }

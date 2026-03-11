@@ -93,6 +93,12 @@ materials:
     tradable: false
     bound: true
     progression_use: boss_bonus
+  starter_token:
+    vendor_value: 0
+    stack_size: 16
+    tradable: false
+    bound: true
+    progression_use: onboarding
 gear_paths:
   trainee_blade:
     starting_tier: common

@@ -8,7 +8,7 @@ depend:
 description: Timed event rotation and bonus reward runtime
 commands:
   rpgevent:
-    usage: /rpgevent <status|force>
+    usage: /rpgevent <status|join|force>
     permission: rpg.event
 permissions:
   rpg.event:

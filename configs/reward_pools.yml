@@ -1,0 +1,23 @@
+pools:
+  starter:
+    guaranteed_items:
+      goblin_ear: 1
+    weighted_items:
+      cave_map_scrap: 0.35
+      iron_fragment: 0.20
+    progression_currency: 1
+    genre_currency: 1
+    gold: 8
+    milestone_rewards:
+      - starter_path_unlock
+  elite:
+    guaranteed_items:
+      dungeon_shard: 2
+    weighted_items:
+      guardian_seed: 0.20
+      boss_totem_fragment: 0.45
+    progression_currency: 2
+    genre_currency: 2
+    gold: 18
+    milestone_rewards:
+      - elite_content_clear

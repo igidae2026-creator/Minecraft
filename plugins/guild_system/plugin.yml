@@ -10,7 +10,7 @@ softdepend:
 description: Guild creation, invite, membership, and bank runtime
 commands:
   guild:
-    usage: /guild <info|create|invite|join|leave|deposit>
+    usage: /guild <info|create|invite|join|leave|chat|rank|deposit>
     permission: rpg.guild
 permissions:
   rpg.guild:

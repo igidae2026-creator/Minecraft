@@ -19,3 +19,21 @@ events:
     bonus_item_amount: 2
     bonus_item_chance: 0.4
     broadcast: Whispering Woods is in a frenzy.
+  guardian_uprising:
+    mob: cave_shaman
+    spawn_count: 6
+    spawn_radius: 16
+    bonus_gold: 16
+    bonus_item: guardian_seed
+    bonus_item_amount: 1
+    bonus_item_chance: 0.35
+    broadcast: Frontier guardians have awakened near the ruins.
+  frontier_cache:
+    mob: goblin
+    spawn_count: 12
+    spawn_radius: 14
+    bonus_gold: 9
+    bonus_item: iron_fragment
+    bonus_item_amount: 2
+    bonus_item_chance: 0.5
+    broadcast: A frontier cache has been exposed. Secure it before raiders do.

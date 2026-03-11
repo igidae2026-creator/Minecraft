@@ -5,8 +5,8 @@ import yaml
 from helpers import ROOT
 
 PLUGIN_COMMANDS = {
-    "rpg_core": {"rpgprofile", "rpgtravel", "rpgadmin"},
-    "economy_engine": {"wallet", "rpgvendor", "rpgupgrade"},
+    "rpg_core": {"rpgprofile", "rpgtravel", "rpgadmin", "play", "return", "genres", "party", "prestige", "streak"},
+    "economy_engine": {"wallet", "progression", "rpgvendor", "rpgupgrade", "rpgcraft", "rpgrepair", "rpgcosmetic", "rpgbuff"},
     "quest_system": {"quest"},
     "boss_ai": {"boss"},
     "dungeon_system": {"dungeon"},

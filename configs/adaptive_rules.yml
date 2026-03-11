@@ -1,0 +1,40 @@
+telemetry:
+  max_samples_per_signal: 256
+  churn_short_session_seconds: 180
+  repeated_death_threshold: 3
+  idle_warning_seconds: 120
+  queue_target_seconds: 20
+difficulty:
+  min_multiplier: 0.75
+  max_multiplier: 1.35
+  step: 0.05
+  fast_completion_seconds: 240
+  slow_completion_seconds: 720
+  high_death_rate: 0.35
+  low_death_rate: 0.1
+rewards:
+  min_multiplier: 0.8
+  max_multiplier: 1.2
+  step: 0.03
+  low_completion_rate: 0.45
+  inflation_pressure: 0.7
+events:
+  min_frequency_multiplier: 0.7
+  max_frequency_multiplier: 1.4
+  step: 0.05
+  low_join_rate: 0.4
+  overload_density: 70
+matchmaking:
+  min_range_multiplier: 0.85
+  max_range_multiplier: 1.3
+  step: 0.05
+  high_queue_seconds: 45
+  merge_queue_seconds: 60
+churn:
+  max_bonus_progression_currency: 2
+  mitigation_cooldown_seconds: 900
+  trigger_score: 3
+safety:
+  max_combined_pressure: 0.9
+  reward_floor_respects_economy: true
+  bounded_adjustments_only: true

@@ -1,7 +1,118 @@
 currency: gold
 starting_balance: 25
-market_tax: 0.08
+market_tax: 0.15
 vendor_buyback_ratio: 0.25
+economy_model:
+  global_currency:
+    id: credits
+    display_name: Credits
+  genre_currency:
+    lobby:
+      id: passes
+      display_name: Passes
+    rpg:
+      id: gold
+      display_name: Gold
+    dungeon:
+      id: relics
+      display_name: Relics
+    minigame:
+      id: tickets
+      display_name: Tickets
+    event:
+      id: sigils
+      display_name: Sigils
+    boss:
+      id: crests
+      display_name: Crests
+  progression_currency:
+    id: mastery_points
+    display_name: Mastery Points
+  progression:
+    mastery_base_xp: 40
+    sources:
+      mob_kill:
+        activity: combat
+        mastery_xp: 3
+        achievement_points: 0
+        progression_currency: 0
+      quest_turnin:
+        activity: exploration
+        mastery_xp: 12
+        achievement_points: 1
+        progression_currency: 2
+      dungeon_complete:
+        activity: dungeon
+        mastery_xp: 28
+        achievement_points: 2
+        progression_currency: 3
+      boss_kill:
+        activity: boss
+        mastery_xp: 24
+        achievement_points: 2
+        progression_currency: 2
+      event_bonus_reward:
+        activity: event
+        mastery_xp: 14
+        achievement_points: 1
+        progression_currency: 1
+      gear_upgrade:
+        activity: crafting
+        mastery_xp: 10
+        achievement_points: 1
+        progression_currency: 1
+      crafting:
+        activity: crafting
+        mastery_xp: 8
+        achievement_points: 0
+        progression_currency: 1
+      cosmetic_unlock:
+        activity: social
+        mastery_xp: 5
+        achievement_points: 1
+        progression_currency: 0
+      repair:
+        activity: maintenance
+        mastery_xp: 4
+        achievement_points: 0
+        progression_currency: 0
+  rewards:
+    genre_currency:
+      mob_kill: 1
+      quest_turnin: 2
+      dungeon_complete: 4
+      boss_kill: 5
+      event_bonus_reward: 3
+    progression_currency:
+      mob_kill: 0
+      quest_turnin: 1
+      dungeon_complete: 2
+      boss_kill: 2
+      event_bonus_reward: 1
+  sinks_runtime:
+    cosmetics:
+      frontier_banner:
+        cost_global: 60
+        description: Frontier banner title flair for lobby routing and profile status
+      ember_trail:
+        cost_global: 90
+        description: Ember-themed cosmetic flair for profile and progression surfaces
+    temporary_buffs:
+      prospector:
+        cost_global: 45
+        duration_minutes: 30
+        genre_multiplier: 2.0
+        description: Doubles genre currency gain for 30 minutes
+      mastery_focus:
+        cost_global: 45
+        duration_minutes: 30
+        progression_multiplier: 1.25
+        description: Boosts mastery point gain by 25 percent
+    repair:
+      base_cost_global: 8
+      cost_per_missing_condition: 0.45
+    crafting:
+      craft_tax_global: 6
 faucets:
   quests:
     starter_hunt: 35

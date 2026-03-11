@@ -65,6 +65,59 @@ public class Main extends JavaPlugin implements CommandExecutor {
         out.append("rpg_runtime_experiment_rollbacks_total ").append(service.experimentRollbackCount()).append('\n');
         out.append("rpg_runtime_transfer_quarantines_total ").append(service.transferQuarantineCount()).append('\n');
         out.append("rpg_runtime_knowledge_records ").append(service.runtimeKnowledgeRecordCount()).append('\n');
+        out.append("rpg_runtime_onboarding_started_total ").append(service.onboardingStartedCount()).append('\n');
+        out.append("rpg_runtime_onboarding_completed_total ").append(service.onboardingCompletedCount()).append('\n');
+        out.append("rpg_runtime_first_interaction_total ").append(service.firstInteractionCount()).append('\n');
+        out.append("rpg_runtime_first_reward_granted_total ").append(service.firstRewardGrantedCount()).append('\n');
+        out.append("rpg_runtime_first_branch_selected_total ").append(service.firstBranchSelectedCount()).append('\n');
+        out.append("rpg_runtime_time_to_first_interaction_seconds_avg ").append(String.format(Locale.US, "%.3f", service.onboardingTimeToFirstInteractionSecondsAvg())).append('\n');
+        out.append("rpg_runtime_time_to_first_reward_seconds_avg ").append(String.format(Locale.US, "%.3f", service.onboardingTimeToFirstRewardSecondsAvg())).append('\n');
+        out.append("rpg_runtime_genre_entered_total ").append(service.genreEnteredCount()).append('\n');
+        out.append("rpg_runtime_genre_exit_total ").append(service.genreExitCount()).append('\n');
+        out.append("rpg_runtime_genre_transfer_success_total ").append(service.genreTransferSuccessCount()).append('\n');
+        out.append("rpg_runtime_genre_transfer_failure_total ").append(service.genreTransferFailureCount()).append('\n');
+        out.append("rpg_runtime_genre_session_duration_seconds_avg ").append(String.format(Locale.US, "%.3f", service.genreSessionDurationSecondsAvg())).append('\n');
+        out.append("rpg_runtime_dungeon_started_total ").append(service.dungeonStartedCount()).append('\n');
+        out.append("rpg_runtime_dungeon_completed_total ").append(service.dungeonCompletedCount()).append('\n');
+        out.append("rpg_runtime_boss_killed_total ").append(service.bossKilledCount()).append('\n');
+        out.append("rpg_runtime_event_started_total ").append(service.eventStartedCount()).append('\n');
+        out.append("rpg_runtime_event_join_count_total ").append(service.eventJoinCount()).append('\n');
+        out.append("rpg_runtime_reward_distributed_total ").append(service.rewardDistributedCount()).append('\n');
+        out.append("rpg_runtime_economy_earn_total ").append(service.economyEarnCount()).append('\n');
+        out.append("rpg_runtime_economy_spend_total ").append(service.economySpendCount()).append('\n');
+        out.append("rpg_runtime_gear_drop_total ").append(service.gearDropCount()).append('\n');
+        out.append("rpg_runtime_gear_upgrade_total ").append(service.gearUpgradeMetricCount()).append('\n');
+        out.append("rpg_runtime_progression_level_up_total ").append(service.progressionLevelUpCount()).append('\n');
+        out.append("rpg_runtime_guild_created_total ").append(service.guildCreatedCount()).append('\n');
+        out.append("rpg_runtime_guild_joined_total ").append(service.guildJoinedCount()).append('\n');
+        out.append("rpg_runtime_prestige_gain_total ").append(service.prestigeGainCount()).append('\n');
+        out.append("rpg_runtime_return_player_reward_total ").append(service.returnPlayerRewardCount()).append('\n');
+        out.append("rpg_runtime_streak_progress_total ").append(service.streakProgressCount()).append('\n');
+        out.append("rpg_runtime_rivalry_created_total ").append(service.rivalryCreatedCount()).append('\n');
+        out.append("rpg_runtime_rivalry_match_total ").append(service.rivalryMatchCount()).append('\n');
+        out.append("rpg_runtime_rivalry_reward_total ").append(service.rivalryRewardCount()).append('\n');
+        out.append("guild_created ").append(service.guildCreatedCount()).append('\n');
+        out.append("guild_joined ").append(service.guildJoinedCount()).append('\n');
+        out.append("prestige_gain ").append(service.prestigeGainCount()).append('\n');
+        out.append("return_player_reward ").append(service.returnPlayerRewardCount()).append('\n');
+        out.append("streak_progress ").append(service.streakProgressCount()).append('\n');
+        out.append("runtime_tps ").append(String.format(Locale.US, "%.2f", service.runtimeTps())).append('\n');
+        out.append("instance_spawn ").append(service.instanceSpawnCount()).append('\n');
+        out.append("instance_shutdown ").append(service.instanceShutdownCount()).append('\n');
+        out.append("exploit_flag ").append(service.exploitFlagCount()).append('\n');
+        out.append("queue_size ").append(service.queueSize()).append('\n');
+        out.append("player_density ").append(service.playerDensity()).append('\n');
+        out.append("network_routing_latency_ms ").append(String.format(Locale.US, "%.2f", service.networkRoutingLatencyMs())).append('\n');
+        out.append("adaptive_adjustment ").append(service.adaptiveAdjustmentCount()).append('\n');
+        out.append("difficulty_change ").append(service.difficultyChangeCount()).append('\n');
+        out.append("reward_adjustment ").append(service.rewardAdjustmentCount()).append('\n');
+        out.append("event_frequency_change ").append(service.eventFrequencyChangeCount()).append('\n');
+        out.append("matchmaking_adjustment ").append(service.matchmakingAdjustmentCount()).append('\n');
+        out.append("rpg_runtime_adaptive_adjustment_total ").append(service.adaptiveAdjustmentCount()).append('\n');
+        out.append("rpg_runtime_difficulty_change_total ").append(service.difficultyChangeCount()).append('\n');
+        out.append("rpg_runtime_reward_adjustment_total ").append(service.rewardAdjustmentCount()).append('\n');
+        out.append("rpg_runtime_event_frequency_change_total ").append(service.eventFrequencyChangeCount()).append('\n');
+        out.append("rpg_runtime_matchmaking_adjustment_total ").append(service.matchmakingAdjustmentCount()).append('\n');
         out.append("rpg_runtime_instance_cleanup_failures_total ").append(service.cleanupFailureCount()).append('\n');
         out.append("rpg_runtime_instance_cleanup_latency_ms_avg ").append(String.format(Locale.US, "%.3f", service.cleanupLatencyMsAvg())).append('\n');
         out.append("rpg_runtime_instance_cleanup_latency_ms_max ").append(String.format(Locale.US, "%.3f", service.cleanupLatencyMsMax())).append('\n');
@@ -208,6 +261,36 @@ public class Main extends JavaPlugin implements CommandExecutor {
             + " sessionConflicts=" + service.authoritySessionConflictCount()
             + " splitBrain=" + service.authoritySplitBrainDetectionCount()
             + " transferQuarantines=" + service.transferQuarantineCount()
+            + " genreTransfers=" + service.genreTransferSuccessCount()
+            + "/" + service.genreTransferFailureCount()
+            + " dungeonFlow=" + service.dungeonStartedCount()
+            + "/" + service.dungeonCompletedCount()
+            + " bosses=" + service.bossKilledCount()
+            + " events=" + service.eventStartedCount()
+            + "/" + service.eventJoinCount()
+            + " rewards=" + service.rewardDistributedCount()
+            + " economy=" + service.economyEarnCount()
+            + "/" + service.economySpendCount()
+            + " gear=" + service.gearDropCount()
+            + "/" + service.gearUpgradeMetricCount()
+            + " progressionUps=" + service.progressionLevelUpCount()
+            + " guildSocial=" + service.guildCreatedCount()
+            + "/" + service.guildJoinedCount()
+            + " prestige=" + service.prestigeGainCount()
+            + " returnRewards=" + service.returnPlayerRewardCount()
+            + " streaks=" + service.streakProgressCount()
+            + " rivalry=" + service.rivalryCreatedCount()
+            + "/" + service.rivalryMatchCount()
+            + "/" + service.rivalryRewardCount()
+            + " queue=" + service.queueSize()
+            + " density=" + service.playerDensity()
+            + " opsTps=" + String.format(Locale.US, "%.2f", service.runtimeTps())
+            + " routeMs=" + String.format(Locale.US, "%.2f", service.networkRoutingLatencyMs())
+            + " adaptive=" + service.adaptiveAdjustmentCount()
+            + "/" + service.difficultyChangeCount()
+            + "/" + service.rewardAdjustmentCount()
+            + "/" + service.eventFrequencyChangeCount()
+            + "/" + service.matchmakingAdjustmentCount()
             + " guildDrift=" + service.guildValueDriftCount()
             + " itemQuarantine=" + service.economyItemQuarantineCount()
             + " exploitIncidents=" + service.exploitIncidentCount()

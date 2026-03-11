@@ -1,8 +1,8 @@
 signals:
   novelty: 0.35
-  diversity: 0.40
+  diversity: 0.4
   efficiency: 0.25
-  repair: 0.20
+  repair: 0.2
   domain_shift: 0.25
 scales:
   ledger_backlog: 128
@@ -14,6 +14,6 @@ scales:
 controls:
   noncritical_spawn_suppression: true
   noncritical_spawn_suppression_threshold: 0.75
-  experiment_admission_threshold: 0.80
+  experiment_admission_threshold: 0.8
   queue_admission_threshold: 0.85
-  repair_priority_threshold: 0.60
+  repair_priority_threshold: 0.6

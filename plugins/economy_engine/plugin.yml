@@ -13,12 +13,27 @@ commands:
   wallet:
     usage: /wallet
     permission: rpg.wallet
+  progression:
+    usage: /progression
+    permission: rpg.wallet
   rpgvendor:
     usage: /rpgvendor sell <item> <amount>
     permission: rpg.vendor
   rpgupgrade:
     usage: /rpgupgrade <gear_path>
     permission: rpg.upgrade
+  rpgcraft:
+    usage: /rpgcraft <recipe>
+    permission: rpg.upgrade
+  rpgrepair:
+    usage: /rpgrepair <gear_path>
+    permission: rpg.upgrade
+  rpgcosmetic:
+    usage: /rpgcosmetic <list|buy|equip> [id]
+    permission: rpg.wallet
+  rpgbuff:
+    usage: /rpgbuff <list|buy> [id]
+    permission: rpg.wallet
 permissions:
   rpg.wallet:
     default: true

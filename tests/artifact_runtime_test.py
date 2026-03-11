@@ -12,6 +12,8 @@ def test_runtime_artifact_and_item_authority_surfaces_exist():
     assert network["data_flow"]["experiment_registry"] == "runtime_data/experiments"
     assert network["data_flow"]["incident_artifacts"] == "runtime_data/incidents"
     assert persistence["redis"]["required_for_session_authority"] is False
+    assert network["data_flow"]["artifact_proposals"] == "runtime_data/artifact_proposals"
+    assert network["data_flow"]["canonical_artifacts"] == "runtime_data/canonical_artifacts"
 
     assert (ROOT / "runtime_data" / "artifacts").is_dir()
     assert (ROOT / "runtime_data" / "policies").is_dir()
@@ -19,6 +21,8 @@ def test_runtime_artifact_and_item_authority_surfaces_exist():
     assert (ROOT / "runtime_data" / "incidents").is_dir()
     assert (ROOT / "runtime_data" / "coordination").is_dir()
     assert (ROOT / "runtime_data" / "knowledge").is_dir()
+    assert (ROOT / "runtime_data" / "artifact_proposals").is_dir()
+    assert (ROOT / "runtime_data" / "canonical_artifacts").is_dir()
     assert (ROOT / "runtime_data" / "item_authority" / "owners").is_dir()
     assert (ROOT / "runtime_data" / "status").is_dir()
 

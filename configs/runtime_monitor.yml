@@ -1,0 +1,30 @@
+health_thresholds:
+  sample_interval_seconds: 10
+  tps_warning: 18.0
+  tps_critical: 15.0
+  entity_limit: 400
+  player_density_limit: 80
+  event_load_limit: 45
+  dungeon_instance_limit: 60
+  routing_latency_warning_ms: 80
+  routing_latency_critical_ms: 150
+scaling:
+  enabled: true
+  density_scale_trigger: 65
+  close_idle_instances_seconds: 180
+  new_player_route_mode: healthiest
+queue:
+  enabled: true
+  max_queue_size: 200
+  estimated_seconds_per_slot: 4
+  login_storm_window_seconds: 15
+  login_storm_limit: 45
+  prioritize_parties: true
+exploit_detection:
+  duplicate_reward_spike: 3
+  abnormal_currency_gain: 1000
+  rollback_spike: 2
+  entity_spawn_anomaly: 40
+admin:
+  scaling_default: true
+  debug_metrics_default: false

@@ -7,6 +7,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import org.bukkit.configuration.ConfigurationSection;
@@ -43,6 +44,32 @@ public final class RpgProfile {
     private long updatedAt;
     private long lastJoinAt;
     private long lastQuitAt;
+    private long onboardingStartedAt;
+    private long onboardingCompletedAt;
+    private long onboardingFirstInteractionAt;
+    private long onboardingFirstRewardAt;
+    private String onboardingBranch = "";
+    private String onboardingDestination = "";
+    private String currentGenre = "";
+    private String lastWorldVisited = "";
+    private String shardRoutingHint = "";
+    private long currentGenreEnteredAt;
+    private final Map<String, Long> genreSessionDurations = new LinkedHashMap<>();
+    private final Map<String, Integer> genreVisitCounts = new LinkedHashMap<>();
+    private final Map<String, Integer> genreCurrencies = new LinkedHashMap<>();
+    private final Map<String, Integer> progressionCurrencies = new LinkedHashMap<>();
+    private int masteryExperience;
+    private int masteryLevel = 1;
+    private int achievementPoints;
+    private final Map<String, Integer> activityExperience = new LinkedHashMap<>();
+    private final Set<String> ownedCosmetics = new LinkedHashSet<>();
+    private String equippedCosmetic = "";
+    private final Map<String, Long> activeBuffs = new LinkedHashMap<>();
+    private final Map<String, Integer> gearCondition = new LinkedHashMap<>();
+    private int prestigePoints;
+    private String prestigeBadge = "";
+    private final Map<String, Integer> streakCounts = new LinkedHashMap<>();
+    private final Map<String, String> streakDates = new LinkedHashMap<>();
 
     public RpgProfile(UUID uuid, String lastName) {
         this.uuid = uuid;
@@ -59,6 +86,16 @@ public final class RpgProfile {
         profile.updatedAt = yaml.getLong("updated_at", profile.createdAt);
         profile.lastJoinAt = yaml.getLong("last_join_at", 0L);
         profile.lastQuitAt = yaml.getLong("last_quit_at", 0L);
+        profile.onboardingStartedAt = yaml.getLong("onboarding.started_at", 0L);
+        profile.onboardingCompletedAt = yaml.getLong("onboarding.completed_at", 0L);
+        profile.onboardingFirstInteractionAt = yaml.getLong("onboarding.first_interaction_at", 0L);
+        profile.onboardingFirstRewardAt = yaml.getLong("onboarding.first_reward_at", 0L);
+        profile.onboardingBranch = yaml.getString("onboarding.branch", "");
+        profile.onboardingDestination = yaml.getString("onboarding.destination", "");
+        profile.currentGenre = yaml.getString("genres.current", "");
+        profile.lastWorldVisited = yaml.getString("genres.last_world_visited", "");
+        profile.shardRoutingHint = yaml.getString("genres.shard_routing_hint", "");
+        profile.currentGenreEnteredAt = yaml.getLong("genres.current_entered_at", 0L);
         profile.totalGoldEarned = yaml.getDouble("stats.total_gold_earned", 0.0D);
         profile.totalGoldSpent = yaml.getDouble("stats.total_gold_spent", 0.0D);
         profile.transfers = yaml.getInt("stats.transfers", 0);
@@ -83,6 +120,22 @@ public final class RpgProfile {
         loadLongMap(yaml.getConfigurationSection("nonces"), profile.processedNonces);
         loadLongMap(yaml.getConfigurationSection("claims"), profile.claimedOperations);
         loadIntMap(yaml.getConfigurationSection("stats.kills"), profile.killCounts);
+        loadLongMap(yaml.getConfigurationSection("genres.session_durations"), profile.genreSessionDurations);
+        loadIntMap(yaml.getConfigurationSection("genres.visit_counts"), profile.genreVisitCounts);
+        loadIntMap(yaml.getConfigurationSection("currencies.genre"), profile.genreCurrencies);
+        loadIntMap(yaml.getConfigurationSection("currencies.progression"), profile.progressionCurrencies);
+        profile.masteryExperience = Math.max(0, yaml.getInt("progression.mastery_experience", 0));
+        profile.masteryLevel = Math.max(1, yaml.getInt("progression.mastery_level", 1));
+        profile.achievementPoints = Math.max(0, yaml.getInt("progression.achievement_points", 0));
+        loadIntMap(yaml.getConfigurationSection("progression.activity_experience"), profile.activityExperience);
+        profile.ownedCosmetics.addAll(yaml.getStringList("cosmetics.owned"));
+        profile.equippedCosmetic = yaml.getString("cosmetics.equipped", "");
+        loadLongMap(yaml.getConfigurationSection("buffs.active"), profile.activeBuffs);
+        loadIntMap(yaml.getConfigurationSection("gear_condition"), profile.gearCondition);
+        profile.prestigePoints = Math.max(0, yaml.getInt("social.prestige_points", 0));
+        profile.prestigeBadge = yaml.getString("social.prestige_badge", "");
+        loadIntMap(yaml.getConfigurationSection("social.streaks.counts"), profile.streakCounts);
+        loadStringMap(yaml.getConfigurationSection("social.streaks.dates"), profile.streakDates);
 
         if (profile.lastName == null || profile.lastName.isBlank()) {
             profile.lastName = defaultName;
@@ -111,6 +164,7 @@ public final class RpgProfile {
         copy.bossDailyBonusDate.putAll(bossDailyBonusDate);
         copy.guildName = guildName;
         copy.processedNonces.putAll(processedNonces);
+        copy.claimedOperations.putAll(claimedOperations);
         copy.killCounts.putAll(killCounts);
         copy.totalGoldEarned = totalGoldEarned;
         copy.totalGoldSpent = totalGoldSpent;
@@ -119,6 +173,32 @@ public final class RpgProfile {
         copy.updatedAt = updatedAt;
         copy.lastJoinAt = lastJoinAt;
         copy.lastQuitAt = lastQuitAt;
+        copy.onboardingStartedAt = onboardingStartedAt;
+        copy.onboardingCompletedAt = onboardingCompletedAt;
+        copy.onboardingFirstInteractionAt = onboardingFirstInteractionAt;
+        copy.onboardingFirstRewardAt = onboardingFirstRewardAt;
+        copy.onboardingBranch = onboardingBranch;
+        copy.onboardingDestination = onboardingDestination;
+        copy.currentGenre = currentGenre;
+        copy.lastWorldVisited = lastWorldVisited;
+        copy.shardRoutingHint = shardRoutingHint;
+        copy.currentGenreEnteredAt = currentGenreEnteredAt;
+        copy.genreSessionDurations.putAll(genreSessionDurations);
+        copy.genreVisitCounts.putAll(genreVisitCounts);
+        copy.genreCurrencies.putAll(genreCurrencies);
+        copy.progressionCurrencies.putAll(progressionCurrencies);
+        copy.masteryExperience = masteryExperience;
+        copy.masteryLevel = masteryLevel;
+        copy.achievementPoints = achievementPoints;
+        copy.activityExperience.putAll(activityExperience);
+        copy.ownedCosmetics.addAll(ownedCosmetics);
+        copy.equippedCosmetic = equippedCosmetic;
+        copy.activeBuffs.putAll(activeBuffs);
+        copy.gearCondition.putAll(gearCondition);
+        copy.prestigePoints = prestigePoints;
+        copy.prestigeBadge = prestigeBadge;
+        copy.streakCounts.putAll(streakCounts);
+        copy.streakDates.putAll(streakDates);
         return copy;
     }
 
@@ -131,6 +211,33 @@ public final class RpgProfile {
         yaml.set("updated_at", updatedAt);
         yaml.set("last_join_at", lastJoinAt);
         yaml.set("last_quit_at", lastQuitAt);
+        yaml.set("onboarding.started_at", onboardingStartedAt);
+        yaml.set("onboarding.completed_at", onboardingCompletedAt);
+        yaml.set("onboarding.first_interaction_at", onboardingFirstInteractionAt);
+        yaml.set("onboarding.first_reward_at", onboardingFirstRewardAt);
+        yaml.set("onboarding.branch", onboardingBranch);
+        yaml.set("onboarding.destination", onboardingDestination);
+        yaml.set("genres.current", currentGenre);
+        yaml.set("genres.last_world_visited", lastWorldVisited);
+        yaml.set("genres.shard_routing_hint", shardRoutingHint);
+        yaml.set("genres.current_entered_at", currentGenreEnteredAt);
+        yaml.set("genres.session_durations", new LinkedHashMap<>(genreSessionDurations));
+        yaml.set("genres.visit_counts", new LinkedHashMap<>(genreVisitCounts));
+        yaml.set("currencies.global", gold);
+        yaml.set("currencies.genre", new LinkedHashMap<>(genreCurrencies));
+        yaml.set("currencies.progression", new LinkedHashMap<>(progressionCurrencies));
+        yaml.set("progression.mastery_experience", masteryExperience);
+        yaml.set("progression.mastery_level", masteryLevel);
+        yaml.set("progression.achievement_points", achievementPoints);
+        yaml.set("progression.activity_experience", new LinkedHashMap<>(activityExperience));
+        yaml.set("cosmetics.owned", new ArrayList<>(ownedCosmetics));
+        yaml.set("cosmetics.equipped", equippedCosmetic);
+        yaml.set("buffs.active", new LinkedHashMap<>(activeBuffs));
+        yaml.set("gear_condition", new LinkedHashMap<>(gearCondition));
+        yaml.set("social.prestige_points", prestigePoints);
+        yaml.set("social.prestige_badge", prestigeBadge);
+        yaml.set("social.streaks.counts", new LinkedHashMap<>(streakCounts));
+        yaml.set("social.streaks.dates", new LinkedHashMap<>(streakDates));
         yaml.set("inventory", new LinkedHashMap<>(inventory));
         yaml.set("gear", new LinkedHashMap<>(gearTiers));
         yaml.set("skills_xp", new LinkedHashMap<>(skillXp));
@@ -325,6 +432,7 @@ public final class RpgProfile {
         }
         if (!tier.equals(gearTiers.get(gearPath))) {
             gearTiers.put(gearPath, tier);
+            gearCondition.putIfAbsent(gearPath, 100);
             this.updatedAt = System.currentTimeMillis();
         }
     }
@@ -332,8 +440,34 @@ public final class RpgProfile {
     public void ensureGearTier(String gearPath, String defaultTier) {
         if (!gearTiers.containsKey(gearPath)) {
             gearTiers.put(gearPath, defaultTier);
+            gearCondition.putIfAbsent(gearPath, 100);
             this.updatedAt = System.currentTimeMillis();
         }
+    }
+
+    public int getGearCondition(String gearPath) {
+        return Math.max(0, Math.min(100, gearCondition.getOrDefault(gearPath == null ? "" : gearPath.toLowerCase(Locale.ROOT), 100)));
+    }
+
+    public void setGearCondition(String gearPath, int condition) {
+        if (gearPath == null || gearPath.isBlank()) {
+            return;
+        }
+        String key = gearPath.toLowerCase(Locale.ROOT);
+        int bounded = Math.max(0, Math.min(100, condition));
+        gearCondition.put(key, bounded);
+        this.updatedAt = System.currentTimeMillis();
+    }
+
+    public void wearGear(String gearPath, int loss) {
+        if (gearPath == null || gearPath.isBlank() || loss <= 0) {
+            return;
+        }
+        setGearCondition(gearPath, getGearCondition(gearPath) - loss);
+    }
+
+    public Map<String, Integer> getGearConditionView() {
+        return Collections.unmodifiableMap(gearCondition);
     }
 
     public double getSkillXp(String skill) {
@@ -619,6 +753,337 @@ public final class RpgProfile {
             this.lastQuitAt = lastQuitAt;
             this.updatedAt = System.currentTimeMillis();
         }
+    }
+
+    public long getOnboardingStartedAt() {
+        return onboardingStartedAt;
+    }
+
+    public void setOnboardingStartedAt(long onboardingStartedAt) {
+        if (this.onboardingStartedAt != onboardingStartedAt) {
+            this.onboardingStartedAt = onboardingStartedAt;
+            this.updatedAt = System.currentTimeMillis();
+        }
+    }
+
+    public long getOnboardingCompletedAt() {
+        return onboardingCompletedAt;
+    }
+
+    public void setOnboardingCompletedAt(long onboardingCompletedAt) {
+        if (this.onboardingCompletedAt != onboardingCompletedAt) {
+            this.onboardingCompletedAt = onboardingCompletedAt;
+            this.updatedAt = System.currentTimeMillis();
+        }
+    }
+
+    public long getOnboardingFirstInteractionAt() {
+        return onboardingFirstInteractionAt;
+    }
+
+    public void setOnboardingFirstInteractionAt(long onboardingFirstInteractionAt) {
+        if (this.onboardingFirstInteractionAt != onboardingFirstInteractionAt) {
+            this.onboardingFirstInteractionAt = onboardingFirstInteractionAt;
+            this.updatedAt = System.currentTimeMillis();
+        }
+    }
+
+    public long getOnboardingFirstRewardAt() {
+        return onboardingFirstRewardAt;
+    }
+
+    public void setOnboardingFirstRewardAt(long onboardingFirstRewardAt) {
+        if (this.onboardingFirstRewardAt != onboardingFirstRewardAt) {
+            this.onboardingFirstRewardAt = onboardingFirstRewardAt;
+            this.updatedAt = System.currentTimeMillis();
+        }
+    }
+
+    public String getOnboardingBranch() {
+        return onboardingBranch;
+    }
+
+    public void setOnboardingBranch(String onboardingBranch) {
+        String next = onboardingBranch == null ? "" : onboardingBranch.toLowerCase(Locale.ROOT);
+        if (!next.equals(this.onboardingBranch)) {
+            this.onboardingBranch = next;
+            this.updatedAt = System.currentTimeMillis();
+        }
+    }
+
+    public String getOnboardingDestination() {
+        return onboardingDestination;
+    }
+
+    public void setOnboardingDestination(String onboardingDestination) {
+        String next = onboardingDestination == null ? "" : onboardingDestination.toLowerCase(Locale.ROOT);
+        if (!next.equals(this.onboardingDestination)) {
+            this.onboardingDestination = next;
+            this.updatedAt = System.currentTimeMillis();
+        }
+    }
+
+    public boolean isOnboardingComplete() {
+        return onboardingCompletedAt > 0L;
+    }
+
+    public String getCurrentGenre() {
+        return currentGenre;
+    }
+
+    public void setCurrentGenre(String currentGenre) {
+        String next = currentGenre == null ? "" : currentGenre.toLowerCase(Locale.ROOT);
+        if (!next.equals(this.currentGenre)) {
+            this.currentGenre = next;
+            this.updatedAt = System.currentTimeMillis();
+        }
+    }
+
+    public String getLastWorldVisited() {
+        return lastWorldVisited;
+    }
+
+    public void setLastWorldVisited(String lastWorldVisited) {
+        String next = lastWorldVisited == null ? "" : lastWorldVisited.toLowerCase(Locale.ROOT);
+        if (!next.equals(this.lastWorldVisited)) {
+            this.lastWorldVisited = next;
+            this.updatedAt = System.currentTimeMillis();
+        }
+    }
+
+    public String getShardRoutingHint() {
+        return shardRoutingHint;
+    }
+
+    public void setShardRoutingHint(String shardRoutingHint) {
+        String next = shardRoutingHint == null ? "" : shardRoutingHint.toLowerCase(Locale.ROOT);
+        if (!next.equals(this.shardRoutingHint)) {
+            this.shardRoutingHint = next;
+            this.updatedAt = System.currentTimeMillis();
+        }
+    }
+
+    public long getCurrentGenreEnteredAt() {
+        return currentGenreEnteredAt;
+    }
+
+    public void setCurrentGenreEnteredAt(long currentGenreEnteredAt) {
+        if (this.currentGenreEnteredAt != currentGenreEnteredAt) {
+            this.currentGenreEnteredAt = currentGenreEnteredAt;
+            this.updatedAt = System.currentTimeMillis();
+        }
+    }
+
+    public void addGenreCurrency(String genreId, int delta) {
+        if (genreId == null || genreId.isBlank() || delta == 0) {
+            return;
+        }
+        String key = genreId.toLowerCase(Locale.ROOT);
+        genreCurrencies.put(key, Math.max(0, genreCurrencies.getOrDefault(key, 0) + delta));
+        this.updatedAt = System.currentTimeMillis();
+    }
+
+    public int getGenreCurrency(String genreId) {
+        return genreCurrencies.getOrDefault(genreId == null ? "" : genreId.toLowerCase(Locale.ROOT), 0);
+    }
+
+    public Map<String, Integer> getGenreCurrenciesView() {
+        return Collections.unmodifiableMap(genreCurrencies);
+    }
+
+    public void addProgressionCurrency(String currencyId, int delta) {
+        if (currencyId == null || currencyId.isBlank() || delta == 0) {
+            return;
+        }
+        String key = currencyId.toLowerCase(Locale.ROOT);
+        progressionCurrencies.put(key, Math.max(0, progressionCurrencies.getOrDefault(key, 0) + delta));
+        this.updatedAt = System.currentTimeMillis();
+    }
+
+    public int getProgressionCurrency(String currencyId) {
+        return progressionCurrencies.getOrDefault(currencyId == null ? "" : currencyId.toLowerCase(Locale.ROOT), 0);
+    }
+
+    public Map<String, Integer> getProgressionCurrenciesView() {
+        return Collections.unmodifiableMap(progressionCurrencies);
+    }
+
+    public int getMasteryExperience() {
+        return masteryExperience;
+    }
+
+    public void addMasteryExperience(int amount) {
+        if (amount <= 0) {
+            return;
+        }
+        masteryExperience += amount;
+        updatedAt = System.currentTimeMillis();
+    }
+
+    public int getMasteryLevel() {
+        return masteryLevel;
+    }
+
+    public void setMasteryLevel(int masteryLevel) {
+        int next = Math.max(1, masteryLevel);
+        if (this.masteryLevel != next) {
+            this.masteryLevel = next;
+            updatedAt = System.currentTimeMillis();
+        }
+    }
+
+    public int getAchievementPoints() {
+        return achievementPoints;
+    }
+
+    public void addAchievementPoints(int delta) {
+        if (delta == 0) {
+            return;
+        }
+        achievementPoints = Math.max(0, achievementPoints + delta);
+        updatedAt = System.currentTimeMillis();
+    }
+
+    public void addActivityExperience(String activityId, int amount) {
+        if (activityId == null || activityId.isBlank() || amount <= 0) {
+            return;
+        }
+        String key = activityId.toLowerCase(Locale.ROOT);
+        activityExperience.put(key, Math.max(0, activityExperience.getOrDefault(key, 0) + amount));
+        updatedAt = System.currentTimeMillis();
+    }
+
+    public int getActivityExperience(String activityId) {
+        return activityExperience.getOrDefault(activityId == null ? "" : activityId.toLowerCase(Locale.ROOT), 0);
+    }
+
+    public Map<String, Integer> getActivityExperienceView() {
+        return Collections.unmodifiableMap(activityExperience);
+    }
+
+    public void unlockCosmetic(String cosmeticId) {
+        if (cosmeticId == null || cosmeticId.isBlank()) {
+            return;
+        }
+        if (ownedCosmetics.add(cosmeticId.toLowerCase(Locale.ROOT))) {
+            updatedAt = System.currentTimeMillis();
+        }
+    }
+
+    public boolean ownsCosmetic(String cosmeticId) {
+        return ownedCosmetics.contains(cosmeticId == null ? "" : cosmeticId.toLowerCase(Locale.ROOT));
+    }
+
+    public Set<String> getOwnedCosmeticsView() {
+        return Collections.unmodifiableSet(ownedCosmetics);
+    }
+
+    public String getEquippedCosmetic() {
+        return equippedCosmetic;
+    }
+
+    public void setEquippedCosmetic(String cosmeticId) {
+        String key = cosmeticId == null ? "" : cosmeticId.toLowerCase(Locale.ROOT);
+        if (!Objects.equals(equippedCosmetic, key)) {
+            equippedCosmetic = key;
+            updatedAt = System.currentTimeMillis();
+        }
+    }
+
+    public void activateBuff(String buffId, long expiresAt) {
+        if (buffId == null || buffId.isBlank() || expiresAt <= 0L) {
+            return;
+        }
+        activeBuffs.put(buffId.toLowerCase(Locale.ROOT), expiresAt);
+        updatedAt = System.currentTimeMillis();
+    }
+
+    public long getBuffExpiry(String buffId) {
+        return activeBuffs.getOrDefault(buffId == null ? "" : buffId.toLowerCase(Locale.ROOT), 0L);
+    }
+
+    public boolean hasActiveBuff(String buffId, long now) {
+        return getBuffExpiry(buffId) > now;
+    }
+
+    public void pruneExpiredBuffs(long now) {
+        if (activeBuffs.entrySet().removeIf(entry -> entry.getValue() <= now)) {
+            updatedAt = System.currentTimeMillis();
+        }
+    }
+
+    public Map<String, Long> getActiveBuffsView() {
+        return Collections.unmodifiableMap(activeBuffs);
+    }
+
+    public void enterGenre(String genreId, String worldName, String shardHint, long now) {
+        String normalizedGenre = genreId == null ? "" : genreId.toLowerCase(Locale.ROOT);
+        if (!currentGenre.isBlank() && currentGenreEnteredAt > 0L) {
+            long duration = Math.max(0L, now - currentGenreEnteredAt);
+            genreSessionDurations.put(currentGenre, genreSessionDurations.getOrDefault(currentGenre, 0L) + duration);
+        }
+        currentGenre = normalizedGenre;
+        lastWorldVisited = worldName == null ? "" : worldName.toLowerCase(Locale.ROOT);
+        shardRoutingHint = shardHint == null ? "" : shardHint.toLowerCase(Locale.ROOT);
+        currentGenreEnteredAt = now;
+        genreVisitCounts.put(normalizedGenre, genreVisitCounts.getOrDefault(normalizedGenre, 0) + 1);
+        updatedAt = System.currentTimeMillis();
+    }
+
+    public Map<String, Long> getGenreSessionDurationsView() {
+        return Collections.unmodifiableMap(genreSessionDurations);
+    }
+
+    public int getPrestigePoints() {
+        return prestigePoints;
+    }
+
+    public void addPrestigePoints(int delta) {
+        if (delta <= 0) {
+            return;
+        }
+        prestigePoints += delta;
+        updatedAt = System.currentTimeMillis();
+    }
+
+    public String getPrestigeBadge() {
+        return prestigeBadge;
+    }
+
+    public void setPrestigeBadge(String prestigeBadge) {
+        String next = prestigeBadge == null ? "" : prestigeBadge.toLowerCase(Locale.ROOT);
+        if (!Objects.equals(this.prestigeBadge, next)) {
+            this.prestigeBadge = next;
+            updatedAt = System.currentTimeMillis();
+        }
+    }
+
+    public int getStreakCount(String streakId) {
+        return streakCounts.getOrDefault(streakId == null ? "" : streakId.toLowerCase(Locale.ROOT), 0);
+    }
+
+    public void setStreakCount(String streakId, int count) {
+        if (streakId == null || streakId.isBlank()) {
+            return;
+        }
+        streakCounts.put(streakId.toLowerCase(Locale.ROOT), Math.max(0, count));
+        updatedAt = System.currentTimeMillis();
+    }
+
+    public String getStreakDate(String streakId) {
+        return streakDates.getOrDefault(streakId == null ? "" : streakId.toLowerCase(Locale.ROOT), "");
+    }
+
+    public void setStreakDate(String streakId, String dateKey) {
+        if (streakId == null || streakId.isBlank()) {
+            return;
+        }
+        streakDates.put(streakId.toLowerCase(Locale.ROOT), dateKey == null ? "" : dateKey.toLowerCase(Locale.ROOT));
+        updatedAt = System.currentTimeMillis();
+    }
+
+    public Map<String, Integer> getStreakCountsView() {
+        return Collections.unmodifiableMap(streakCounts);
     }
 
     public List<String> inventorySummary(int limit) {

@@ -1,5 +1,6 @@
 package com.rpg.event;
 
+import com.rpg.core.ContentEngine;
 import com.rpg.core.RpgNetworkService;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -22,6 +23,8 @@ import org.bukkit.plugin.java.JavaPlugin;
 public class Main extends JavaPlugin implements Listener, CommandExecutor {
     private RpgNetworkService service;
     private String activeEventId = "";
+    private String activeEventType = "";
+    private String activeRewardPool = "";
     private long activeUntilMillis;
     private long nextRotationAtMillis;
 
@@ -38,7 +41,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor {
         register("rpgevent");
         loadState();
         if (service.events().contains("events") && service.serverRole().equalsIgnoreCase("event")) {
-            long rotationTicks = Math.max(60L, service.events().getLong("rotation_minutes", 30L) * 60L * 20L);
+            long rotationTicks = Math.max(20L, service.contentRotationTickSeconds() * 20L);
             getServer().getScheduler().runTaskTimer(this, this::tickEvents, 40L, rotationTicks);
         }
         getLogger().info(getDescription().getName() + " enabled");
@@ -94,7 +97,21 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length == 0 || args[0].equalsIgnoreCase("status")) {
-            sender.sendMessage(activeEventId.isBlank() ? "No active event." : "active=" + activeEventId + " until=" + activeUntilMillis);
+            sender.sendMessage(activeEventId.isBlank() ? "No active event." : "active=" + activeEventId + " type=" + activeEventType + " rewardPool=" + activeRewardPool + " until=" + activeUntilMillis);
+            return true;
+        }
+        if (args[0].equalsIgnoreCase("join")) {
+            if (!(sender instanceof Player player)) {
+                sender.sendMessage("Players only.");
+                return true;
+            }
+            if (activeEventId.isBlank()) {
+                sender.sendMessage("No active event.");
+                return true;
+            }
+            player.teleport(player.getWorld().getSpawnLocation().clone().add(0.5D, 0.0D, 0.5D));
+            service.recordEventJoin(activeEventId, player.getUniqueId());
+            sender.sendMessage("Joined event " + activeEventId + " (" + activeEventType + ")");
             return true;
         }
         if (!sender.hasPermission("rpg.admin")) {
@@ -106,11 +123,15 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor {
                 sender.sendMessage("Unknown event.");
                 return true;
             }
-            startEvent(args[1]);
+            ContentEngine.ScheduledEvent scheduled = service.scheduledEvent(args[1]);
+            startEvent(scheduled == null ? args[1] : scheduled.eventId(),
+                scheduled == null ? "manual" : scheduled.eventType(),
+                scheduled == null ? "starter" : scheduled.linkedRewardPool());
             sender.sendMessage("Forced event " + args[1]);
             return true;
         }
         sender.sendMessage("/rpgevent status");
+        sender.sendMessage("/rpgevent join");
         sender.sendMessage("/rpgevent force <id>");
         return true;
     }
@@ -120,6 +141,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor {
     }
 
     private void tickEvents() {
+        processForcedEventRequest();
         long now = System.currentTimeMillis();
         if (!activeEventId.isBlank() && now >= activeUntilMillis) {
             String expiredEventId = activeEventId;
@@ -137,17 +159,14 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor {
         if (now < nextRotationAtMillis) {
             return;
         }
-        List<String> ids = new ArrayList<>();
-        if (service.events().getConfigurationSection("events") != null) {
-            ids.addAll(service.events().getConfigurationSection("events").getKeys(false));
-        }
-        if (ids.isEmpty()) {
+        ContentEngine.ScheduledEvent scheduled = service.nextScheduledEvent(activeEventId);
+        if (scheduled == null || !service.events().contains("events." + scheduled.eventId())) {
             return;
         }
-        startEvent(ids.get(ThreadLocalRandom.current().nextInt(ids.size())));
+        startEvent(scheduled.eventId(), scheduled.eventType(), scheduled.linkedRewardPool());
     }
 
-    private void startEvent(String eventId) {
+    private void startEvent(String eventId, String eventType, String rewardPool) {
         if (!service.serverRole().equalsIgnoreCase("event") || service.isSafeMode()) {
             return;
         }
@@ -155,19 +174,27 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor {
             service.cleanupEventEntities(activeEventId);
         }
         this.activeEventId = eventId;
+        this.activeEventType = eventType == null ? "" : eventType;
+        this.activeRewardPool = rewardPool == null ? "" : rewardPool;
         this.activeUntilMillis = System.currentTimeMillis() + service.events().getLong("duration_minutes", 10L) * 60_000L;
         this.nextRotationAtMillis = System.currentTimeMillis() + service.events().getLong("rotation_minutes", 30L) * 60_000L;
+        service.recordEventStarted(eventId, activeEventType, activeRewardPool);
         saveState();
         String message = service.events().getString("events." + eventId + ".broadcast", eventId + " started");
-        Bukkit.broadcastMessage("§d[Event] §f" + message);
+        Bukkit.broadcastMessage("§d[Event] §f" + message + " §7type=§e" + activeEventType + " §7rewards=§e" + activeRewardPool);
         spawnWave(eventId);
-        service.writeAudit("event_start", eventId);
+        service.writeAudit("event_start", eventId + ":" + activeEventType + ":" + activeRewardPool);
     }
 
     private void spawnWave(String eventId) {
         String mobId = service.events().getString("events." + eventId + ".mob", "");
         int spawnCount = service.events().getInt("events." + eventId + ".spawn_count", 8);
         double radius = service.events().getDouble("events." + eventId + ".spawn_radius", 16.0D);
+        if ("world_boss".equalsIgnoreCase(activeEventType)) {
+            spawnCount = Math.max(2, spawnCount / 2);
+        } else if ("treasure_event".equalsIgnoreCase(activeEventType)) {
+            radius = Math.max(8.0D, radius * 0.75D);
+        }
         for (Player player : Bukkit.getOnlinePlayers()) {
             for (int i = 0; i < spawnCount; i++) {
                 Location base = player.getLocation().clone().add(ThreadLocalRandom.current().nextDouble(-radius, radius), 0.0D, ThreadLocalRandom.current().nextDouble(-radius, radius));
@@ -183,6 +210,8 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor {
             if (java.nio.file.Files.exists(path)) {
                 yaml.loadFromString(java.nio.file.Files.readString(path));
                 activeEventId = yaml.getString("active", "");
+                activeEventType = yaml.getString("event_type", "");
+                activeRewardPool = yaml.getString("reward_pool", "");
                 activeUntilMillis = yaml.getLong("active_until", 0L);
                 nextRotationAtMillis = yaml.getLong("next_rotation_at", 0L);
             }
@@ -196,6 +225,8 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor {
             Path path = service.runtimeDir().resolve("events").resolve(service.serverName() + ".yml");
             YamlConfiguration yaml = new YamlConfiguration();
             yaml.set("active", activeEventId);
+            yaml.set("event_type", activeEventType);
+            yaml.set("reward_pool", activeRewardPool);
             yaml.set("active_until", activeUntilMillis);
             yaml.set("next_rotation_at", nextRotationAtMillis);
             service.writeAtomicFile(path, yaml.saveToString());
@@ -207,6 +238,27 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor {
     private void register(String command) {
         if (getCommand(command) != null) {
             getCommand(command).setExecutor(this);
+        }
+    }
+
+    private void processForcedEventRequest() {
+        try {
+            Path path = service.runtimeDir().resolve("events").resolve("force-request.yml");
+            if (!java.nio.file.Files.exists(path)) {
+                return;
+            }
+            YamlConfiguration yaml = new YamlConfiguration();
+            yaml.loadFromString(java.nio.file.Files.readString(path));
+            String eventId = yaml.getString("event_id", "");
+            if (!eventId.isBlank() && service.events().contains("events." + eventId)) {
+                ContentEngine.ScheduledEvent scheduled = service.scheduledEvent(eventId);
+                startEvent(eventId,
+                    scheduled == null ? "manual" : scheduled.eventType(),
+                    scheduled == null ? "starter" : scheduled.linkedRewardPool());
+            }
+            java.nio.file.Files.deleteIfExists(path);
+        } catch (Exception exception) {
+            getLogger().warning("Unable to process forced event request: " + exception.getMessage());
         }
     }
 }

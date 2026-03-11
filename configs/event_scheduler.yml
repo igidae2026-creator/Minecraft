@@ -1,0 +1,25 @@
+rotation:
+  tick_interval_seconds: 30
+  lobby_broadcast_poll_seconds: 5
+  dungeon_rotation_minutes: 15
+events:
+  goblin_raid:
+    type: timed_invasion
+    weight: 5
+    cooldown_minutes: 30
+    reward_pool: starter
+  wolf_frenzy:
+    type: arena_challenge
+    weight: 4
+    cooldown_minutes: 30
+    reward_pool: starter
+  guardian_uprising:
+    type: world_boss
+    weight: 3
+    cooldown_minutes: 45
+    reward_pool: elite
+  frontier_cache:
+    type: treasure_event
+    weight: 2
+    cooldown_minutes: 25
+    reward_pool: starter

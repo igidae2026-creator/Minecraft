@@ -1,4 +1,8 @@
 goblin_cave:
+  template_pool:
+  - goblin_cave_starter
+  - goblin_cave_elite
+  active_template: goblin_cave_starter
   recommended_level: 5
   entry_fee_gold: 15
   entry_requirements:

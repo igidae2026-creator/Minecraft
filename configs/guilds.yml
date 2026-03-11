@@ -1,0 +1,35 @@
+guilds:
+  invite_expiry_seconds: 600
+  starting_level: 1
+  ranks:
+    owner:
+      can_invite: true
+      can_rank: true
+      can_broadcast: true
+    officer:
+      can_invite: true
+      can_rank: false
+      can_broadcast: true
+    member:
+      can_invite: false
+      can_rank: false
+      can_broadcast: false
+  progression:
+    level_thresholds:
+      "1": 0
+      "2": 50
+      "3": 150
+      "4": 325
+      "5": 600
+    points:
+      dungeon_complete: 12
+      boss_kill: 20
+      event_join: 4
+      guild_bank_deposit_gold: 1
+    rewards:
+      level_up_prestige: 4
+      level_up_progression_currency: 2
+  rivalry:
+    created_threshold: 3
+    reward_every: 5
+  broadcast_poll_seconds: 4

@@ -1,0 +1,24 @@
+prestige:
+  season_id: "2026_s1"
+  sources:
+    dungeon_complete: 8
+    boss_kill: 12
+    event_join: 3
+    rivalry_reward: 6
+    return_player: 4
+    streak_milestone: 2
+  badges:
+    bronze:
+      threshold: 25
+      cosmetic: prestige_bronze
+    silver:
+      threshold: 75
+      cosmetic: prestige_silver
+    gold:
+      threshold: 150
+      cosmetic: prestige_gold
+    mythic:
+      threshold: 300
+      cosmetic: prestige_mythic
+  leaderboard:
+    top_broadcast_limit: 3

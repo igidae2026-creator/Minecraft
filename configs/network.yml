@@ -105,4 +105,7 @@ data_flow:
   experiment_registry: runtime_data/experiments
   incident_artifacts: runtime_data/incidents
   knowledge_index: runtime_data/knowledge
+  artifact_proposals: runtime_data/artifact_proposals
+  canonical_artifacts: runtime_data/canonical_artifacts
   pressure_control: runtime_data/status
+  genre_registry: configs/genres.yml

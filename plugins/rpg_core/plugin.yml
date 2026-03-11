@@ -15,10 +15,34 @@ commands:
   rpgadmin:
     usage: /rpgadmin <item|gold|status> ...
     permission: rpg.admin
+  play:
+    usage: /play [route]
+    permission: rpg.play
+  return:
+    usage: /return
+    permission: rpg.return
+  genres:
+    usage: /genres
+    permission: rpg.play
+  party:
+    usage: /party <info|invite|accept|leave|warp>
+    permission: rpg.party
+  prestige:
+    usage: /prestige
+    permission: rpg.profile
+  streak:
+    usage: /streak
+    permission: rpg.profile
 permissions:
   rpg.profile:
     default: true
   rpg.travel:
+    default: true
+  rpg.play:
+    default: true
+  rpg.return:
+    default: true
+  rpg.party:
     default: true
   rpg.admin:
     default: op

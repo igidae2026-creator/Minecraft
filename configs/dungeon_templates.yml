@@ -1,0 +1,24 @@
+templates:
+  goblin_cave_starter:
+    layout_type: compact_cavern
+    enemy_groups:
+      - goblin
+      - cave_shaman
+      - goblin
+    boss_type: goblin_king
+    reward_tier: starter
+    difficulty_scaling: 1.0
+    recommended_party_size: 1
+    player_cap: 2
+  goblin_cave_elite:
+    layout_type: split_cavern
+    enemy_groups:
+      - goblin
+      - cave_shaman
+      - cave_shaman
+      - goblin
+    boss_type: goblin_king
+    reward_tier: elite
+    difficulty_scaling: 1.35
+    recommended_party_size: 2
+    player_cap: 3
