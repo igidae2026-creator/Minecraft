@@ -38,6 +38,7 @@ SERVICE_RESPONSIVENESS_SUMMARY = RUNTIME / "autonomy" / "service_responsiveness_
 MATCHMAKING_QUALITY_SUMMARY = RUNTIME / "autonomy" / "matchmaking_quality_summary.yml"
 ECONOMY_MARKET_SUMMARY = RUNTIME / "autonomy" / "economy_market_summary.yml"
 LIVE_SCALE_SUMMARY = RUNTIME / "autonomy" / "live_scale_summary.yml"
+COMMUNITY_IDENTITY_SUMMARY = RUNTIME / "autonomy" / "community_identity_summary.yml"
 
 
 def load_yaml(path: Path):
@@ -236,6 +237,7 @@ def main() -> int:
     matchmaking_quality = load_yaml(MATCHMAKING_QUALITY_SUMMARY)
     economy_market = load_yaml(ECONOMY_MARKET_SUMMARY)
     live_scale = load_yaml(LIVE_SCALE_SUMMARY)
+    community_identity = load_yaml(COMMUNITY_IDENTITY_SUMMARY)
     print("RUNTIME_SUMMARY")
     print(f"AUTONOMY_DECISIONS={autonomy_decisions}")
     print(f"AUTONOMY_LAST_MODE={control.get('last_mode', 'unknown')}")
@@ -301,6 +303,10 @@ def main() -> int:
     print(f"LIVE_SCALE_STATE={live_scale.get('live_scale_state', '')}")
     print(f"LIVE_SCALE_CONCURRENT_LOAD_SCORE={live_scale.get('concurrent_load_score', 0)}")
     print(f"LIVE_SCALE_DENSITY_SPREAD_SCORE={live_scale.get('density_spread_score', 0)}")
+    print(f"COMMUNITY_IDENTITY_SCORE={community_identity.get('community_identity_score', 0)}")
+    print(f"COMMUNITY_IDENTITY_STATE={community_identity.get('community_identity_state', '')}")
+    print(f"COMMUNITY_GUILD_COHESION_SCORE={community_identity.get('guild_cohesion_score', 0)}")
+    print(f"COMMUNITY_RIVALRY_IDENTITY_SCORE={community_identity.get('rivalry_identity_score', 0)}")
     print(f"CONTENT_SOAK_STATE={content_soak.get('content_soak_state', '')}")
     print(f"CONTENT_SOAK_RECOMMENDED_REPAIRS={int(content_soak.get('recommended_repairs_count', 0))}")
     print(f"CONTENT_BUNDLE_COMPLETED={int(content_bundle.get('bundle_completed', 0))}")
@@ -340,6 +346,9 @@ def main() -> int:
     print(f"PLAYER_EXPERIENCE_LIVE_SCALE_CONFIDENCE={player_experience.get('live_scale_confidence', 0)}")
     print(f"PLAYER_EXPERIENCE_CONCURRENT_LOAD_SCORE={player_experience.get('concurrent_load_score', 0)}")
     print(f"PLAYER_EXPERIENCE_DENSITY_SPREAD_SCORE={player_experience.get('density_spread_score', 0)}")
+    print(f"PLAYER_EXPERIENCE_COMMUNITY_IDENTITY_SCORE={player_experience.get('community_identity_score', 0)}")
+    print(f"PLAYER_EXPERIENCE_GUILD_COHESION_SCORE={player_experience.get('guild_cohesion_score', 0)}")
+    print(f"PLAYER_EXPERIENCE_RIVALRY_IDENTITY_SCORE={player_experience.get('rivalry_identity_score', 0)}")
     print(f"PLAYER_EXPERIENCE_SOAK_STATE={player_experience_soak.get('player_experience_soak_state', '')}")
     print(f"ECONOMY_ACTION={economy_governor.get('action', '')}")
     print(f"ECONOMY_INFLATION_RATIO={economy_governor.get('inflation_ratio', 0)}")

@@ -73,6 +73,9 @@ def test_ops_tooling_executes_cleanly(tmp_path: Path):
     assert "rpg_network_live_scale_confidence" in text
     assert "rpg_network_live_scale_concurrent_load_score" in text
     assert "rpg_network_live_scale_density_spread_score" in text
+    assert "rpg_network_community_identity_score" in text
+    assert "rpg_network_community_guild_cohesion_score" in text
+    assert "rpg_network_community_rivalry_identity_score" in text
     assert "rpg_network_content_soak_recommended_repairs" in text
     assert "rpg_network_content_bundle_completed" in text
     assert "rpg_network_content_bundle_completion_percent" in text
@@ -106,6 +109,9 @@ def test_ops_tooling_executes_cleanly(tmp_path: Path):
     assert "rpg_network_player_experience_live_scale_confidence" in text
     assert "rpg_network_player_experience_concurrent_load_score" in text
     assert "rpg_network_player_experience_density_spread_score" in text
+    assert "rpg_network_player_experience_community_identity_score" in text
+    assert "rpg_network_player_experience_guild_cohesion_score" in text
+    assert "rpg_network_player_experience_rivalry_identity_score" in text
     assert "rpg_network_player_experience_soak_stable" in text
     assert "rpg_network_economy_inflation_ratio" in text
     assert "rpg_network_anti_cheat_sandbox_cases" in text

@@ -24,6 +24,7 @@ SERVICE_RESPONSIVENESS_SUMMARY_PATH = AUTONOMY / "service_responsiveness_summary
 MATCHMAKING_QUALITY_SUMMARY_PATH = AUTONOMY / "matchmaking_quality_summary.yml"
 ECONOMY_MARKET_SUMMARY_PATH = AUTONOMY / "economy_market_summary.yml"
 LIVE_SCALE_SUMMARY_PATH = AUTONOMY / "live_scale_summary.yml"
+COMMUNITY_IDENTITY_SUMMARY_PATH = AUTONOMY / "community_identity_summary.yml"
 
 
 def now_iso() -> str:
@@ -61,6 +62,7 @@ def main() -> int:
     matchmaking_quality = load_yaml(MATCHMAKING_QUALITY_SUMMARY_PATH)
     economy_market = load_yaml(ECONOMY_MARKET_SUMMARY_PATH)
     live_scale = load_yaml(LIVE_SCALE_SUMMARY_PATH)
+    community_identity = load_yaml(COMMUNITY_IDENTITY_SUMMARY_PATH)
 
     totals = {
         "queue_size": 0.0,
@@ -127,6 +129,9 @@ def main() -> int:
     live_scale_confidence = float(live_scale.get("live_scale_confidence", 0.0))
     concurrent_load_score = float(live_scale.get("concurrent_load_score", 0.0))
     density_spread_score = float(live_scale.get("density_spread_score", 0.0))
+    community_identity_score = float(community_identity.get("community_identity_score", 0.0))
+    guild_cohesion_score = float(community_identity.get("guild_cohesion_score", 0.0))
+    rivalry_identity_score = float(community_identity.get("rivalry_identity_score", 0.0))
     fatigue_gap_score = float(fatigue.get("fatigue_gap_score", 0.0))
     thinness_score = float(fatigue.get("thinness_score", 0.0))
     repetition_score = float(fatigue.get("repetition_score", 0.0))
@@ -181,6 +186,9 @@ def main() -> int:
         + live_scale_confidence * 0.06
         + concurrent_load_score * 0.03
         + density_spread_score * 0.02
+        + community_identity_score * 0.08
+        + guild_cohesion_score * 0.04
+        + rivalry_identity_score * 0.04
     )
     completeness_percent = round(
         clamp(
@@ -253,6 +261,9 @@ def main() -> int:
         "live_scale_confidence": live_scale_confidence,
         "concurrent_load_score": concurrent_load_score,
         "density_spread_score": density_spread_score,
+        "community_identity_score": community_identity_score,
+        "guild_cohesion_score": guild_cohesion_score,
+        "rivalry_identity_score": rivalry_identity_score,
         "thinness_score": thinness_score,
         "repetition_score": repetition_score,
         "novelty_gap_score": novelty_gap_score,

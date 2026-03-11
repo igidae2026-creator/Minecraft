@@ -31,6 +31,7 @@ SERVICE_RESPONSIVENESS_PATH = RUNTIME / "autonomy" / "service_responsiveness_sum
 MATCHMAKING_QUALITY_PATH = RUNTIME / "autonomy" / "matchmaking_quality_summary.yml"
 ECONOMY_MARKET_PATH = RUNTIME / "autonomy" / "economy_market_summary.yml"
 LIVE_SCALE_PATH = RUNTIME / "autonomy" / "live_scale_summary.yml"
+COMMUNITY_IDENTITY_PATH = RUNTIME / "autonomy" / "community_identity_summary.yml"
 PROPOSAL_DIR = RUNTIME / "artifact_proposals"
 CANONICAL_DIR = RUNTIME / "canonical_artifacts"
 VERDICT_LOG = PROPOSAL_DIR / "verdicts.jsonl"
@@ -81,6 +82,7 @@ def canonical_candidates(control: dict[str, Any]) -> list[dict[str, Any]]:
     matchmaking_quality = load_yaml(MATCHMAKING_QUALITY_PATH)
     economy_market = load_yaml(ECONOMY_MARKET_PATH)
     live_scale = load_yaml(LIVE_SCALE_PATH)
+    community_identity = load_yaml(COMMUNITY_IDENTITY_PATH)
     streak = int(control.get("steady_noop_streak", 0))
     thresholds = {
         "execution": bool(control.get("execution_threshold_ready", False)),
@@ -441,6 +443,26 @@ def canonical_candidates(control: dict[str, Any]) -> list[dict[str, Any]]:
                     "concurrent_load_score": float(live_scale.get("concurrent_load_score", 0.0)),
                     "density_spread_score": float(live_scale.get("density_spread_score", 0.0)),
                     "queue_peak_score": float(live_scale.get("queue_peak_score", 0.0)),
+                },
+            }
+        )
+        proposals.append(
+            {
+                "artifact_class": "community_identity_profile",
+                "scope": "minecraft_runtime",
+                "reason": "community identity and rivalry cohesion should be governed as a canonical social retention surface",
+                "source": "community_identity_governor",
+                "criteria": {
+                    "scope_fit": float(community_identity.get("community_identity_score", 0.0)) >= 0.0,
+                    "authority_fit": thresholds["final"],
+                    "upgrade_value": bool(community_identity.get("community_identity_state", "")),
+                    "exploration_os_compatibility": True,
+                },
+                "payload": {
+                    "community_identity_score": float(community_identity.get("community_identity_score", 0.0)),
+                    "community_identity_state": str(community_identity.get("community_identity_state", "")),
+                    "guild_cohesion_score": float(community_identity.get("guild_cohesion_score", 0.0)),
+                    "rivalry_identity_score": float(community_identity.get("rivalry_identity_score", 0.0)),
                 },
             }
         )

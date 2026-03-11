@@ -181,6 +181,10 @@ live_scale_summary = {}
 live_scale_summary_path = root / "runtime_data" / "autonomy" / "live_scale_summary.yml"
 if live_scale_summary_path.exists():
     live_scale_summary = load_scalar_summary(live_scale_summary_path)
+community_identity_summary = {}
+community_identity_summary_path = root / "runtime_data" / "autonomy" / "community_identity_summary.yml"
+if community_identity_summary_path.exists():
+    community_identity_summary = load_scalar_summary(community_identity_summary_path)
 economy_governor_summary = {}
 economy_governor_summary_path = root / "runtime_data" / "autonomy" / "economy_governor_summary.yml"
 if economy_governor_summary_path.exists():
@@ -284,6 +288,9 @@ metrics.append(f"rpg_network_economy_reward_sustainability_score {economy_market
 metrics.append(f"rpg_network_live_scale_confidence {live_scale_summary.get('live_scale_confidence', 0)}")
 metrics.append(f"rpg_network_live_scale_concurrent_load_score {live_scale_summary.get('concurrent_load_score', 0)}")
 metrics.append(f"rpg_network_live_scale_density_spread_score {live_scale_summary.get('density_spread_score', 0)}")
+metrics.append(f"rpg_network_community_identity_score {community_identity_summary.get('community_identity_score', 0)}")
+metrics.append(f"rpg_network_community_guild_cohesion_score {community_identity_summary.get('guild_cohesion_score', 0)}")
+metrics.append(f"rpg_network_community_rivalry_identity_score {community_identity_summary.get('rivalry_identity_score', 0)}")
 metrics.append(f"rpg_network_content_soak_recommended_repairs {content_soak_summary.get('recommended_repairs_count', 0)}")
 metrics.append(f"rpg_network_content_soak_stable {1 if content_soak_summary.get('content_soak_state', '') == 'stable' else 0}")
 metrics.append(f"rpg_network_content_bundle_completed {content_bundle_summary.get('bundle_completed', 0)}")
@@ -321,6 +328,9 @@ metrics.append(f"rpg_network_player_experience_reward_sustainability_score {play
 metrics.append(f"rpg_network_player_experience_live_scale_confidence {player_experience_summary.get('live_scale_confidence', 0)}")
 metrics.append(f"rpg_network_player_experience_concurrent_load_score {player_experience_summary.get('concurrent_load_score', 0)}")
 metrics.append(f"rpg_network_player_experience_density_spread_score {player_experience_summary.get('density_spread_score', 0)}")
+metrics.append(f"rpg_network_player_experience_community_identity_score {player_experience_summary.get('community_identity_score', 0)}")
+metrics.append(f"rpg_network_player_experience_guild_cohesion_score {player_experience_summary.get('guild_cohesion_score', 0)}")
+metrics.append(f"rpg_network_player_experience_rivalry_identity_score {player_experience_summary.get('rivalry_identity_score', 0)}")
 metrics.append(f"rpg_network_player_experience_soak_stable {1 if player_experience_soak_summary.get('player_experience_soak_state', '') == 'stable' else 0}")
 metrics.append(f"rpg_network_economy_action_adjust {1 if economy_governor_summary.get('action', '') == 'adjust' else 0}")
 metrics.append(f"rpg_network_economy_inflation_ratio {economy_governor_summary.get('inflation_ratio', 0)}")

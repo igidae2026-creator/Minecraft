@@ -38,6 +38,7 @@ KNOWN_REPAIRS = {
     "matchmaking_quality_governor",
     "economy_market_governor",
     "live_scale_governor",
+    "community_identity_governor",
     "runtime_summary",
 }
 

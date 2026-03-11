@@ -235,6 +235,7 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         subprocess.run([sys.executable, str(ROOT / "ops" / "matchmaking_quality_governor.py")], check=True, cwd=ROOT)
         subprocess.run([sys.executable, str(ROOT / "ops" / "economy_market_governor.py")], check=True, cwd=ROOT)
         subprocess.run([sys.executable, str(ROOT / "ops" / "live_scale_governor.py")], check=True, cwd=ROOT)
+        subprocess.run([sys.executable, str(ROOT / "ops" / "community_identity_governor.py")], check=True, cwd=ROOT)
         subprocess.run([sys.executable, str(ROOT / "ops" / "player_experience_governor.py")], check=True, cwd=ROOT)
         subprocess.run([sys.executable, str(ROOT / "ops" / "engagement_fatigue_governor.py")], check=True, cwd=ROOT)
         subprocess.run([sys.executable, str(ROOT / "ops" / "material_inventory.py")], check=True, cwd=ROOT)
@@ -276,6 +277,7 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         matchmaking_quality_summary = yaml.safe_load((runtime_data / "autonomy" / "matchmaking_quality_summary.yml").read_text(encoding="utf-8"))
         economy_market_summary = yaml.safe_load((runtime_data / "autonomy" / "economy_market_summary.yml").read_text(encoding="utf-8"))
         live_scale_summary = yaml.safe_load((runtime_data / "autonomy" / "live_scale_summary.yml").read_text(encoding="utf-8"))
+        community_identity_summary = yaml.safe_load((runtime_data / "autonomy" / "community_identity_summary.yml").read_text(encoding="utf-8"))
 
         assert content_summary["generated"] >= 14
         assert content_summary["by_type"]["onboarding"] >= 1
@@ -324,6 +326,8 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         assert economy_market_summary["market_state"] in {"fragile", "stable", "mature"}
         assert float(live_scale_summary["live_scale_confidence"]) >= 0
         assert live_scale_summary["live_scale_state"] in {"narrow", "credible", "broad"}
+        assert float(community_identity_summary["community_identity_score"]) >= 0
+        assert community_identity_summary["community_identity_state"] in {"forming", "cohesive", "magnetic"}
         assert material_summary["canonical_source_files"] > 0
         assert partition_summary["runtime_files"] >= partition_summary["canonical_snapshot_files"]
         assert partition_summary["volatile_runtime_files"] >= 1
@@ -370,6 +374,7 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         assert float(player_experience_summary["live_scale_confidence"]) >= 0
         assert float(player_experience_summary["concurrent_load_score"]) >= 0
         assert float(player_experience_summary["density_spread_score"]) >= 0
+        assert float(player_experience_summary["community_identity_score"]) >= 0
         assert player_experience_soak_summary["player_experience_soak_state"] in {"tune", "observe", "stable"}
         assert float(player_experience_soak_summary["first_session_strength"]) >= 0
         assert float(player_experience_soak_summary["trust_pull"]) >= 0
