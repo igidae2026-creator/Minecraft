@@ -41,6 +41,7 @@ def test_ops_tooling_executes_cleanly(tmp_path: Path):
     assert "rpg_network_content_advanced_loop_strength" in text
     assert "rpg_network_content_prestige_loop_strength" in text
     assert "rpg_network_content_mastery_arc_strength" in text
+    assert "rpg_network_content_prestige_clarity_strength" in text
     assert "rpg_network_content_social_persistence_strength" in text
     assert "rpg_network_content_spectacle_variety_strength" in text
     assert "rpg_network_content_returner_retention_strength" in text

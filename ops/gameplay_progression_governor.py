@@ -51,6 +51,7 @@ def main() -> int:
     replayable_loop_score = float(content.get("replayable_loop_score", 0.0))
     first_loop_coverage = float(content.get("first_loop_coverage_score", 0.0))
     mastery_arc_strength = float(content.get("mastery_arc_strength", 0.0))
+    prestige_clarity_strength = float(content.get("prestige_clarity_strength", 0.0))
     trust_pull = float(player_experience.get("trust_pull", 0.0))
 
     totals = {
@@ -91,7 +92,7 @@ def main() -> int:
         ),
         2,
     )
-    progression_spine_score = round(clamp(progression_spine_score + mastery_arc_strength / 3.0, 0.0, 8.0), 2)
+    progression_spine_score = round(clamp(progression_spine_score + mastery_arc_strength / 3.0 + prestige_clarity_strength / 3.0, 0.0, 9.0), 2)
     progression_runtime_score = round(
         clamp(
             (dungeon_completion_avg / 220.0)
@@ -118,6 +119,7 @@ def main() -> int:
         "replayable_loop_score": replayable_loop_score,
         "first_loop_coverage_score": first_loop_coverage,
         "mastery_arc_strength": mastery_arc_strength,
+        "prestige_clarity_strength": prestige_clarity_strength,
         "dungeon_completion_avg": dungeon_completion_avg,
         "boss_kill_avg": boss_kill_avg,
         "progression_level_up_avg": level_up_avg,

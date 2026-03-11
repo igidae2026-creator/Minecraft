@@ -254,6 +254,7 @@ def main() -> int:
     print(f"CONTENT_ADVANCED_LOOP_STRENGTH={content_governor.get('advanced_loop_strength', 0)}")
     print(f"CONTENT_PRESTIGE_LOOP_STRENGTH={content_governor.get('prestige_loop_strength', 0)}")
     print(f"CONTENT_MASTERY_ARC_STRENGTH={content_governor.get('mastery_arc_strength', 0)}")
+    print(f"CONTENT_PRESTIGE_CLARITY_STRENGTH={content_governor.get('prestige_clarity_strength', 0)}")
     print(f"CONTENT_SOCIAL_PERSISTENCE_STRENGTH={content_governor.get('social_persistence_strength', 0)}")
     print(f"CONTENT_SPECTACLE_VARIETY_STRENGTH={content_governor.get('spectacle_variety_strength', 0)}")
     print(f"CONTENT_RETURNER_RETENTION_STRENGTH={content_governor.get('returner_retention_strength', 0)}")
