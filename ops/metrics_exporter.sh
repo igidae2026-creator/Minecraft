@@ -282,6 +282,7 @@ metrics.append(f"rpg_network_liveops_boost_reentry {1 if liveops_governor_summar
 metrics.append(f"rpg_network_liveops_sustain_social {1 if liveops_governor_summary.get('sustain_social', False) else 0}")
 metrics.append(f"rpg_network_liveops_boost_novelty {1 if liveops_governor_summary.get('boost_novelty', False) else 0}")
 metrics.append(f"rpg_network_liveops_returner_reactivation_depth {liveops_governor_summary.get('returner_reactivation_depth', 0)}")
+metrics.append(f"rpg_network_liveops_depth_strength {liveops_governor_summary.get('liveops_depth_strength', 0)}")
 metrics.append(f"rpg_network_liveops_cadence_diversity_score {liveops_governor_summary.get('cadence_diversity_score', 0)}")
 metrics.append(f"rpg_network_material_total_files {int(material_inventory_summary.get('total_files', 0))}")
 metrics.append(f"rpg_network_material_canonical_source_files {int(material_inventory_summary.get('canonical_source_files', 0))}")

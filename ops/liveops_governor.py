@@ -129,6 +129,12 @@ def main() -> int:
                     "cohort": "advanced_returners",
                     "objective": "persistent_mastery_reactivation",
                 },
+                {
+                    "action": "seasonal_prestige_campaign",
+                    "mode": "promote",
+                    "cohort": "advanced_all",
+                    "objective": "multi_week_campaign_arc",
+                },
             ]
         )
     payload = {
@@ -174,6 +180,16 @@ def main() -> int:
         "sustain_social": sustain_social,
         "boost_novelty": boost_novelty,
         "returner_reactivation_depth": 1 if sustain_social else (1 if boost_reentry else 0),
+        "liveops_depth_strength": round(
+            min(
+                3.0,
+                sum(1 for action in payload["scaffolded_actions"] if action["mode"] == "promote") * 0.35
+                + cadence_diversity_score * 0.8
+                + (0.5 if sustain_social else 0.0)
+                + (0.3 if boost_novelty else 0.0),
+            ),
+            2,
+        ),
         "cadence_diversity_score": cadence_diversity_score,
         "distinct_event_types": distinct_event_types,
         "distinct_reward_pools": distinct_reward_pools,

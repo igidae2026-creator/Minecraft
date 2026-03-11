@@ -309,6 +309,7 @@ def main() -> int:
     print(f"LIVEOPS_SUSTAIN_SOCIAL={1 if liveops_governor.get('sustain_social', False) else 0}")
     print(f"LIVEOPS_BOOST_NOVELTY={1 if liveops_governor.get('boost_novelty', False) else 0}")
     print(f"LIVEOPS_RETURNER_REACTIVATION_DEPTH={liveops_governor.get('returner_reactivation_depth', 0)}")
+    print(f"LIVEOPS_DEPTH_STRENGTH={liveops_governor.get('liveops_depth_strength', 0)}")
     print(f"LIVEOPS_CADENCE_DIVERSITY_SCORE={liveops_governor.get('cadence_diversity_score', 0)}")
     print(f"MATERIAL_TOTAL_FILES={int(material_inventory.get('total_files', 0))}")
     print(f"MATERIAL_CANONICAL_SOURCE_FILES={int(material_inventory.get('canonical_source_files', 0))}")

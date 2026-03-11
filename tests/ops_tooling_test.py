@@ -82,6 +82,7 @@ def test_ops_tooling_executes_cleanly(tmp_path: Path):
     assert "rpg_network_liveops_sustain_social" in text
     assert "rpg_network_liveops_boost_novelty" in text
     assert "rpg_network_liveops_returner_reactivation_depth" in text
+    assert "rpg_network_liveops_depth_strength" in text
     assert "rpg_network_liveops_cadence_diversity_score" in text
     assert "rpg_network_material_total_files" in text
     assert "rpg_network_material_canonical_source_files" in text

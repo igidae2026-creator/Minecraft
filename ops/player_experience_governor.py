@@ -98,6 +98,7 @@ def main() -> int:
     cadence_diversity_score = float(liveops.get("cadence_diversity_score", 0.0))
     sustain_social = bool(liveops.get("sustain_social", False))
     returner_reactivation_depth = float(liveops.get("returner_reactivation_depth", 0.0))
+    liveops_depth_strength = float(liveops.get("liveops_depth_strength", 0.0))
     long_soak_confidence = float(player_experience_soak.get("long_soak_confidence", 0.0))
     fatigue_gap_score = float(fatigue.get("fatigue_gap_score", 0.0))
     thinness_score = float(fatigue.get("thinness_score", 0.0))
@@ -135,6 +136,7 @@ def main() -> int:
         + min(1.0, endgame_breadth_strength / 3.0) * 0.06
         + min(1.0, returner_retention_strength / 3.0) * 0.07
         + min(1.0, returner_reactivation_depth / 2.0) * 0.05
+        + min(1.0, liveops_depth_strength / 3.0) * 0.05
         + long_soak_confidence * 0.06
     )
     completeness_percent = round(
@@ -189,6 +191,7 @@ def main() -> int:
         "cadence_diversity_score": cadence_diversity_score,
         "sustain_social": sustain_social,
         "returner_reactivation_depth": returner_reactivation_depth,
+        "liveops_depth_strength": liveops_depth_strength,
         "long_soak_confidence": long_soak_confidence,
         "thinness_score": thinness_score,
         "repetition_score": repetition_score,
