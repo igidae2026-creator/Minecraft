@@ -24,7 +24,51 @@ def load_yaml(path: Path) -> dict[str, Any]:
         with path.open("r", encoding="utf-8") as handle:
             return yaml.safe_load(handle) or {}
     except Exception:
+        if path == CONTROL_PATH:
+            return load_control_state_fallback(path)
         return {}
+
+
+def parse_scalar(value: str) -> Any:
+    value = value.strip()
+    if value in {"{}", "[]"}:
+        return {} if value == "{}" else []
+    lowered = value.lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    try:
+        if "." in value:
+            return float(value)
+        return int(value)
+    except ValueError:
+        return value.strip("'\"")
+
+
+def load_control_state_fallback(path: Path) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    current_map: str | None = None
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        if not raw.strip():
+            continue
+        if not raw.startswith(" "):
+            current_map = None
+            if ":" not in raw:
+                continue
+            key, value = raw.split(":", 1)
+            key = key.strip()
+            value = value.strip()
+            if not value:
+                payload[key] = {}
+                current_map = key
+                continue
+            payload[key] = parse_scalar(value)
+            continue
+        if current_map and raw.startswith("  ") and not raw.lstrip().startswith("- ") and ":" in raw:
+            key, value = raw.strip().split(":", 1)
+            payload.setdefault(current_map, {})[key.strip()] = parse_scalar(value)
+    return payload
 
 
 def tail_jsonl(path: Path, limit: int) -> list[dict[str, Any]]:
