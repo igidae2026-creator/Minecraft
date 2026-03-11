@@ -642,6 +642,7 @@ def main() -> int:
     total_retention_proxy = 0.0
     total_quality_score = 0.0
     starter_reward_strength = 0.0
+    rivalry_reward_pull = 0.0
 
     for candidate in candidates:
         quality = score_candidate(
@@ -697,6 +698,13 @@ def main() -> int:
             starter_reward_strength += 0.45 if generated_payload.get("branching_rewards", False) else 0.1
         elif artifact_type == "season":
             starter_reward_strength += 0.3 if generated_payload.get("returner_catchup", False) else 0.0
+        if artifact_type == "social":
+            shared_objectives = generated_payload.get("shared_objectives", []) or []
+            rivalry_reward_pull += min(1.0, len(shared_objectives) * 0.28)
+            rivalry_reward_pull += 0.5 if generated_payload.get("async_competition", False) else 0.0
+            rivalry_reward_pull += 0.4 if generated_payload.get("returner_bonus", False) else 0.0
+        elif artifact_type == "season":
+            rivalry_reward_pull += 0.3 if generated_payload.get("returner_catchup", False) else 0.0
         if candidate["verdict"] == "promote":
             promoted += 1
         else:
@@ -716,6 +724,7 @@ def main() -> int:
         "social_loop_density": round(min(3.0, by_type.get("social", 0) * 1.0 + by_type.get("season", 0) * 0.6), 2),
         "replayable_loop_score": round(min(3.0, by_type.get("dungeon_variation", 0) * 0.8 + by_type.get("season", 0) * 0.6 + by_type.get("event", 0) * 0.4), 2),
         "starter_reward_strength": round(min(3.0, starter_reward_strength), 2),
+        "rivalry_reward_pull": round(min(3.0, rivalry_reward_pull), 2),
         "depth_floor": MIN_DEPTH_SCORE,
         "execution_threshold_ready": execution_threshold_ready,
         "autonomy_threshold_ready": bool(control.get("autonomy_threshold_ready", False)),

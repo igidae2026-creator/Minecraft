@@ -222,6 +222,7 @@ metrics.append(f"rpg_network_content_first_loop_coverage_score {content_governor
 metrics.append(f"rpg_network_content_social_loop_density {content_governor_summary.get('social_loop_density', 0)}")
 metrics.append(f"rpg_network_content_replayable_loop_score {content_governor_summary.get('replayable_loop_score', 0)}")
 metrics.append(f"rpg_network_content_starter_reward_strength {content_governor_summary.get('starter_reward_strength', 0)}")
+metrics.append(f"rpg_network_content_rivalry_reward_pull {content_governor_summary.get('rivalry_reward_pull', 0)}")
 focus_csv = str(content_strategy_summary.get("next_focus_csv", ""))
 repair_csv = str(content_strategy_summary.get("recommended_repairs_csv", ""))
 focus_count = len([item for item in focus_csv.split(",") if item])

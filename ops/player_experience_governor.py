@@ -78,6 +78,7 @@ def main() -> int:
     social_loop_density = float(content.get("social_loop_density", 0.0))
     replayable_loop_score = float(content.get("replayable_loop_score", 0.0))
     starter_reward_strength = float(content.get("starter_reward_strength", 0.0))
+    rivalry_reward_pull = float(content.get("rivalry_reward_pull", 0.0))
     held_actions = int(liveops.get("held_actions", 0))
     progression_protection_score = float(anti_cheat.get("progression_protection_score", 0.0))
     trusted_progression_window = bool(anti_cheat.get("trusted_progression_window", False))
@@ -90,7 +91,7 @@ def main() -> int:
 
     onboarding_tempo = round(clamp((return_reward_avg / 120.0) + ((12.0 - queue_avg) / 18.0), 0.0, 1.0), 2)
     reward_tempo = round(clamp((return_reward_avg / 110.0) + (quality_score / 20.0) + (starter_reward_strength / 4.0), 0.0, 1.0), 2)
-    social_stickiness = round(clamp((social_pressure / 24.0) + (event_join_avg / 2200.0) + (social_loop_density / 5.0) + cadence_diversity_score * 0.25, 0.0, 1.0), 2)
+    social_stickiness = round(clamp((social_pressure / 24.0) + (event_join_avg / 2200.0) + (social_loop_density / 5.0) + (rivalry_reward_pull / 4.0) + cadence_diversity_score * 0.25, 0.0, 1.0), 2)
     replay_pull = round(clamp((event_join_avg / 1800.0) + (retention_proxy / 3.5) + (replayable_loop_score / 5.0) + cadence_diversity_score * 0.3, 0.0, 1.0), 2)
     friction_penalty = round(clamp(max(0.0, (queue_avg - 4.0) / 12.0) + (held_actions / 4.0) + fatigue_gap_score * 0.45, 0.0, 1.0), 2)
     first_session_strength = round(clamp((first_loop_coverage / 3.0) + onboarding_tempo * 0.35, 0.0, 1.0), 2)
@@ -128,6 +129,7 @@ def main() -> int:
         "social_loop_density": social_loop_density,
         "replayable_loop_score": replayable_loop_score,
         "starter_reward_strength": starter_reward_strength,
+        "rivalry_reward_pull": rivalry_reward_pull,
         "progression_protection_score": progression_protection_score,
         "trusted_progression_window": trusted_progression_window,
         "trust_pull": trust_pull,
