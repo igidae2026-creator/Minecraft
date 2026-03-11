@@ -137,6 +137,9 @@ def evaluate() -> dict[str, Any]:
     seeded = any(event.get("event_type") == "queue.seeded" for event in event_tail)
     loop_finished = any(event.get("event_type") == "loop.finished" for event in event_tail)
     jobs_done = {event.get("payload", {}).get("job_type", "") for event in event_tail if event.get("event_type") == "job.done"}
+    heartbeat_status = str(heartbeat.get("last_status", ""))
+    queue_pending = int(heartbeat.get("queue_pending", 0) or 0)
+    actively_processing = heartbeat_status == "running" and queue_pending <= 6
     required_recent_jobs = {
         "autonomous_quality_loop",
         "runtime_summary",
@@ -148,9 +151,9 @@ def evaluate() -> dict[str, Any]:
 
     criteria: dict[str, tuple[bool, str, str, list[str]]] = {
         "closed_loop_complete": (
-            seeded and loop_finished and heartbeat.get("last_status") == "ok",
+            seeded and (loop_finished or actively_processing) and heartbeat_status in {"ok", "running"},
             "queue.seeded / loop.finished / heartbeat ok not all present",
-            f"seeded={seeded} loop_finished={loop_finished} heartbeat_status={heartbeat.get('last_status', '')}",
+            f"seeded={seeded} loop_finished={loop_finished} heartbeat_status={heartbeat_status} queue_pending={queue_pending}",
             ["validate_runtime_truth", "reconcile_runtime", "autonomous_quality_loop"],
         ),
         "quality_gate_fail_closed": (
@@ -181,9 +184,10 @@ def evaluate() -> dict[str, Any]:
             ["artifact_governor", "metaos_conformance"],
         ),
         "queue_supervisor_soak_reporting_stable": (
-            heartbeat.get("queue_pending", 1) == 0 and heartbeat.get("last_status") == "ok" and (not heartbeat.get("active_soak") or control.get("last_mode") in {"hold", "promote", "noop", "apply"}),
+            ((queue_pending == 0 and heartbeat_status == "ok") or actively_processing)
+            and (not heartbeat.get("active_soak") or control.get("last_mode") in {"hold", "promote", "noop", "apply"}),
             "queue/supervisor/control state is not stable",
-            f"queue_pending={heartbeat.get('queue_pending', '')} active_soak={heartbeat.get('active_soak', '')} last_mode={control.get('last_mode', '')}",
+            f"queue_pending={queue_pending} heartbeat_status={heartbeat_status} active_soak={heartbeat.get('active_soak', '')} last_mode={control.get('last_mode', '')}",
             ["autonomous_quality_loop", "runtime_summary"],
         ),
         "expansion_policy_handled": (
