@@ -23,6 +23,7 @@ RUNTIME_INTEGRITY_SUMMARY_PATH = AUTONOMY / "runtime_integrity_summary.yml"
 SERVICE_RESPONSIVENESS_SUMMARY_PATH = AUTONOMY / "service_responsiveness_summary.yml"
 MATCHMAKING_QUALITY_SUMMARY_PATH = AUTONOMY / "matchmaking_quality_summary.yml"
 ECONOMY_MARKET_SUMMARY_PATH = AUTONOMY / "economy_market_summary.yml"
+LIVE_SCALE_SUMMARY_PATH = AUTONOMY / "live_scale_summary.yml"
 
 
 def now_iso() -> str:
@@ -59,6 +60,7 @@ def main() -> int:
     service_responsiveness = load_yaml(SERVICE_RESPONSIVENESS_SUMMARY_PATH)
     matchmaking_quality = load_yaml(MATCHMAKING_QUALITY_SUMMARY_PATH)
     economy_market = load_yaml(ECONOMY_MARKET_SUMMARY_PATH)
+    live_scale = load_yaml(LIVE_SCALE_SUMMARY_PATH)
 
     totals = {
         "queue_size": 0.0,
@@ -122,6 +124,9 @@ def main() -> int:
     market_maturity_score = float(economy_market.get("market_maturity_score", 0.0))
     faucet_balance_score = float(economy_market.get("faucet_balance_score", 0.0))
     reward_sustainability_score = float(economy_market.get("reward_sustainability_score", 0.0))
+    live_scale_confidence = float(live_scale.get("live_scale_confidence", 0.0))
+    concurrent_load_score = float(live_scale.get("concurrent_load_score", 0.0))
+    density_spread_score = float(live_scale.get("density_spread_score", 0.0))
     fatigue_gap_score = float(fatigue.get("fatigue_gap_score", 0.0))
     thinness_score = float(fatigue.get("thinness_score", 0.0))
     repetition_score = float(fatigue.get("repetition_score", 0.0))
@@ -173,6 +178,9 @@ def main() -> int:
         + market_maturity_score * 0.06
         + faucet_balance_score * 0.03
         + reward_sustainability_score * 0.03
+        + live_scale_confidence * 0.06
+        + concurrent_load_score * 0.03
+        + density_spread_score * 0.02
     )
     completeness_percent = round(
         clamp(
@@ -242,6 +250,9 @@ def main() -> int:
         "market_maturity_score": market_maturity_score,
         "faucet_balance_score": faucet_balance_score,
         "reward_sustainability_score": reward_sustainability_score,
+        "live_scale_confidence": live_scale_confidence,
+        "concurrent_load_score": concurrent_load_score,
+        "density_spread_score": density_spread_score,
         "thinness_score": thinness_score,
         "repetition_score": repetition_score,
         "novelty_gap_score": novelty_gap_score,

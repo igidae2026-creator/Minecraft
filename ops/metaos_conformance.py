@@ -63,6 +63,7 @@ def main() -> int:
         "service_responsiveness_governor": ROOT / "ops" / "service_responsiveness_governor.py",
         "matchmaking_quality_governor": ROOT / "ops" / "matchmaking_quality_governor.py",
         "economy_market_governor": ROOT / "ops" / "economy_market_governor.py",
+        "live_scale_governor": ROOT / "ops" / "live_scale_governor.py",
         "material_inventory": ROOT / "ops" / "material_inventory.py",
         "runtime_partition_governor": ROOT / "ops" / "runtime_partition_governor.py",
         "content_strategy_governor": ROOT / "ops" / "content_strategy_governor.py",

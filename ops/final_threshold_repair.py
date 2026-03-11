@@ -37,6 +37,7 @@ KNOWN_REPAIRS = {
     "service_responsiveness_governor",
     "matchmaking_quality_governor",
     "economy_market_governor",
+    "live_scale_governor",
     "runtime_summary",
 }
 

@@ -30,6 +30,7 @@ ENGAGEMENT_FATIGUE_PATH = RUNTIME / "autonomy" / "engagement_fatigue_summary.yml
 SERVICE_RESPONSIVENESS_PATH = RUNTIME / "autonomy" / "service_responsiveness_summary.yml"
 MATCHMAKING_QUALITY_PATH = RUNTIME / "autonomy" / "matchmaking_quality_summary.yml"
 ECONOMY_MARKET_PATH = RUNTIME / "autonomy" / "economy_market_summary.yml"
+LIVE_SCALE_PATH = RUNTIME / "autonomy" / "live_scale_summary.yml"
 PROPOSAL_DIR = RUNTIME / "artifact_proposals"
 CANONICAL_DIR = RUNTIME / "canonical_artifacts"
 VERDICT_LOG = PROPOSAL_DIR / "verdicts.jsonl"
@@ -79,6 +80,7 @@ def canonical_candidates(control: dict[str, Any]) -> list[dict[str, Any]]:
     service_responsiveness = load_yaml(SERVICE_RESPONSIVENESS_PATH)
     matchmaking_quality = load_yaml(MATCHMAKING_QUALITY_PATH)
     economy_market = load_yaml(ECONOMY_MARKET_PATH)
+    live_scale = load_yaml(LIVE_SCALE_PATH)
     streak = int(control.get("steady_noop_streak", 0))
     thresholds = {
         "execution": bool(control.get("execution_threshold_ready", False)),
@@ -418,6 +420,27 @@ def canonical_candidates(control: dict[str, Any]) -> list[dict[str, Any]]:
                     "faucet_balance_score": float(economy_market.get("faucet_balance_score", 0.0)),
                     "reward_sustainability_score": float(economy_market.get("reward_sustainability_score", 0.0)),
                     "sink_pressure": float(economy_market.get("sink_pressure", 0.0)),
+                },
+            }
+        )
+        proposals.append(
+            {
+                "artifact_class": "live_scale_profile",
+                "scope": "minecraft_runtime",
+                "reason": "broad live-load confidence should be governed as a canonical service quality signal",
+                "source": "live_scale_governor",
+                "criteria": {
+                    "scope_fit": float(live_scale.get("live_scale_confidence", 0.0)) >= 0.0,
+                    "authority_fit": thresholds["final"],
+                    "upgrade_value": bool(live_scale.get("live_scale_state", "")),
+                    "exploration_os_compatibility": True,
+                },
+                "payload": {
+                    "live_scale_confidence": float(live_scale.get("live_scale_confidence", 0.0)),
+                    "live_scale_state": str(live_scale.get("live_scale_state", "")),
+                    "concurrent_load_score": float(live_scale.get("concurrent_load_score", 0.0)),
+                    "density_spread_score": float(live_scale.get("density_spread_score", 0.0)),
+                    "queue_peak_score": float(live_scale.get("queue_peak_score", 0.0)),
                 },
             }
         )

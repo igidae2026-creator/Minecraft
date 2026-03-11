@@ -37,6 +37,7 @@ ENGAGEMENT_FATIGUE_SUMMARY = RUNTIME / "autonomy" / "engagement_fatigue_summary.
 SERVICE_RESPONSIVENESS_SUMMARY = RUNTIME / "autonomy" / "service_responsiveness_summary.yml"
 MATCHMAKING_QUALITY_SUMMARY = RUNTIME / "autonomy" / "matchmaking_quality_summary.yml"
 ECONOMY_MARKET_SUMMARY = RUNTIME / "autonomy" / "economy_market_summary.yml"
+LIVE_SCALE_SUMMARY = RUNTIME / "autonomy" / "live_scale_summary.yml"
 
 
 def load_yaml(path: Path):
@@ -234,6 +235,7 @@ def main() -> int:
     service_responsiveness = load_yaml(SERVICE_RESPONSIVENESS_SUMMARY)
     matchmaking_quality = load_yaml(MATCHMAKING_QUALITY_SUMMARY)
     economy_market = load_yaml(ECONOMY_MARKET_SUMMARY)
+    live_scale = load_yaml(LIVE_SCALE_SUMMARY)
     print("RUNTIME_SUMMARY")
     print(f"AUTONOMY_DECISIONS={autonomy_decisions}")
     print(f"AUTONOMY_LAST_MODE={control.get('last_mode', 'unknown')}")
@@ -295,6 +297,10 @@ def main() -> int:
     print(f"ECONOMY_MARKET_STATE={economy_market.get('market_state', '')}")
     print(f"ECONOMY_FAUCET_BALANCE_SCORE={economy_market.get('faucet_balance_score', 0)}")
     print(f"ECONOMY_REWARD_SUSTAINABILITY_SCORE={economy_market.get('reward_sustainability_score', 0)}")
+    print(f"LIVE_SCALE_CONFIDENCE={live_scale.get('live_scale_confidence', 0)}")
+    print(f"LIVE_SCALE_STATE={live_scale.get('live_scale_state', '')}")
+    print(f"LIVE_SCALE_CONCURRENT_LOAD_SCORE={live_scale.get('concurrent_load_score', 0)}")
+    print(f"LIVE_SCALE_DENSITY_SPREAD_SCORE={live_scale.get('density_spread_score', 0)}")
     print(f"CONTENT_SOAK_STATE={content_soak.get('content_soak_state', '')}")
     print(f"CONTENT_SOAK_RECOMMENDED_REPAIRS={int(content_soak.get('recommended_repairs_count', 0))}")
     print(f"CONTENT_BUNDLE_COMPLETED={int(content_bundle.get('bundle_completed', 0))}")
@@ -331,6 +337,9 @@ def main() -> int:
     print(f"PLAYER_EXPERIENCE_MARKET_MATURITY_SCORE={player_experience.get('market_maturity_score', 0)}")
     print(f"PLAYER_EXPERIENCE_FAUCET_BALANCE_SCORE={player_experience.get('faucet_balance_score', 0)}")
     print(f"PLAYER_EXPERIENCE_REWARD_SUSTAINABILITY_SCORE={player_experience.get('reward_sustainability_score', 0)}")
+    print(f"PLAYER_EXPERIENCE_LIVE_SCALE_CONFIDENCE={player_experience.get('live_scale_confidence', 0)}")
+    print(f"PLAYER_EXPERIENCE_CONCURRENT_LOAD_SCORE={player_experience.get('concurrent_load_score', 0)}")
+    print(f"PLAYER_EXPERIENCE_DENSITY_SPREAD_SCORE={player_experience.get('density_spread_score', 0)}")
     print(f"PLAYER_EXPERIENCE_SOAK_STATE={player_experience_soak.get('player_experience_soak_state', '')}")
     print(f"ECONOMY_ACTION={economy_governor.get('action', '')}")
     print(f"ECONOMY_INFLATION_RATIO={economy_governor.get('inflation_ratio', 0)}")
