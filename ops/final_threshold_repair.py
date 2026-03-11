@@ -34,6 +34,8 @@ KNOWN_REPAIRS = {
     "player_experience_governor",
     "player_experience_soak_governor",
     "engagement_fatigue_governor",
+    "service_responsiveness_governor",
+    "matchmaking_quality_governor",
     "runtime_summary",
 }
 

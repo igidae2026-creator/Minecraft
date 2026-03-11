@@ -80,6 +80,7 @@ class Supervisor:
             "anti_cheat_governor": ["python3", "ops/anti_cheat_governor.py"],
             "liveops_governor": ["python3", "ops/liveops_governor.py"],
             "service_responsiveness_governor": ["python3", "ops/service_responsiveness_governor.py"],
+            "matchmaking_quality_governor": ["python3", "ops/matchmaking_quality_governor.py"],
             "player_experience_governor": ["python3", "ops/player_experience_governor.py"],
             "gameplay_progression_governor": ["python3", "ops/gameplay_progression_governor.py"],
             "engagement_fatigue_governor": ["python3", "ops/engagement_fatigue_governor.py"],

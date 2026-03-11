@@ -35,6 +35,7 @@ PLAYER_EXPERIENCE_SOAK_SUMMARY = RUNTIME / "autonomy" / "player_experience_soak_
 GAMEPLAY_PROGRESSION_SUMMARY = RUNTIME / "autonomy" / "gameplay_progression_summary.yml"
 ENGAGEMENT_FATIGUE_SUMMARY = RUNTIME / "autonomy" / "engagement_fatigue_summary.yml"
 SERVICE_RESPONSIVENESS_SUMMARY = RUNTIME / "autonomy" / "service_responsiveness_summary.yml"
+MATCHMAKING_QUALITY_SUMMARY = RUNTIME / "autonomy" / "matchmaking_quality_summary.yml"
 
 
 def load_yaml(path: Path):
@@ -230,6 +231,7 @@ def main() -> int:
     gameplay_progression = load_yaml(GAMEPLAY_PROGRESSION_SUMMARY)
     engagement_fatigue = load_yaml(ENGAGEMENT_FATIGUE_SUMMARY)
     service_responsiveness = load_yaml(SERVICE_RESPONSIVENESS_SUMMARY)
+    matchmaking_quality = load_yaml(MATCHMAKING_QUALITY_SUMMARY)
     print("RUNTIME_SUMMARY")
     print(f"AUTONOMY_DECISIONS={autonomy_decisions}")
     print(f"AUTONOMY_LAST_MODE={control.get('last_mode', 'unknown')}")
@@ -283,6 +285,10 @@ def main() -> int:
     print(f"SERVICE_RESPONSIVENESS_STATE={service_responsiveness.get('responsiveness_state', '')}")
     print(f"SERVICE_QUEUE_IMMEDIACY_SCORE={service_responsiveness.get('queue_immediacy_score', 0)}")
     print(f"SERVICE_LATENCY_CONFIDENCE={service_responsiveness.get('latency_confidence', 0)}")
+    print(f"MATCHMAKING_QUALITY_SCORE={matchmaking_quality.get('matchmaking_quality_score', 0)}")
+    print(f"MATCHMAKING_STATE={matchmaking_quality.get('matchmaking_state', '')}")
+    print(f"MATCHMAKING_ROUTING_CLARITY_SCORE={matchmaking_quality.get('routing_clarity_score', 0)}")
+    print(f"MATCHMAKING_QUEUE_FAIRNESS_SCORE={matchmaking_quality.get('queue_fairness_score', 0)}")
     print(f"CONTENT_SOAK_STATE={content_soak.get('content_soak_state', '')}")
     print(f"CONTENT_SOAK_RECOMMENDED_REPAIRS={int(content_soak.get('recommended_repairs_count', 0))}")
     print(f"CONTENT_BUNDLE_COMPLETED={int(content_bundle.get('bundle_completed', 0))}")
@@ -313,6 +319,9 @@ def main() -> int:
     print(f"PLAYER_EXPERIENCE_RESPONSIVENESS_SCORE={player_experience.get('responsiveness_score', 0)}")
     print(f"PLAYER_EXPERIENCE_QUEUE_IMMEDIACY_SCORE={player_experience.get('queue_immediacy_score', 0)}")
     print(f"PLAYER_EXPERIENCE_LATENCY_CONFIDENCE={player_experience.get('latency_confidence', 0)}")
+    print(f"PLAYER_EXPERIENCE_MATCHMAKING_QUALITY_SCORE={player_experience.get('matchmaking_quality_score', 0)}")
+    print(f"PLAYER_EXPERIENCE_ROUTING_CLARITY_SCORE={player_experience.get('routing_clarity_score', 0)}")
+    print(f"PLAYER_EXPERIENCE_QUEUE_FAIRNESS_SCORE={player_experience.get('queue_fairness_score', 0)}")
     print(f"PLAYER_EXPERIENCE_SOAK_STATE={player_experience_soak.get('player_experience_soak_state', '')}")
     print(f"ECONOMY_ACTION={economy_governor.get('action', '')}")
     print(f"ECONOMY_INFLATION_RATIO={economy_governor.get('inflation_ratio', 0)}")

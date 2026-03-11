@@ -28,6 +28,7 @@ PLAYER_EXPERIENCE_SOAK_PATH = RUNTIME / "autonomy" / "player_experience_soak_sum
 GAMEPLAY_PROGRESSION_PATH = RUNTIME / "autonomy" / "gameplay_progression_summary.yml"
 ENGAGEMENT_FATIGUE_PATH = RUNTIME / "autonomy" / "engagement_fatigue_summary.yml"
 SERVICE_RESPONSIVENESS_PATH = RUNTIME / "autonomy" / "service_responsiveness_summary.yml"
+MATCHMAKING_QUALITY_PATH = RUNTIME / "autonomy" / "matchmaking_quality_summary.yml"
 PROPOSAL_DIR = RUNTIME / "artifact_proposals"
 CANONICAL_DIR = RUNTIME / "canonical_artifacts"
 VERDICT_LOG = PROPOSAL_DIR / "verdicts.jsonl"
@@ -75,6 +76,7 @@ def canonical_candidates(control: dict[str, Any]) -> list[dict[str, Any]]:
     gameplay_progression = load_yaml(GAMEPLAY_PROGRESSION_PATH)
     engagement_fatigue = load_yaml(ENGAGEMENT_FATIGUE_PATH)
     service_responsiveness = load_yaml(SERVICE_RESPONSIVENESS_PATH)
+    matchmaking_quality = load_yaml(MATCHMAKING_QUALITY_PATH)
     streak = int(control.get("steady_noop_streak", 0))
     thresholds = {
         "execution": bool(control.get("execution_threshold_ready", False)),
@@ -372,6 +374,27 @@ def canonical_candidates(control: dict[str, Any]) -> list[dict[str, Any]]:
                     "queue_immediacy_score": float(service_responsiveness.get("queue_immediacy_score", 0.0)),
                     "latency_confidence": float(service_responsiveness.get("latency_confidence", 0.0)),
                     "density_balance_score": float(service_responsiveness.get("density_balance_score", 0.0)),
+                },
+            }
+        )
+        proposals.append(
+            {
+                "artifact_class": "matchmaking_quality_profile",
+                "scope": "minecraft_runtime",
+                "reason": "matchmaking fairness and routing clarity should be governed as canonical service quality signals",
+                "source": "matchmaking_quality_governor",
+                "criteria": {
+                    "scope_fit": float(matchmaking_quality.get("matchmaking_quality_score", 0.0)) >= 0.0,
+                    "authority_fit": thresholds["final"],
+                    "upgrade_value": bool(matchmaking_quality.get("matchmaking_state", "")),
+                    "exploration_os_compatibility": True,
+                },
+                "payload": {
+                    "matchmaking_quality_score": float(matchmaking_quality.get("matchmaking_quality_score", 0.0)),
+                    "matchmaking_state": str(matchmaking_quality.get("matchmaking_state", "")),
+                    "routing_clarity_score": float(matchmaking_quality.get("routing_clarity_score", 0.0)),
+                    "queue_fairness_score": float(matchmaking_quality.get("queue_fairness_score", 0.0)),
+                    "social_match_score": float(matchmaking_quality.get("social_match_score", 0.0)),
                 },
             }
         )

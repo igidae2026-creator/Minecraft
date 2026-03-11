@@ -61,6 +61,9 @@ def test_ops_tooling_executes_cleanly(tmp_path: Path):
     assert "rpg_network_service_responsiveness_score" in text
     assert "rpg_network_service_queue_immediacy_score" in text
     assert "rpg_network_service_latency_confidence" in text
+    assert "rpg_network_matchmaking_quality_score" in text
+    assert "rpg_network_matchmaking_routing_clarity_score" in text
+    assert "rpg_network_matchmaking_queue_fairness_score" in text
     assert "rpg_network_content_soak_recommended_repairs" in text
     assert "rpg_network_content_bundle_completed" in text
     assert "rpg_network_content_bundle_completion_percent" in text
@@ -85,6 +88,9 @@ def test_ops_tooling_executes_cleanly(tmp_path: Path):
     assert "rpg_network_player_experience_responsiveness_score" in text
     assert "rpg_network_player_experience_queue_immediacy_score" in text
     assert "rpg_network_player_experience_latency_confidence" in text
+    assert "rpg_network_player_experience_matchmaking_quality_score" in text
+    assert "rpg_network_player_experience_routing_clarity_score" in text
+    assert "rpg_network_player_experience_queue_fairness_score" in text
     assert "rpg_network_player_experience_soak_stable" in text
     assert "rpg_network_economy_inflation_ratio" in text
     assert "rpg_network_anti_cheat_sandbox_cases" in text
