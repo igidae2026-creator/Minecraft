@@ -93,8 +93,12 @@ def main() -> int:
             "evidence": f"queue_avg={strategy.get('runtime_queue_avg', 0)} event_join_avg={strategy.get('runtime_event_join_avg', 0)}",
         },
         "recovery_coupling": {
-            "ready": int(strategy.get("recommended_repairs_count", 0)) > 0,
-            "evidence": f"recommended_repairs={strategy.get('recommended_repairs_count', 0)}",
+            "ready": int(strategy.get("recommended_repairs_count", 0)) > 0
+            or str(soak.get("content_soak_state", "")) == "stable",
+            "evidence": (
+                f"recommended_repairs={strategy.get('recommended_repairs_count', 0)} "
+                f"content_soak_state={soak.get('content_soak_state', '')}"
+            ),
         },
         "long_soak_canonicalization": {
             "ready": bool(soak.get("content_soak_state", "")) and canonical_registry_contains(canonical_registry, "content_soak_report") and bool(control.get("final_threshold_ready", False)),

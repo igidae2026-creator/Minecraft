@@ -251,6 +251,7 @@ def main() -> int:
     print(f"CONTENT_FIRST_LOOP_COVERAGE_SCORE={content_governor.get('first_loop_coverage_score', 0)}")
     print(f"CONTENT_SOCIAL_LOOP_DENSITY={content_governor.get('social_loop_density', 0)}")
     print(f"CONTENT_REPLAYABLE_LOOP_SCORE={content_governor.get('replayable_loop_score', 0)}")
+    print(f"CONTENT_ADVANCED_LOOP_STRENGTH={content_governor.get('advanced_loop_strength', 0)}")
     print(f"CONTENT_STARTER_REWARD_STRENGTH={content_governor.get('starter_reward_strength', 0)}")
     print(f"CONTENT_RIVALRY_REWARD_PULL={content_governor.get('rivalry_reward_pull', 0)}")
     print(f"CONTENT_VOLUME_SCORE={content_volume.get('content_volume_score', 0)}")

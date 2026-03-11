@@ -995,6 +995,7 @@ def main() -> int:
         "first_loop_coverage_score": round(min(3.0, by_type.get("onboarding", 0) * 0.9 + by_type.get("event", 0) * 0.6 + by_type.get("quest_chain", 0) * 0.5), 2),
         "social_loop_density": round(min(3.0, by_type.get("social", 0) * 1.0 + by_type.get("season", 0) * 0.6), 2),
         "replayable_loop_score": round(min(3.0, by_type.get("dungeon_variation", 0) * 0.8 + by_type.get("season", 0) * 0.6 + by_type.get("event", 0) * 0.4), 2),
+        "advanced_loop_strength": round(min(3.0, by_type.get("quest_chain", 0) * 0.7 + by_type.get("dungeon_variation", 0) * 0.75 + by_type.get("season", 0) * 0.55 + by_type.get("social", 0) * 0.35), 2),
         "starter_reward_strength": round(min(3.0, starter_reward_strength), 2),
         "rivalry_reward_pull": round(min(3.0, rivalry_reward_pull), 2),
         "depth_floor": MIN_DEPTH_SCORE,
