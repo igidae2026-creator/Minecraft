@@ -88,6 +88,7 @@ def main() -> int:
     mastery_arc_strength = float(content.get("mastery_arc_strength", 0.0))
     prestige_clarity_strength = float(content.get("prestige_clarity_strength", 0.0))
     endgame_breadth_strength = float(content.get("endgame_breadth_strength", 0.0))
+    content_catalog_strength = float(content.get("content_catalog_strength", 0.0))
     returner_retention_strength = float(content.get("returner_retention_strength", 0.0))
     onboarding_polish_strength = float(content.get("onboarding_polish_strength", 0.0))
     starter_reward_strength = float(content.get("starter_reward_strength", 0.0))
@@ -135,6 +136,7 @@ def main() -> int:
         + min(1.0, mastery_arc_strength / 3.0) * 0.07
         + min(1.0, prestige_clarity_strength / 3.0) * 0.06
         + min(1.0, endgame_breadth_strength / 3.0) * 0.06
+        + min(1.0, content_catalog_strength / 3.0) * 0.05
         + min(1.0, returner_retention_strength / 3.0) * 0.07
         + min(1.0, onboarding_polish_strength / 3.0) * 0.05
         + min(1.0, returner_reactivation_depth / 2.0) * 0.05
@@ -181,6 +183,7 @@ def main() -> int:
         "mastery_arc_strength": mastery_arc_strength,
         "prestige_clarity_strength": prestige_clarity_strength,
         "endgame_breadth_strength": endgame_breadth_strength,
+        "content_catalog_strength": content_catalog_strength,
         "returner_retention_strength": returner_retention_strength,
         "onboarding_polish_strength": onboarding_polish_strength,
         "starter_reward_strength": starter_reward_strength,

@@ -1092,6 +1092,7 @@ def main() -> int:
         "mastery_arc_strength": round(min(3.0, by_type.get("quest_chain", 0) * 0.85 + by_type.get("dungeon_variation", 0) * 0.8 + by_type.get("season", 0) * 0.65), 2),
         "prestige_clarity_strength": round(min(3.0, by_type.get("season", 0) * 0.9 + by_type.get("social", 0) * 0.55 + by_type.get("event", 0) * 0.35 + by_type.get("quest_chain", 0) * 0.4), 2),
         "endgame_breadth_strength": round(min(3.0, by_type.get("season", 0) * 0.7 + by_type.get("social", 0) * 0.6 + by_type.get("event", 0) * 0.45 + by_type.get("dungeon_variation", 0) * 0.55), 2),
+        "content_catalog_strength": round(min(3.0, by_type.get("event", 0) * 0.45 + by_type.get("social", 0) * 0.4 + by_type.get("quest", 0) * 0.28 + by_type.get("quest_chain", 0) * 0.45 + by_type.get("dungeon_variation", 0) * 0.42 + by_type.get("season", 0) * 0.45), 2),
         "social_persistence_strength": round(min(3.0, social_persistence_strength), 2),
         "spectacle_variety_strength": round(min(3.0, spectacle_variety_strength), 2),
         "returner_retention_strength": round(min(3.0, returner_retention_strength), 2),

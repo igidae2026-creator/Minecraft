@@ -284,6 +284,7 @@ def test_specialized_governors_create_operating_artifacts(tmp_path: Path):
         assert float(content_summary["mastery_arc_strength"]) >= 1.0
         assert float(content_summary["prestige_clarity_strength"]) >= 1.0
         assert float(content_summary["endgame_breadth_strength"]) >= 1.0
+        assert float(content_summary["content_catalog_strength"]) >= 1.0
         assert float(content_summary["onboarding_polish_strength"]) >= 1.0
         assert float(content_summary["social_persistence_strength"]) >= 1.0
         assert float(content_summary["spectacle_variety_strength"]) >= 1.0
